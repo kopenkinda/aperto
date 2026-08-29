@@ -23,13 +23,22 @@
     "package:linux": "pnpm build && electron-builder --linux"
   },
   "dependencies": {
+    "@base-ui/react": "catalog:",
     "@effect/atom-react": "catalog:",
+    "@fontsource-variable/geist": "catalog:",
+    "class-variance-authority": "catalog:",
+    "clsx": "catalog:",
     "effect": "catalog:",
+    "lucide-react": "catalog:",
     "react": "catalog:",
     "react-dom": "catalog:",
-    "scheduler": "catalog:"
+    "scheduler": "catalog:",
+    "shadcn": "catalog:",
+    "tailwind-merge": "catalog:",
+    "tw-animate-css": "catalog:"
   },
   "devDependencies": {
+    "@tailwindcss/vite": "catalog:",
     "@types/node": "catalog:",
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
@@ -38,6 +47,7 @@
     "electron-builder": "catalog:",
     "oxfmt": "catalog:",
     "oxlint": "catalog:",
+    "tailwindcss": "catalog:",
     "typescript": "catalog:",
     "vite": "catalog:",
     "vite-plugin-electron": "catalog:",
