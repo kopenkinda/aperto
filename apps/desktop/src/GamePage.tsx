@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
+  CircleAlertIcon,
+  CircleXIcon,
   FolderOpenIcon,
   ImageIcon,
   PlayIcon,
@@ -36,6 +38,16 @@ import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  Trace,
+  TraceCollapsible,
+  TraceCollapsibleContent,
+  TraceCollapsibleTrigger,
+  TraceDescription,
+  TraceIcon,
+  TraceLine,
+  TraceTitle,
+} from "@/components/ui/trace";
+import {
   compareVersions,
   gameKind,
   playCount,
@@ -47,13 +59,39 @@ import {
 } from "./model";
 import { request, useTask } from "./desktop";
 
-const outcomes: Record<Launch["outcome"], string> = {
-  running: "Running",
-  ended: "Closed",
-  stopped: "Stopped",
-  interrupted: "Tracking interrupted",
-  failed: "Failed",
+const launchIcons: Record<Launch["outcome"], typeof PlayIcon> = {
+  running: PlayIcon,
+  ended: PlayIcon,
+  stopped: SquareIcon,
+  interrupted: CircleAlertIcon,
+  failed: CircleXIcon,
 };
+
+/** "45s", "12m", or "1h 5m". */
+function duration(from: string, to: string) {
+  const seconds = Math.max(0, Math.round((Date.parse(to) - Date.parse(from)) / 1000));
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes}m`;
+  return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+}
+
+/** One line per launch, in the past tense once it is over. */
+function launchTitle(launch: Launch) {
+  const length = launch.endedAt ? duration(launch.startedAt, launch.endedAt) : null;
+  switch (launch.outcome) {
+    case "running":
+      return "Playing";
+    case "ended":
+      return length ? `Played for ${length}` : "Played";
+    case "stopped":
+      return length ? `Stopped after ${length}` : "Stopped";
+    case "failed":
+      return length ? `Failed after ${length}` : "Failed to start";
+    case "interrupted":
+      return "Tracking interrupted";
+  }
+}
 
 const relative = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
 export function lastPlayed(game: Game) {
@@ -662,45 +700,54 @@ export function GamePage({
             )}
           </h2>
           {!launches.length && <p className="text-muted-foreground">Not launched yet.</p>}
-          <ol className="flex flex-col gap-1.5">
-            {launches.slice(0, 10).map((launch) => (
-              <li key={launch.id}>
-                <details className="group rounded-lg border bg-card/40 px-3 py-2">
-                  <summary className="flex cursor-pointer list-none items-center gap-2">
-                    <span
-                      className={`size-1.5 shrink-0 rounded-full ${
-                        launch.outcome === "failed"
-                          ? "bg-destructive"
-                          : launch.outcome === "running"
-                            ? "bg-emerald-500"
-                            : "bg-muted-foreground/50"
-                      }`}
-                    />
-                    <span className={launch.outcome === "failed" ? "text-destructive" : undefined}>
-                      {outcomes[launch.outcome]}
-                    </span>
-                    <time className="ml-auto text-xs text-muted-foreground">
-                      {new Date(launch.startedAt).toLocaleString(undefined, {
-                        dateStyle: "short",
-                        timeStyle: "short",
-                      })}
-                    </time>
-                  </summary>
-                  <p className="mt-2 text-xs text-muted-foreground">
-                    {windows
-                      ? `CrossOver bottle ${launch.runtime}`
-                      : nwjs
-                        ? `NW.js ${launch.runtime}`
-                        : "macOS"}
-                    . {launch.detail}
-                  </p>
-                  <pre className="mt-2 max-h-60 overflow-auto rounded-md bg-muted p-2 text-[11px] break-all whitespace-pre-wrap">
-                    {[...launch.flags, "", launch.log || "No output captured."].join("\n")}
-                  </pre>
-                </details>
-              </li>
-            ))}
-          </ol>
+          <Trace>
+            {launches.slice(0, 10).map((launch) => {
+              const Icon = launchIcons[launch.outcome];
+              return (
+                <TraceCollapsible key={launch.id}>
+                  <TraceCollapsibleTrigger>
+                    <TraceLine
+                      status={
+                        launch.outcome === "running"
+                          ? "running"
+                          : launch.outcome === "failed"
+                            ? "error"
+                            : undefined
+                      }
+                    >
+                      <TraceIcon>
+                        <Icon />
+                      </TraceIcon>
+                      <TraceTitle>{launchTitle(launch)}</TraceTitle>
+                      <TraceDescription>
+                        <time dateTime={launch.startedAt}>
+                          {new Date(launch.startedAt).toLocaleString(undefined, {
+                            month: "short",
+                            day: "numeric",
+                            hour: "numeric",
+                            minute: "2-digit",
+                          })}
+                        </time>
+                      </TraceDescription>
+                    </TraceLine>
+                  </TraceCollapsibleTrigger>
+                  <TraceCollapsibleContent className="flex flex-col gap-2 text-xs">
+                    <p>
+                      {windows
+                        ? `CrossOver bottle ${launch.runtime}`
+                        : nwjs
+                          ? `NW.js ${launch.runtime}`
+                          : "macOS"}
+                      . {launch.detail}
+                    </p>
+                    <pre className="max-h-60 overflow-auto rounded-md bg-muted p-2 text-[11px] break-all whitespace-pre-wrap text-foreground">
+                      {[...launch.flags, "", launch.log || "No output captured."].join("\n")}
+                    </pre>
+                  </TraceCollapsibleContent>
+                </TraceCollapsible>
+              );
+            })}
+          </Trace>
         </aside>
       </div>
 
