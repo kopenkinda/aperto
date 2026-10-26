@@ -6,6 +6,7 @@ import {
   ImageIcon,
   PlayIcon,
   RotateCcwIcon,
+  SearchIcon,
   SquareIcon,
   SquareTerminalIcon,
   StarIcon,
@@ -182,6 +183,7 @@ export function GamePage({
   // Undefined while loading; null when the game is not an RPG Maker export and has no plugin list.
   const [plugins, setPlugins] = useState<PluginList | null | undefined>(undefined);
   const [pluginError, setPluginError] = useState<string | null>(null);
+  const [pluginSearch, setPluginSearch] = useState("");
   const [confirm, setConfirm] = useState<"remove" | "trash" | "restore" | null>(null);
   // The folder a Shift-click removal moves to the Trash, shown in the dialog before it happens.
   const [trashFolder, setTrashFolder] = useState<string | null>(null);
@@ -190,6 +192,16 @@ export function GamePage({
   const [artworkUrl, setArtworkUrl] = useState("");
   const { run, busy, error, setError } = useTask();
   const running = snapshot.running.includes(game.id);
+  // Keeps each plugin's position in the game's list, which toggling refers to.
+  const pluginQuery = pluginSearch.trim().toLowerCase();
+  const shownPlugins = (plugins?.plugins ?? [])
+    .map((plugin, index) => ({ plugin, index }))
+    .filter(
+      ({ plugin }) =>
+        !pluginQuery ||
+        plugin.name.toLowerCase().includes(pluginQuery) ||
+        plugin.description.toLowerCase().includes(pluginQuery),
+    );
   const missing = snapshot.missing.includes(game.id);
   const launches = snapshot.launches.filter((launch) => launch.gameId === game.id);
   const runtimes = [...snapshot.runtimes].sort((a, b) => compareVersions(b.version, a.version));
@@ -216,6 +228,7 @@ export function GamePage({
   };
 
   useEffect(() => {
+    setPluginSearch("");
     if (!nwjs) return;
     let active = true;
     request({ action: "plugins", id: game.id }).then(
@@ -657,8 +670,23 @@ export function GamePage({
                 <p className="text-muted-foreground">This game has no plugins.</p>
               )}
               {plugins && plugins.plugins.length > 0 && (
+                <div className="relative">
+                  <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    aria-label="Search plugins"
+                    placeholder="Search plugins"
+                    className="pl-8"
+                    value={pluginSearch}
+                    onChange={(event) => setPluginSearch(event.target.value)}
+                  />
+                </div>
+              )}
+              {plugins && plugins.plugins.length > 0 && !shownPlugins.length && (
+                <p className="text-muted-foreground">No plugins match “{pluginSearch.trim()}”.</p>
+              )}
+              {shownPlugins.length > 0 && plugins && (
                 <ul className="divide-y rounded-lg border">
-                  {plugins.plugins.map((plugin, index) => (
+                  {shownPlugins.map(({ plugin, index }) => (
                     <li
                       key={`${index}-${plugin.name}`}
                       className="flex items-center gap-3 px-3 py-2"
