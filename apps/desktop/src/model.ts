@@ -6,6 +6,8 @@ export const GameSchema = Schema.Struct({
   root: Schema.String,
   name: Schema.String,
   tags: Schema.Array(Schema.String),
+  /** Starred on the game's page. Favorites lead the library list. Older libraries omit it. */
+  favorite: Schema.optionalKey(Schema.Boolean),
   /** Square icon, shown in the list and the page header. */
   artwork: Schema.NullOr(Schema.String),
   /** Wide image across the page header; without one, the header uses a blur of the icon. */
@@ -14,6 +16,8 @@ export const GameSchema = Schema.Struct({
   flags: Schema.Array(Schema.String),
   addedAt: Schema.String,
   lastPlayed: Schema.NullOr(Schema.String),
+  /** Launches started, kept apart from the launch history, which only holds the latest 100. */
+  plays: Schema.optionalKey(Schema.Int),
   removed: Schema.Boolean,
   // Windows games run through CrossOver; Mac games are app bundles. Older libraries omit these.
   kind: Schema.optionalKey(Schema.Literals(["nwjs", "windows", "mac"])),
@@ -125,6 +129,7 @@ export const CommandSchema = Schema.Union([
   }),
   Schema.Struct({ action: Schema.Literal("clearBanner"), ...id }),
   Schema.Struct({ action: Schema.Literal("setTags"), ...id, tags: Schema.Array(Schema.String) }),
+  Schema.Struct({ action: Schema.Literal("setFavorite"), ...id, favorite: Schema.Boolean }),
   Schema.Struct({ action: Schema.Literal("remove"), ...id, deleteData: Schema.Boolean }),
   Schema.Struct({ action: Schema.Literal("relink"), ...id }),
   Schema.Struct({ action: Schema.Literal("plugins"), ...id }),
@@ -146,14 +151,13 @@ export const CommandSchema = Schema.Union([
   Schema.Struct({ action: Schema.Literal("revealPluginBackup"), ...id }),
 ]);
 export type Command = typeof CommandSchema.Type;
-export type ResultFor<C extends Command> = C["action"] extends
-  | "plugins"
-  | "togglePlugin"
-  | "restorePlugins"
-  ? PluginList
-  : C["action"] extends "releases"
-    ? Release[]
-    : Snapshot;
+export type ResultFor<C extends Command> = C["action"] extends "plugins"
+  ? PluginList | null
+  : C["action"] extends "togglePlugin" | "restorePlugins"
+    ? PluginList
+    : C["action"] extends "releases"
+      ? Release[]
+      : Snapshot;
 export interface DesktopApi {
   request<C extends Command>(command: C): Promise<ResultFor<C>>;
   onChange(listener: () => void): () => void;
@@ -179,8 +183,66 @@ export function tagCounts(games: readonly Game[]): [tag: string, count: number][
   return [...counts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
 }
 
+/** Times the game was launched. Older libraries count from the launch history they still hold. */
+export const playCount = (game: Game, launches: readonly Pick<Launch, "gameId">[]) =>
+  game.plays ?? launches.filter((launch) => launch.gameId === game.id).length;
+
+export const sortOrders = {
+  name: "Name",
+  plays: "Times played",
+  lastPlayed: "Last played",
+  added: "Date added",
+} as const;
+export type SortOrder = keyof typeof sortOrders;
+/** How each order reads by default and reversed. */
+export const sortDirections: Record<SortOrder, [string, string]> = {
+  name: ["A–Z", "Z–A"],
+  plays: ["Most first", "Fewest first"],
+  lastPlayed: ["Newest first", "Oldest first"],
+  added: ["Newest first", "Oldest first"],
+};
+export type Sort = { order: SortOrder; reversed: boolean };
+export const defaultSort: Sort = { order: "name", reversed: false };
+/**
+ * Favorites first, then by the chosen order: A–Z, most played, most recently played, or newest
+ * first, unless reversed. Never-played games stay last under Last played either way, and ties
+ * fall back to the name.
+ */
+export function sortGames(
+  games: readonly Game[],
+  { order, reversed }: Sort,
+  launches: readonly Pick<Launch, "gameId">[],
+): Game[] {
+  const key = (game: Game) => {
+    switch (order) {
+      case "name":
+        return 0;
+      case "plays":
+        return playCount(game, launches);
+      case "lastPlayed":
+        return game.lastPlayed ? Date.parse(game.lastPlayed) : null;
+      case "added":
+        return Date.parse(game.addedAt);
+    }
+  };
+  const keys = new Map(games.map((game) => [game.id, key(game)]));
+  const direction = reversed ? -1 : 1;
+  return [...games].sort((a, b) => {
+    const left = keys.get(a.id)!;
+    const right = keys.get(b.id)!;
+    const name = a.name.localeCompare(b.name);
+    return (
+      Number(!!b.favorite) - Number(!!a.favorite) ||
+      Number(left === null) - Number(right === null) ||
+      (left === null || right === null ? 0 : (right - left) * direction) ||
+      (order === "name" ? name * direction : name)
+    );
+  });
+}
+
 export const kindFilters = { nwjs: "NW.js", windows: "Windows", mac: "Mac" } as const;
 export const statusFilters = {
+  favorite: "Favorites",
   running: "Running",
   recent: "Played in the last 2 weeks",
   unplayed: "Never played",
@@ -223,6 +285,8 @@ export function matchesGame(
   if (filters.kinds.length && !filters.kinds.includes(gameKind(game))) return false;
   return filters.statuses.every((status) => {
     switch (status) {
+      case "favorite":
+        return !!game.favorite;
       case "running":
         return state.running.includes(game.id);
       case "missing":

@@ -4,10 +4,12 @@ import {
   matchesGame,
   noFilters,
   normalizeTags,
+  sortGames,
   parseFlags,
   parseSearch,
   tagCounts,
   type Game,
+  type SortOrder,
 } from "./model";
 
 describe("library input", () => {
@@ -48,7 +50,7 @@ describe("library filters", () => {
   const now = Date.parse("2026-10-26T12:00:00.000Z");
   const games = [
     game("Moon Road", ["rpg", "horror"], { lastPlayed: "2026-10-20T00:00:00.000Z" }),
-    game("Grpg Quest", ["puzzle"], { kind: "windows" }),
+    game("Grpg Quest", ["puzzle"], { kind: "windows", favorite: true }),
     game("Ember", ["rpg maker", "rpg"], { kind: "mac", lastPlayed: "2026-01-01T00:00:00.000Z" }),
   ];
   const state = { running: ["Ember"], missing: ["Grpg Quest"] };
@@ -78,6 +80,33 @@ describe("library filters", () => {
     expect(names({ ...noFilters, kinds: ["windows", "mac"] })).toEqual(["Grpg Quest", "Ember"]);
     expect(names({ ...noFilters, statuses: ["recent"] })).toEqual(["Moon Road"]);
     expect(names({ ...noFilters, statuses: ["unplayed", "missing"] })).toEqual(["Grpg Quest"]);
+    expect(names({ ...noFilters, statuses: ["favorite"] })).toEqual(["Grpg Quest"]);
     expect(names({ ...noFilters, tags: ["rpg"], statuses: ["running"] })).toEqual(["Ember"]);
+  });
+  it("sorts favorites first, then by the chosen order with the name breaking ties", () => {
+    const sorted = (order: SortOrder, launches = [] as { gameId: string }[], reversed = false) =>
+      sortGames(
+        [
+          game("Moon Road", [], {
+            lastPlayed: "2026-10-20T00:00:00.000Z",
+            addedAt: "2026-03-01T00:00:00.000Z",
+          }),
+          game("Grpg Quest", [], { favorite: true }),
+          game("Ember", [], { lastPlayed: "2026-01-01T00:00:00.000Z", plays: 5 }),
+          game("Ash", []),
+        ],
+        { order, reversed },
+        launches,
+      ).map((item) => item.name);
+    expect(sorted("name")).toEqual(["Grpg Quest", "Ash", "Ember", "Moon Road"]);
+    expect(sorted("lastPlayed")).toEqual(["Grpg Quest", "Moon Road", "Ember", "Ash"]);
+    expect(sorted("added")).toEqual(["Grpg Quest", "Moon Road", "Ash", "Ember"]);
+    // Games without a stored count use the launch history.
+    const history = Array.from({ length: 6 }, () => ({ gameId: "Moon Road" }));
+    expect(sorted("plays", history)).toEqual(["Grpg Quest", "Moon Road", "Ember", "Ash"]);
+    // Reversing keeps favorites first and never-played games last under Last played.
+    expect(sorted("name", [], true)).toEqual(["Grpg Quest", "Moon Road", "Ember", "Ash"]);
+    expect(sorted("lastPlayed", [], true)).toEqual(["Grpg Quest", "Ember", "Moon Road", "Ash"]);
+    expect(sorted("plays", history, true)).toEqual(["Grpg Quest", "Ash", "Ember", "Moon Road"]);
   });
 });

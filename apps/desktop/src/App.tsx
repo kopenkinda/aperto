@@ -1,5 +1,7 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useState, type ReactNode } from "react";
 import {
+  ArrowUpDownIcon,
+  CheckIcon,
   FolderOpenIcon,
   ListFilterIcon,
   PlusIcon,
@@ -24,6 +26,10 @@ import {
   kindFilters,
   matchesGame,
   noFilters,
+  defaultSort,
+  sortDirections,
+  sortGames,
+  sortOrders,
   statusFilters,
   tagCounts,
   type Command,
@@ -32,6 +38,8 @@ import {
   type GameKind,
   type GameStatus,
   type ScanReport,
+  type Sort,
+  type SortOrder,
   type Snapshot,
 } from "./model";
 
@@ -69,7 +77,19 @@ export function App() {
     };
   }, []);
 
-  const games = [...(snapshot?.games ?? [])].sort((a, b) => a.name.localeCompare(b.name));
+  const [sort, setSort] = useState<Sort>(() => {
+    const order = localStorage.getItem("sort");
+    return order && order in sortOrders
+      ? { order: order as SortOrder, reversed: localStorage.getItem("sortReversed") === "true" }
+      : defaultSort;
+  });
+  const changeSort = (next: Sort) => {
+    setSort(next);
+    localStorage.setItem("sort", next.order);
+    localStorage.setItem("sortReversed", String(next.reversed));
+  };
+  // Favorites lead the list, so the first game shown is also the first one opened.
+  const games = sortGames(snapshot?.games ?? [], sort, snapshot?.launches ?? []);
   const visible = snapshot
     ? games.filter((game) => matchesGame(game, filters, search, snapshot))
     : [];
@@ -99,7 +119,13 @@ export function App() {
                 onChange={(event) => setSearch(event.target.value)}
               />
             </div>
-            <LibraryFilters games={games} filters={filters} onChange={setFilters} />
+            <LibraryFilters
+              games={games}
+              filters={filters}
+              onChange={setFilters}
+              sort={sort}
+              onSort={changeSort}
+            />
           </div>
           {filtering && (
             <ul aria-label="Active filters" className="mt-2 flex flex-wrap gap-1">
@@ -121,44 +147,57 @@ export function App() {
           )}
         </div>
         <nav aria-label="Games" className="flex-1 overflow-y-auto px-2 pb-2">
-          {visible.map((item) => {
+          {visible.map((item, index) => {
             const running = snapshot?.running.includes(item.id);
             const missing = snapshot?.missing.includes(item.id);
+            // Headings appear only when favorites and other games are both listed.
+            const heading =
+              item.favorite && index === 0 && visible.some((other) => !other.favorite)
+                ? "Favorites"
+                : !item.favorite && visible[index - 1]?.favorite
+                  ? "Games"
+                  : null;
             return (
-              <button
-                key={item.id}
-                aria-current={item.id === game?.id ? "true" : undefined}
-                title={`${item.name}\nDouble-click to ${running ? "stop" : "play"}`}
-                className={cn(
-                  "flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left text-sm outline-none select-none hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-ring/50 aria-current:bg-sidebar-accent aria-current:text-sidebar-accent-foreground",
-                  missing && "text-muted-foreground",
+              <Fragment key={item.id}>
+                {heading && (
+                  <h2 className="px-2 pt-2 pb-1 text-xs font-medium text-muted-foreground first:pt-0">
+                    {heading}
+                  </h2>
                 )}
-                onClick={() => setSelected(item.id)}
-                onDoubleClick={() => (running || playable(item, snapshot!)) && toggle(item)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" && (running || playable(item, snapshot!))) {
-                    event.preventDefault();
-                    toggle(item);
-                  }
-                }}
-              >
-                <span className="relative size-6 shrink-0 overflow-hidden rounded bg-muted">
-                  {item.artwork ? (
-                    <img src={item.artwork} alt="" className="size-full object-cover" />
-                  ) : (
-                    <span className="grid size-full place-items-center text-[10px] font-semibold text-muted-foreground">
-                      {item.name.slice(0, 1).toUpperCase()}
-                    </span>
+                <button
+                  aria-current={item.id === game?.id ? "true" : undefined}
+                  title={`${item.name}\nDouble-click to ${running ? "stop" : "play"}`}
+                  className={cn(
+                    "flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left text-sm outline-none select-none hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-ring/50 aria-current:bg-sidebar-accent aria-current:text-sidebar-accent-foreground",
+                    missing && "text-muted-foreground",
                   )}
-                </span>
-                <span className="min-w-0 flex-1 truncate">{item.name}</span>
-                {running && (
-                  <span
-                    className="size-2 shrink-0 rounded-full bg-emerald-500"
-                    aria-label="Running"
-                  />
-                )}
-              </button>
+                  onClick={() => setSelected(item.id)}
+                  onDoubleClick={() => (running || playable(item, snapshot!)) && toggle(item)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && (running || playable(item, snapshot!))) {
+                      event.preventDefault();
+                      toggle(item);
+                    }
+                  }}
+                >
+                  <span className="relative size-6 shrink-0 overflow-hidden rounded bg-muted">
+                    {item.artwork ? (
+                      <img src={item.artwork} alt="" className="size-full object-cover" />
+                    ) : (
+                      <span className="grid size-full place-items-center text-[10px] font-semibold text-muted-foreground">
+                        {item.name.slice(0, 1).toUpperCase()}
+                      </span>
+                    )}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate">{item.name}</span>
+                  {running && (
+                    <span
+                      className="size-2 shrink-0 rounded-full bg-emerald-500"
+                      aria-label="Running"
+                    />
+                  )}
+                </button>
+              </Fragment>
             );
           })}
           {games.length > 0 && !visible.length && (
@@ -385,10 +424,14 @@ function LibraryFilters({
   games,
   filters,
   onChange,
+  sort,
+  onSort,
 }: {
   games: Game[];
   filters: Filters;
   onChange: (filters: Filters) => void;
+  sort: Sort;
+  onSort: (sort: Sort) => void;
 }) {
   const count = filterCount(filters);
   const tags = tagCounts(games);
@@ -402,8 +445,8 @@ function LibraryFilters({
             variant={count ? "secondary" : "outline"}
             size="icon"
             className="relative shrink-0"
-            aria-label={count ? `Filters, ${count} on` : "Filters"}
-            title="Filters"
+            aria-label={count ? `Sort and filter, ${count} filters on` : "Sort and filter"}
+            title="Sort and filter"
           />
         }
       >
@@ -415,6 +458,33 @@ function LibraryFilters({
         )}
       </PopoverTrigger>
       <PopoverContent align="start" className="w-64 gap-3">
+        <FilterSection title="Sort by">
+          <div role="radiogroup" aria-label="Sort by" className="-mx-1">
+            {(Object.keys(sortOrders) as SortOrder[]).map((order) => (
+              <button
+                key={order}
+                type="button"
+                role="radio"
+                aria-checked={sort.order === order}
+                title={sort.order === order ? "Click again to reverse" : undefined}
+                className="flex w-full cursor-default items-center gap-2 rounded-md px-1 py-1 text-left outline-none select-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/50"
+                // Choosing the current order again reverses it; another order starts in its default direction.
+                onClick={() => onSort({ order, reversed: sort.order === order && !sort.reversed })}
+              >
+                <CheckIcon
+                  className={cn("size-4 text-primary", sort.order !== order && "invisible")}
+                />
+                <span className="flex-1">{sortOrders[order]}</span>
+                {sort.order === order && (
+                  <span className="flex items-center gap-0.5 text-xs text-muted-foreground">
+                    {sortDirections[order][Number(sort.reversed)]}
+                    <ArrowUpDownIcon className="size-3" />
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+        </FilterSection>
         <FilterSection title="Tags">
           {tags.length ? (
             <div className="-mx-1 max-h-64 overflow-y-auto">

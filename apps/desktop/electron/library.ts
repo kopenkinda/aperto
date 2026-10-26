@@ -6,6 +6,7 @@ import {
   compareVersions,
   gameKind,
   normalizeTags,
+  playCount,
   parseArguments,
   parseFlags,
   type Command,
@@ -222,6 +223,12 @@ export class DesktopLibrary {
           await this.changeGame(this.game(command.id).id, (current) => ({
             ...current,
             tags: normalizeTags(command.tags),
+          }));
+          break;
+        case "setFavorite":
+          await this.changeGame(this.game(command.id).id, (current) => ({
+            ...current,
+            favorite: command.favorite,
           }));
           break;
         case "clearBanner": {
@@ -661,6 +668,14 @@ export class DesktopLibrary {
       child.once("spawn", resolve);
       child.once("error", reject);
     });
-    await this.changeGame(game.id, (current) => ({ ...current, lastPlayed: startedAt }));
+    // The new launch is already in the history, so a first count from it includes this one.
+    await this.changeGame(game.id, (current) => ({
+      ...current,
+      lastPlayed: startedAt,
+      plays:
+        current.plays === undefined
+          ? playCount(current, this.store.value.launches)
+          : current.plays + 1,
+    }));
   }
 }

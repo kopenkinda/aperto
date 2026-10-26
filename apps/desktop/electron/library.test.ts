@@ -114,6 +114,7 @@ describe("import and persistence", () => {
       flags: "",
     });
     await library.handle({ action: "setTags", id: game.id, tags: ["Adventure", " adventure "] });
+    await library.handle({ action: "setFavorite", id: game.id, favorite: true });
     const browserData = ownedPath(store.directory, "browser-data", game.id);
     await mkdir(browserData, { recursive: true });
     await writeFile(path.join(browserData, "save.json"), "save");
@@ -128,6 +129,7 @@ describe("import and persistence", () => {
     await reopened.load();
     expect(reopened.value.games[0]?.name).toBe("The Quiet Valley");
     expect(reopened.value.games[0]?.tags).toEqual(["adventure"]);
+    expect(reopened.value.games[0]?.favorite).toBe(true);
   });
   it("deletes browser data only when selected and never removes original saves or plugin backups", async () => {
     const game = await importGame();
@@ -321,7 +323,7 @@ describe("plugin editing", () => {
       library.handle({ action: "remove", id: game.id, deleteData: false }),
     ).rejects.toThrow("already in progress");
     await editing;
-    expect((await listPlugins(store, game)).plugins[0]?.enabled).toBe(false);
+    expect((await listPlugins(store, game))!.plugins[0]?.enabled).toBe(false);
     await library.handle({ action: "remove", id: game.id, deleteData: false });
     expect((await library.snapshot()).games).toHaveLength(0);
   });
@@ -351,7 +353,7 @@ describe("plugin editing", () => {
     ).rejects.toThrow("changed");
     const changed = original.replace("Lighting effects", "Updated by game patch");
     await writeFile(path.join(root, "js", "plugins.js"), changed);
-    expect((await listPlugins(store, game)).conflict).toBe(true);
+    expect((await listPlugins(store, game))!.conflict).toBe(true);
     await expect(changePlugins(store, game, digest(changed), "restore")).rejects.toThrow(
       "outside Aperto",
     );

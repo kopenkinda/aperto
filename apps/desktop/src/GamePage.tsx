@@ -1,10 +1,11 @@
-import { useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   FolderOpenIcon,
   ImageIcon,
   PlayIcon,
   RotateCcwIcon,
   SquareIcon,
+  StarIcon,
   Trash2Icon,
   XIcon,
 } from "lucide-react";
@@ -32,11 +33,11 @@ import {
 } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import {
   compareVersions,
   gameKind,
+  playCount,
   tagCounts,
   type Game,
   type Launch,
@@ -84,6 +85,31 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
+/** One settings row: the label on the left, the control and its hint on the right. */
+function Field({
+  label,
+  htmlFor,
+  hint,
+  children,
+}: {
+  label: string;
+  htmlFor?: string;
+  hint?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <div className="grid gap-2 px-4 py-3 sm:grid-cols-[9rem_minmax(0,1fr)] sm:gap-4">
+      <Label htmlFor={htmlFor} className="sm:h-8">
+        {label}
+      </Label>
+      <div className="flex min-w-0 flex-col gap-1.5">
+        {children}
+        {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+      </div>
+    </div>
+  );
+}
+
 export function GamePage({
   game,
   snapshot,
@@ -113,7 +139,9 @@ export function GamePage({
   const [flags, setFlags] = useState(game.flags.join("\n"));
   const [runtime, setRuntime] = useState(game.runtime);
   const [bottle, setBottle] = useState(game.bottle ?? null);
-  const [plugins, setPlugins] = useState<PluginList | null>(null);
+  // Undefined while loading; null when the game is not an RPG Maker export and has no plugin list.
+  const [plugins, setPlugins] = useState<PluginList | null | undefined>(undefined);
+  const [pluginError, setPluginError] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<"remove" | "restore" | null>(null);
   const [deleteData, setDeleteData] = useState(false);
   const [artworkSlot, setArtworkSlot] = useState<"icon" | "banner" | null>(null);
@@ -140,8 +168,19 @@ export function GamePage({
     setRuntime(game.runtime);
     setBottle(game.bottle ?? null);
   };
-  const loadPlugins = () =>
-    void run(async () => setPlugins(await request({ action: "plugins", id: game.id })));
+
+  useEffect(() => {
+    if (!nwjs) return;
+    let active = true;
+    request({ action: "plugins", id: game.id }).then(
+      (list) => active && setPlugins(list),
+      (cause: unknown) =>
+        active && setPluginError(cause instanceof Error ? cause.message : String(cause)),
+    );
+    return () => {
+      active = false;
+    };
+  }, [game.id, nwjs]);
 
   return (
     <div className="flex flex-col">
@@ -198,7 +237,25 @@ export function GamePage({
         <div className="relative flex h-full items-end gap-5 px-8 pb-6">
           <Artwork game={game} className="size-28 shrink-0 rounded-2xl ring-1 ring-foreground/10" />
           <div className="min-w-0 pb-1">
-            <h1 className="text-3xl font-semibold tracking-tight text-balance">{game.name}</h1>
+            <div className="flex items-center gap-2">
+              <h1 className="text-3xl font-semibold tracking-tight text-balance">{game.name}</h1>
+              <button
+                type="button"
+                aria-pressed={!!game.favorite}
+                aria-label="Favorite"
+                title={game.favorite ? "Remove from favorites" : "Add to favorites"}
+                className={`grid size-8 shrink-0 place-items-center rounded-md outline-none hover:bg-background/50 focus-visible:ring-2 focus-visible:ring-ring/50 ${
+                  game.favorite ? "text-amber-400" : "text-foreground/50 hover:text-foreground"
+                }`}
+                onClick={() =>
+                  void run(() =>
+                    request({ action: "setFavorite", id: game.id, favorite: !game.favorite }),
+                  )
+                }
+              >
+                <StarIcon className={`size-5 ${game.favorite ? "fill-current" : ""}`} />
+              </button>
+            </div>
             {tags.length > 0 && (
               <ul aria-label="Tags" className="mt-2 flex flex-wrap gap-1.5">
                 {tags.map((tag) => (
@@ -240,7 +297,7 @@ export function GamePage({
         </Button>
         <dl className="flex gap-8 text-sm">
           <Fact label="Last played">{running ? "Now" : lastPlayed(game)}</Fact>
-          <Fact label="Sessions">{launches.length}</Fact>
+          <Fact label="Times played">{playCount(game, snapshot.launches)}</Fact>
           <Fact label="Runs with">
             {kind === "mac"
               ? "macOS"
@@ -275,7 +332,7 @@ export function GamePage({
       </div>
 
       <div className="grid gap-8 px-8 py-6 lg:grid-cols-[minmax(0,1fr)_18rem]">
-        <div className="flex min-w-0 flex-col gap-4">
+        <div className="flex min-w-0 flex-col gap-8">
           <div className="flex flex-col gap-2 empty:hidden">
             {error && (
               <Alert variant="destructive">
@@ -345,239 +402,242 @@ export function GamePage({
             )}
           </div>
 
-          <Tabs
-            defaultValue="general"
-            className="gap-4"
-            onValueChange={(value) => value === "plugins" && !plugins && loadPlugins()}
-          >
-            <TabsList>
-              <TabsTrigger value="general">General</TabsTrigger>
-              {nwjs && <TabsTrigger value="plugins">Plugins</TabsTrigger>}
-            </TabsList>
-
-            <TabsContent value="general">
-              <form
-                className="grid gap-x-6 gap-y-5 sm:grid-cols-2"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  void run(async () => {
-                    await request({
-                      action: "update",
-                      id: game.id,
-                      name,
-                      runtime,
-                      bottle,
-                      flags,
-                    });
-                    setName(name.trim());
+          <section className="flex flex-col gap-3">
+            <h2 className="font-medium">Settings</h2>
+            <form
+              className="divide-y rounded-lg border bg-card/40"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void run(async () => {
+                  await request({
+                    action: "update",
+                    id: game.id,
+                    name,
+                    runtime,
+                    bottle,
+                    flags,
                   });
-                }}
-              >
-                <div className="flex flex-col gap-2">
-                  <Label htmlFor="game-name">Name</Label>
-                  <Input
-                    id="game-name"
-                    required
-                    maxLength={160}
-                    value={name}
-                    onChange={(event) => setName(event.target.value)}
-                  />
-                </div>
-                <div className="flex flex-col gap-2">
-                  <Label htmlFor="game-tags">Tags</Label>
-                  <TagEditor id="game-tags" tags={tags} known={knownTags} onChange={changeTags} />
-                </div>
+                  setName(name.trim());
+                });
+              }}
+            >
+              <Field label="Name" htmlFor="game-name">
+                <Input
+                  id="game-name"
+                  required
+                  maxLength={160}
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                />
+              </Field>
+              <Field label="Tags" htmlFor="game-tags" hint="Saved as you edit them.">
+                <TagEditor id="game-tags" tags={tags} known={knownTags} onChange={changeTags} />
+              </Field>
 
-                {windows ? (
-                  <div className="flex flex-col gap-2">
-                    <Label>CrossOver bottle</Label>
-                    <Select
-                      value={bottle}
-                      disabled={running || snapshot.bottles === null}
-                      onValueChange={(value) => setBottle(value as string | null)}
-                      items={[
-                        {
-                          value: null,
-                          label: snapshot.defaultBottle
-                            ? `Default (${snapshot.defaultBottle})`
-                            : "Default",
-                        },
-                        ...(snapshot.bottles ?? []).map((item) => ({ value: item, label: item })),
-                      ]}
-                    >
-                      <SelectTrigger className="w-full">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value={null}>
-                          {snapshot.defaultBottle
-                            ? `Default (${snapshot.defaultBottle})`
-                            : "Default"}
+              {windows ? (
+                <Field
+                  label="CrossOver bottle"
+                  hint="Runs like CrossOver's Run Command. Nothing is installed in the bottle."
+                >
+                  <Select
+                    value={bottle}
+                    disabled={running || snapshot.bottles === null}
+                    onValueChange={(value) => setBottle(value as string | null)}
+                    items={[
+                      {
+                        value: null,
+                        label: snapshot.defaultBottle
+                          ? `Default (${snapshot.defaultBottle})`
+                          : "Default",
+                      },
+                      ...(snapshot.bottles ?? []).map((item) => ({ value: item, label: item })),
+                    ]}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={null}>
+                        {snapshot.defaultBottle ? `Default (${snapshot.defaultBottle})` : "Default"}
+                      </SelectItem>
+                      {(snapshot.bottles ?? []).map((item) => (
+                        <SelectItem key={item} value={item}>
+                          {item}
                         </SelectItem>
-                        {(snapshot.bottles ?? []).map((item) => (
-                          <SelectItem key={item} value={item}>
-                            {item}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <p className="text-xs text-muted-foreground">
-                      Runs like CrossOver's Run Command. Nothing is installed in the bottle.
-                    </p>
-                  </div>
-                ) : nwjs ? (
-                  <div className="flex flex-col gap-2">
-                    <Label>NW.js runtime</Label>
-                    <Select
-                      value={runtime}
-                      disabled={running}
-                      onValueChange={(value) => setRuntime(value as string | null)}
-                      items={[
-                        { value: null, label: "None" },
-                        ...runtimes.map((item) => ({
-                          value: item.version,
-                          label: `NW.js ${item.version}`,
-                        })),
-                      ]}
-                    >
-                      <SelectTrigger className="w-full">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {runtimes.map((item) => (
-                          <SelectItem key={item.version} value={item.version}>
-                            NW.js {item.version}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    {downgrading && (
-                      <p className="text-xs text-muted-foreground">
-                        Saving backs up this game's browser data first. Saves may not load in an
-                        older runtime.
-                      </p>
-                    )}
-                  </div>
-                ) : (
-                  <div className="flex flex-col gap-2">
-                    <Label>Opens with</Label>
-                    <p className="text-muted-foreground">
-                      macOS, like double-clicking the app in Finder.
-                    </p>
-                  </div>
-                )}
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
+              ) : nwjs ? (
+                <Field
+                  label="NW.js runtime"
+                  hint={
+                    downgrading &&
+                    "Saving backs up this game's browser data first. Saves may not load in an older runtime."
+                  }
+                >
+                  <Select
+                    value={runtime}
+                    disabled={running}
+                    onValueChange={(value) => setRuntime(value as string | null)}
+                    items={[
+                      { value: null, label: "None" },
+                      ...runtimes.map((item) => ({
+                        value: item.version,
+                        label: `NW.js ${item.version}`,
+                      })),
+                    ]}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {runtimes.map((item) => (
+                        <SelectItem key={item.version} value={item.version}>
+                          NW.js {item.version}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
+              ) : (
+                <Field label="Opens with">
+                  <p className="flex min-h-8 items-center text-muted-foreground">
+                    macOS, like double-clicking the app in Finder.
+                  </p>
+                </Field>
+              )}
 
-                <div className="flex flex-col gap-2 sm:row-span-2">
-                  <Label htmlFor="game-flags">{nwjs ? "Launch flags" : "Launch arguments"}</Label>
-                  <Textarea
-                    id="game-flags"
-                    spellCheck={false}
-                    placeholder={nwjs ? "--disable-gpu" : "-screen-fullscreen 0"}
-                    className="min-h-24 flex-1 font-mono text-xs"
-                    value={flags}
-                    onChange={(event) => setFlags(event.target.value)}
-                  />
-                  <p className="text-xs text-muted-foreground">Optional. One per line.</p>
-                </div>
+              <Field
+                label={nwjs ? "Launch flags" : "Launch arguments"}
+                htmlFor="game-flags"
+                hint="Optional. One per line."
+              >
+                <Textarea
+                  id="game-flags"
+                  spellCheck={false}
+                  rows={3}
+                  placeholder={nwjs ? "--disable-gpu" : "-screen-fullscreen 0"}
+                  className="min-h-20 font-mono text-xs"
+                  value={flags}
+                  onChange={(event) => setFlags(event.target.value)}
+                />
+              </Field>
 
-                <div className="flex items-end gap-2 sm:col-start-1">
-                  <Button type="submit" disabled={busy || running || !dirty}>
-                    Save changes
-                  </Button>
-                  {dirty && (
-                    <Button type="button" variant="ghost" onClick={revert}>
-                      Revert
-                    </Button>
-                  )}
-                </div>
-              </form>
-            </TabsContent>
-
-            {nwjs && (
-              <TabsContent value="plugins" className="flex flex-col gap-3">
-                <p className="text-xs text-muted-foreground">
-                  Changes edit the game's own plugin list and apply on the next launch, also outside
-                  Aperto.
-                </p>
+              <div className="flex items-center justify-end gap-2 px-4 py-3">
                 {running && (
-                  <p className="text-xs text-muted-foreground">Close the game to edit plugins.</p>
+                  <p className="mr-auto text-xs text-muted-foreground">
+                    Close the game to save changes.
+                  </p>
                 )}
-                {plugins?.conflict && (
-                  <Alert variant="destructive">
-                    <AlertDescription>
-                      The plugin list was changed outside Aperto. Editing is paused so those changes
-                      are not overwritten.
-                    </AlertDescription>
-                  </Alert>
+                {dirty && (
+                  <Button type="button" variant="ghost" onClick={revert}>
+                    Revert
+                  </Button>
                 )}
-                {!plugins && busy && <p className="text-muted-foreground">Reading plugins…</p>}
-                {plugins && !plugins.plugins.length && (
-                  <p className="text-muted-foreground">This game has no plugins.</p>
-                )}
+                <Button type="submit" disabled={busy || running || !dirty}>
+                  Save changes
+                </Button>
+              </div>
+            </form>
+          </section>
+
+          {nwjs && plugins !== null && (
+            <section className="flex flex-col gap-3">
+              <h2 className="flex items-baseline justify-between font-medium">
+                Plugins
                 {plugins && plugins.plugins.length > 0 && (
-                  <ul className="divide-y rounded-lg border">
-                    {plugins.plugins.map((plugin, index) => (
-                      <li
-                        key={`${index}-${plugin.name}`}
-                        className="flex items-center gap-3 px-3 py-2"
-                      >
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate font-medium">{plugin.name || "Unnamed entry"}</p>
-                          <p className="truncate text-xs text-muted-foreground">
-                            {plugin.missing ? "Plugin file is missing" : plugin.description}
-                          </p>
-                        </div>
-                        <Switch
-                          aria-label={`Enable ${plugin.name || "unnamed plugin"}`}
-                          checked={plugin.enabled}
-                          disabled={
-                            busy ||
-                            running ||
-                            plugins.conflict ||
-                            !plugin.name ||
-                            (plugin.missing && !plugin.enabled)
-                          }
-                          onCheckedChange={(enabled) =>
-                            void run(async () =>
-                              setPlugins(
-                                await request({
-                                  action: "togglePlugin",
-                                  id: game.id,
-                                  hash: plugins.hash,
-                                  index,
-                                  enabled,
-                                }),
-                              ),
-                            )
-                          }
-                        />
-                      </li>
-                    ))}
-                  </ul>
+                  <span className="text-xs font-normal text-muted-foreground">
+                    {plugins.plugins.filter((plugin) => plugin.enabled).length} of{" "}
+                    {plugins.plugins.length} on
+                  </span>
                 )}
-                {plugins?.canRestore && (
-                  <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      disabled={busy || running}
-                      onClick={() => setConfirm("restore")}
+              </h2>
+              <p className="text-xs text-muted-foreground">
+                Changes edit the game's own plugin list and apply on the next launch, also outside
+                Aperto.
+              </p>
+              {running && (
+                <p className="text-xs text-muted-foreground">Close the game to edit plugins.</p>
+              )}
+              {plugins?.conflict && (
+                <Alert variant="destructive">
+                  <AlertDescription>
+                    The plugin list was changed outside Aperto. Editing is paused so those changes
+                    are not overwritten.
+                  </AlertDescription>
+                </Alert>
+              )}
+              {pluginError && <p className="text-muted-foreground">{pluginError}</p>}
+              {plugins === undefined && !pluginError && (
+                <p className="text-muted-foreground">Reading plugins…</p>
+              )}
+              {plugins && !plugins.plugins.length && (
+                <p className="text-muted-foreground">This game has no plugins.</p>
+              )}
+              {plugins && plugins.plugins.length > 0 && (
+                <ul className="divide-y rounded-lg border">
+                  {plugins.plugins.map((plugin, index) => (
+                    <li
+                      key={`${index}-${plugin.name}`}
+                      className="flex items-center gap-3 px-3 py-2"
                     >
-                      <RotateCcwIcon />
-                      Restore original
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      onClick={() =>
-                        void run(() => request({ action: "revealPluginBackup", id: game.id }))
-                      }
-                    >
-                      Show backup
-                    </Button>
-                  </div>
-                )}
-              </TabsContent>
-            )}
-          </Tabs>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate font-medium">{plugin.name || "Unnamed entry"}</p>
+                        <p className="truncate text-xs text-muted-foreground">
+                          {plugin.missing ? "Plugin file is missing" : plugin.description}
+                        </p>
+                      </div>
+                      <Switch
+                        aria-label={`Enable ${plugin.name || "unnamed plugin"}`}
+                        checked={plugin.enabled}
+                        disabled={
+                          busy ||
+                          running ||
+                          plugins.conflict ||
+                          !plugin.name ||
+                          (plugin.missing && !plugin.enabled)
+                        }
+                        onCheckedChange={(enabled) =>
+                          void run(async () =>
+                            setPlugins(
+                              await request({
+                                action: "togglePlugin",
+                                id: game.id,
+                                hash: plugins.hash,
+                                index,
+                                enabled,
+                              }),
+                            ),
+                          )
+                        }
+                      />
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {plugins?.canRestore && (
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    disabled={busy || running}
+                    onClick={() => setConfirm("restore")}
+                  >
+                    <RotateCcwIcon />
+                    Restore original
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    onClick={() =>
+                      void run(() => request({ action: "revealPluginBackup", id: game.id }))
+                    }
+                  >
+                    Show backup
+                  </Button>
+                </div>
+              )}
+            </section>
+          )}
         </div>
 
         <aside className="flex flex-col gap-3">
