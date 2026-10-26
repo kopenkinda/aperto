@@ -39,7 +39,9 @@ export function Settings({
       <DialogContent className="gap-6 sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Settings</DialogTitle>
-          <DialogDescription className="sr-only">Games folder and NW.js runtimes</DialogDescription>
+          <DialogDescription className="sr-only">
+            Games folder, CrossOver, and NW.js runtimes
+          </DialogDescription>
         </DialogHeader>
         {error && (
           <Alert variant="destructive">
@@ -51,9 +53,9 @@ export function Settings({
           <div>
             <h3 className="font-medium">Games folder</h3>
             <p className="text-muted-foreground">
-              Aperto adds the NW.js games in this folder when it opens and when you come back to it.
-              Copies of a game you already have are skipped. Different versions are added
-              separately.
+              Aperto adds the NW.js, Mac, and Windows games in this folder when it opens and when
+              you come back to it. Copies of a game you already have are skipped. Different versions
+              are added separately.
             </p>
           </div>
           {snapshot.gamesFolder ? (
@@ -94,6 +96,44 @@ export function Settings({
             <FolderOpenIcon />
             {snapshot.gamesFolder ? "Change folder" : "Choose folder"}
           </Button>
+        </section>
+
+        <section className="flex flex-col gap-3">
+          <div>
+            <h3 className="font-medium">CrossOver</h3>
+            <p className="text-muted-foreground">
+              Windows games run in this bottle unless a game picks another one. Aperto runs the
+              game's .exe directly, like Run Command, without installing anything in the bottle.
+            </p>
+          </div>
+          {snapshot.bottles === null ? (
+            <p className="text-muted-foreground">CrossOver was not found in /Applications.</p>
+          ) : (
+            <Select
+              value={snapshot.defaultBottle ?? null}
+              onValueChange={(value) =>
+                void run(() =>
+                  request({ action: "setDefaultBottle", bottle: value as string | null }),
+                )
+              }
+              items={[
+                { value: null, label: "No default bottle" },
+                ...snapshot.bottles.map((item) => ({ value: item, label: item })),
+              ]}
+            >
+              <SelectTrigger className="w-48">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={null}>No default bottle</SelectItem>
+                {snapshot.bottles.map((item) => (
+                  <SelectItem key={item} value={item}>
+                    {item}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
         </section>
 
         <section className="flex flex-col gap-3">

@@ -4,15 +4,19 @@ import { cp, mkdir, rename, rm } from "node:fs/promises";
 import path from "node:path";
 import {
   compareVersions,
+  gameKind,
   normalizeTags,
+  parseArguments,
   parseFlags,
   type Command,
   type Game,
   type ScanReport,
   type Snapshot,
 } from "../src/model";
-import { inspectFolder, inspectRoot, readObject } from "./detection";
-import { findGames, fingerprint, versionedName, within } from "./discovery";
+import { inspectRoot, readObject } from "./detection";
+import { detectGame, findGames, fingerprint, versionedName, within } from "./discovery";
+import { iconToPng } from "./mac";
+import { bottlesDirectory, crossoverWine, listBottles } from "./windows";
 import { changePlugins, listPlugins } from "./plugins";
 import { RuntimeManager, getReleases, runtimeExecutable, validVersion } from "./runtimes";
 import { exists, LibraryStore, message, ownedPath } from "./storage";
@@ -45,7 +49,7 @@ export class DesktopLibrary {
     const missing = (
       await Promise.all(
         games.map(async (game) =>
-          (await exists(path.join(game.root, "package.json"))) ? null : game.id,
+          (await exists(game.executable ?? path.join(game.root, "package.json"))) ? null : game.id,
         ),
       )
     ).filter((id): id is string => id !== null);
@@ -60,6 +64,7 @@ export class DesktopLibrary {
       })),
       scanning: this.scanning !== null,
       lastScan: this.lastScan,
+      bottles: (await exists(crossoverWine)) ? await listBottles() : null,
     };
   }
 
@@ -100,6 +105,10 @@ export class DesktopLibrary {
       await this.store.update((state) => ({ ...state, gamesFolder: null }));
       return this.snapshot();
     }
+    if (command.action === "setDefaultBottle") {
+      await this.store.update((state) => ({ ...state, defaultBottle: command.bottle }));
+      return this.snapshot();
+    }
     if (command.action === "scan") {
       await this.scanGamesFolder(true);
       return this.snapshot();
@@ -124,13 +133,18 @@ export class DesktopLibrary {
           const name = command.name.trim();
           if (!name || name.length > 160)
             throw new Error("Enter a display name between 1 and 160 characters.");
+          const kind = gameKind(game);
+          // Mac and Windows games take plain arguments; only NW.js has runtimes and switch rules.
+          const native = kind !== "nwjs";
           if (
+            !native &&
             command.runtime &&
             !this.store.value.runtimes.some((runtime) => runtime.version === command.runtime)
           )
             throw new Error("Install this runtime before assigning it.");
-          const flags = parseFlags(command.flags);
+          const flags = native ? parseArguments(command.flags) : parseFlags(command.flags);
           if (
+            !native &&
             game.runtime &&
             command.runtime &&
             compareVersions(command.runtime, game.runtime) < 0
@@ -150,6 +164,14 @@ export class DesktopLibrary {
             }
           }
           await this.changeGame(game.id, (current) => {
+            if (native)
+              return {
+                ...current,
+                name,
+                tags: normalizeTags(command.tags),
+                bottle: kind === "windows" ? command.bottle : null,
+                flags,
+              };
             if (
               command.runtime &&
               !this.store.value.runtimes.some((runtime) => runtime.version === command.runtime)
@@ -196,8 +218,11 @@ export class DesktopLibrary {
           this.idle(game.id);
           const folder = await this.native.chooseFolder();
           if (!folder) break;
-          const candidate = (await inspectFolder(folder)).game;
-          if (!candidate) throw new Error("No NW.js game was found in that folder.");
+          const candidate = await detectGame(folder);
+          if (!candidate || candidate.kind !== gameKind(game))
+            throw new Error(
+              `No ${{ nwjs: "NW.js game", windows: "Windows game", mac: "Mac app" }[gameKind(game)]} was found there.`,
+            );
           if (
             this.store.value.games.some(
               (item) => item.id !== game.id && item.root === candidate.root,
@@ -208,6 +233,7 @@ export class DesktopLibrary {
             ...current,
             folder: candidate.folder,
             root: candidate.root,
+            ...(candidate.executable ? { executable: candidate.executable } : {}),
           }));
           break;
         }
@@ -259,7 +285,33 @@ export class DesktopLibrary {
           const running = this.running.get(command.id);
           if (running) {
             running.stopped = true;
-            running.process.kill("SIGTERM");
+            const game = this.game(command.id);
+            // CrossOver's launcher waits on the Windows process; end that process inside the bottle.
+            if (gameKind(game) === "windows" && game.executable)
+              spawn(
+                crossoverWine,
+                [
+                  "--bottle",
+                  this.bottleFor(game),
+                  "--no-gui",
+                  "--cx-app",
+                  "taskkill.exe",
+                  "/F",
+                  "/IM",
+                  path.basename(game.executable),
+                ],
+                { stdio: "ignore" },
+              ).on("error", () => running.process.kill("SIGTERM"));
+            // `open -W` waits on the app, which LaunchServices started; end the app's own processes.
+            else if (gameKind(game) === "mac")
+              spawn(
+                "/usr/bin/pkill",
+                ["-TERM", "-f", path.join(game.root, "Contents", "MacOS") + "/"],
+                {
+                  stdio: "ignore",
+                },
+              ).on("close", () => running.process.kill("SIGTERM"));
+            else running.process.kill("SIGTERM");
           }
           break;
         }
@@ -318,7 +370,7 @@ export class DesktopLibrary {
     for (const game of library) {
       // Use the folder's preferred root, as the scan does, so both sides hash the same manifest.
       const current =
-        (await inspectFolder(game.folder).catch(() => null))?.game ??
+        (await detectGame(game.folder)) ??
         (await inspectRoot(game.folder, game.root).catch(() => null));
       if (current) known.set(await fingerprint(current), game.name);
     }
@@ -354,8 +406,10 @@ export class DesktopLibrary {
         root: candidate.root,
         name: name.slice(0, 160),
         tags: [],
-        artwork: candidate.artwork ? await this.native.image(candidate.artwork) : null,
-        runtime: latest,
+        artwork: candidate.artwork ? await this.artwork(candidate.artwork) : null,
+        runtime: candidate.kind === "nwjs" ? latest : null,
+        kind: candidate.kind,
+        executable: candidate.executable,
         flags: [],
         addedAt: new Date().toISOString(),
         lastPlayed: null,
@@ -368,7 +422,11 @@ export class DesktopLibrary {
         games: [
           ...state.games.map((game) =>
             restored.has(game.id)
-              ? { ...game, removed: false, runtime: game.runtime ?? latest }
+              ? {
+                  ...game,
+                  removed: false,
+                  runtime: gameKind(game) === "nwjs" ? (game.runtime ?? latest) : null,
+                }
               : game,
           ),
           // Another scan or a relink may have claimed a folder while this one was reading.
@@ -393,9 +451,58 @@ export class DesktopLibrary {
       throw new Error("Game launching and runtime installation require an Apple Silicon Mac.");
   }
 
+  /** Imports discovered artwork, converting a Mac app's .icns icon first. */
+  private async artwork(file: string) {
+    if (!file.endsWith(".icns")) return this.native.image(file);
+    const png = await iconToPng(file);
+    if (!png) return null;
+    try {
+      return await this.native.image(png);
+    } finally {
+      await rm(png, { force: true });
+    }
+  }
+
+  private bottleFor(game: Game) {
+    const bottle = game.bottle ?? this.store.value.defaultBottle;
+    if (!bottle) throw new Error("Choose a CrossOver bottle in Settings to run Windows games.");
+    return bottle;
+  }
+
   private async launch(game: Game) {
     this.requireMac();
     this.idle(game.id);
+    if (gameKind(game) === "mac") {
+      if (!game.executable || !(await exists(game.executable)))
+        throw new Error("The app is missing. Locate it again.");
+      // `open` lets macOS show its usual first-launch checks; -W waits so the session is tracked,
+      // and -n starts a new instance even if a copy of the app is already open.
+      return this.start(game, "macOS", "/usr/bin/open", [
+        "-W",
+        "-n",
+        game.executable,
+        ...(game.flags.length ? ["--args", ...game.flags] : []),
+      ]);
+    }
+    if (gameKind(game) === "windows") {
+      if (!(await exists(crossoverWine)))
+        throw new Error("CrossOver is not installed in /Applications.");
+      const bottle = this.bottleFor(game);
+      if (!(await exists(path.join(bottlesDirectory, bottle, "cxbottle.conf"))))
+        throw new Error(`The CrossOver bottle "${bottle}" no longer exists. Choose another one.`);
+      if (!game.executable || !(await exists(game.executable)))
+        throw new Error("The game's executable is missing. Locate the game folder again.");
+      // Like dropping the .exe on CrossOver's Run Command: nothing is registered in the bottle.
+      return this.start(game, bottle, crossoverWine, [
+        "--bottle",
+        bottle,
+        "--workdir",
+        game.root,
+        // A path as the first argument runs that file; `--cx-app` would look it up in the bottle.
+        game.executable,
+        ...game.flags,
+      ]);
+    }
     await inspectRoot(game.folder, game.root);
     const manifest = await readObject(path.join(game.root, "package.json"));
     if (/--(?:user-data-dir|nwapp|url)(?:=|\s|$)/.test(String(manifest["chromium-args"] ?? ""))) {
@@ -409,6 +516,15 @@ export class DesktopLibrary {
       throw new Error("The assigned runtime is missing. Reinstall it before launching.");
     const data = ownedPath(this.store.directory, "browser-data", game.id);
     await mkdir(data, { recursive: true });
+    return this.start(game, game.runtime, executable, [
+      `--user-data-dir=${data}`,
+      ...game.flags,
+      game.root,
+    ]);
+  }
+
+  /** Spawns a game process and records the session until it exits. */
+  private async start(game: Game, runtime: string, executable: string, args: string[]) {
     const id = randomUUID();
     const startedAt = new Date().toISOString();
     await this.store.update((state) => ({
@@ -417,9 +533,9 @@ export class DesktopLibrary {
         {
           id,
           gameId: game.id,
-          runtime: game.runtime!,
+          runtime,
           startedAt,
-          flags: [`--user-data-dir=${data}`, ...game.flags, game.root],
+          flags: args,
           endedAt: null,
           outcome: "running" as const,
           detail: "",
@@ -432,7 +548,7 @@ export class DesktopLibrary {
     delete env.NW_PRE_ARGS;
     delete env.NODE_OPTIONS;
     delete env.NODE_PATH;
-    const child = spawn(executable, [`--user-data-dir=${data}`, ...game.flags, game.root], {
+    const child = spawn(executable, args, {
       cwd: game.root,
       env,
       stdio: ["ignore", "pipe", "pipe"],

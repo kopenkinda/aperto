@@ -109,6 +109,7 @@ describe("import and persistence", () => {
       name: game.name,
       tags: "Adventure, adventure",
       runtime: null,
+      bottle: null,
       flags: "",
     });
     const browserData = ownedPath(store.directory, "browser-data", game.id);
@@ -209,6 +210,100 @@ describe("games folder discovery", () => {
     expect(versionsIn(["Demon_Hand-2026-01-31"])).toEqual(["2026-01-31"]);
     expect(versionsIn(["072project_Half-Elf_EN", "x86_64"])).toEqual([]);
   });
+});
+
+describe("Windows games", () => {
+  async function writeFiles(folder: string, files: Record<string, string>) {
+    for (const [name, content] of Object.entries(files)) {
+      await mkdir(path.dirname(path.join(folder, name)), { recursive: true });
+      await writeFile(path.join(folder, name), content);
+    }
+  }
+  it("finds Unity and plain Windows games but not installers or NW.js games", async () => {
+    const shelf = path.join(directory, "windows");
+    await writeFiles(path.join(shelf, "Witch_v1.2", "Part-Time Witch"), {
+      "PartTimeWitch.exe": "x".repeat(100),
+      "UnityCrashHandler64.exe": "x".repeat(500),
+      "UnityPlayer.dll": "",
+      "PartTimeWitch_Data/app.info": "Studio\nPart-Time Witch",
+    });
+    await writeFiles(path.join(shelf, "Ember Road"), {
+      "EmberRoad.exe": "x".repeat(400),
+      "Launcher.exe": "x".repeat(10),
+      "unins000.exe": "x".repeat(900),
+      "game.pck": "",
+    });
+    await writeFiles(path.join(shelf, "Kenzen"), {
+      "Kenzen 3 Installer.exe": "x",
+      "Kenzen 3 Installer-1.bin": "",
+    });
+    // An NW.js game that also ships a Windows Game.exe stays an NW.js game.
+    await writeGame(path.join(shelf, "Hybrid"), { gameTitle: "Hybrid Tale" });
+    await writeFile(path.join(shelf, "Hybrid", "Game.exe"), "x");
+    await store.update((state) => ({ ...state, gamesFolder: shelf, defaultBottle: "win11" }));
+    await library.scanGamesFolder();
+    const games = Object.fromEntries(store.value.games.map((game) => [game.name, game]));
+    expect(Object.keys(games).sort()).toEqual([
+      "Ember Road",
+      "Hybrid Tale",
+      "Part-Time Witch v1.2",
+    ]);
+    expect(games["Part-Time Witch v1.2"]).toMatchObject({ kind: "windows", runtime: null });
+    expect(path.basename(games["Part-Time Witch v1.2"]!.executable!)).toBe("PartTimeWitch.exe");
+    expect(path.basename(games["Ember Road"]!.executable!)).toBe("EmberRoad.exe");
+    expect(games["Hybrid Tale"]!.kind).toBe("nwjs");
+    expect((await library.snapshot()).missing).toEqual([]);
+  });
+  it("keeps launch arguments as written and refuses NW.js switch rules for them", async () => {
+    await writeFiles(path.join(directory, "win", "Ember Road"), { "EmberRoad.exe": "x" });
+    await store.update((state) => ({ ...state, gamesFolder: path.join(directory, "win") }));
+    await library.scanGamesFolder();
+    const game = store.value.games[0]!;
+    await library.handle({
+      action: "update",
+      id: game.id,
+      name: game.name,
+      tags: "",
+      runtime: null,
+      bottle: "Steam",
+      flags: "-screen-fullscreen 0\n-popupwindow",
+    });
+    expect(store.value.games[0]).toMatchObject({
+      bottle: "Steam",
+      flags: ["-screen-fullscreen 0", "-popupwindow"],
+    });
+  });
+});
+
+describe("Mac games", () => {
+  async function writeApp(app: string, name: string) {
+    await mkdir(path.join(app, "Contents", "MacOS"), { recursive: true });
+    await writeFile(
+      path.join(app, "Contents", "Info.plist"),
+      `<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict><key>CFBundleExecutable</key><string>run</string><key>CFBundleName</key><string>${name}</string></dict></plist>`,
+    );
+    await writeFile(path.join(app, "Contents", "MacOS", "run"), "#!/bin/sh\n");
+  }
+  it.runIf(process.platform === "darwin")(
+    "adds app bundles, skips helper apps, and keeps NW.js bundles as NW.js games",
+    async () => {
+      const shelf = path.join(directory, "mac");
+      await writeApp(path.join(shelf, "Pull-1.0.0-mac", "Pull.app"), "Pull House");
+      await writeApp(path.join(shelf, "Pull-1.0.0-mac", "Uninstall.app"), "Uninstall");
+      // A wrapper's bundled Windows files are part of the app, not a second game.
+      await writeFile(path.join(shelf, "Pull-1.0.0-mac", "Pull.app", "Contents", "Game.exe"), "x");
+      await writeGame(path.join(shelf, "Isekai", "Game.app", "Contents", "Resources", "app.nw"), {
+        gameTitle: "Isekai Awakening",
+      });
+      await store.update((state) => ({ ...state, gamesFolder: shelf }));
+      await library.scanGamesFolder();
+      const games = store.value.games.map((game) => [game.name, game.kind]).sort();
+      expect(games).toEqual([
+        ["Isekai Awakening", "nwjs"],
+        ["Pull House v1.0.0", "mac"],
+      ]);
+    },
+  );
 });
 
 describe("plugin editing", () => {

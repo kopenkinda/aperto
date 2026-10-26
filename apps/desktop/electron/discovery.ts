@@ -1,7 +1,9 @@
-import { readdir, readFile, realpath } from "node:fs/promises";
+import { readdir, readFile, realpath, stat } from "node:fs/promises";
 import path from "node:path";
 import type { Candidate } from "../src/model";
 import { applicationRoots, inspectFolder } from "./detection";
+import { inspectMacApp } from "./mac";
+import { inspectWindows } from "./windows";
 import { digest, exists, message } from "./storage";
 
 const MAX_DEPTH = 5;
@@ -28,7 +30,8 @@ export function versionsIn(segments: string[]): string[] {
 export function versionedName(name: string, folder: string, scanRoot: string): string {
   const segments = path.relative(scanRoot, folder).split(path.sep);
   const missing = versionsIn(segments).filter((version) => !name.toLowerCase().includes(version));
-  return missing.length ? `${name} v${missing.at(-1)}` : name;
+  const version = missing.find((item) => item.includes(".")) ?? missing.at(-1);
+  return version ? `${name} v${version}` : name;
 }
 
 /**
@@ -39,6 +42,32 @@ export function versionedName(name: string, folder: string, scanRoot: string): s
  */
 export async function fingerprint(game: Candidate): Promise<string> {
   const read = (file: string) => readFile(file).catch(() => Buffer.alloc(0));
+  if (game.kind === "mac") {
+    const segments = path.dirname(game.root).split(path.sep).slice(-2);
+    return digest(
+      JSON.stringify([
+        game.name.toLowerCase(),
+        versionsIn(segments),
+        digest(await read(path.join(game.root, "Contents", "Info.plist"))),
+      ]),
+    );
+  }
+  if (game.executable) {
+    // Windows builds are too large to hash; the executable's name and size stand in for content.
+    const size = (await stat(game.executable).catch(() => null))?.size ?? 0;
+    const segments = game.folder.split(path.sep).slice(-3);
+    return digest(
+      JSON.stringify([
+        game.name
+          .toLowerCase()
+          .replace(/[^\p{L}\p{N}]+/gu, " ")
+          .trim(),
+        versionsIn(segments),
+        path.basename(game.executable).toLowerCase(),
+        size,
+      ]),
+    );
+  }
   const segments = game.root.split(path.sep).slice(-4, -1).concat(path.basename(game.root));
   return digest(
     JSON.stringify([
@@ -87,6 +116,19 @@ export async function findGames(
       else if (!review.game) problems.push(...review.problems);
       continue;
     }
+    // NW.js games run natively, so a folder is only treated as a Windows game without one.
+    // NW.js games run with Aperto's runtime, so a bundle is only a Mac game without one. Nothing
+    // inside an app bundle is a separate game.
+    if (/\.app$/i.test(real)) {
+      const mac = await inspectMacApp(real).catch(() => null);
+      if (mac) games.push(mac);
+      continue;
+    }
+    const windows = await inspectWindows(real).catch(() => null);
+    if (windows) {
+      games.push(windows);
+      continue;
+    }
     if (depth >= MAX_DEPTH) continue;
     const entries = await readdir(real, { withFileTypes: true }).catch(() => []);
     for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name)))
@@ -98,3 +140,12 @@ export async function findGames(
 
 export const within = (child: string, parent: string) =>
   child === parent || child.startsWith(parent + path.sep);
+
+/** The game in one folder: an NW.js game if there is one, else a Windows game. */
+export async function detectGame(folder: string): Promise<Candidate | null> {
+  return (
+    (await inspectFolder(folder).catch(() => null))?.game ??
+    (await inspectMacApp(folder).catch(() => null)) ??
+    inspectWindows(folder).catch(() => null)
+  );
+}

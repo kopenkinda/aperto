@@ -9,7 +9,7 @@ const RecordSchema = Schema.Record(Schema.String, Schema.Unknown);
 const isRecord = Schema.is(RecordSchema);
 const isString = Schema.is(Schema.String);
 const placeholders =
-  /^(?:game(?:[ _-]?\d+)?|rmmv|rmmz|nwjs|nw|node-webkit|www|app|package|index|project\d*|untitled|contents|resources|downloads|desktop|documents|games)$/i;
+  /^(?:game(?:[ _-]?\d+)?|rmmv|rmmz|nwjs|nw|node-webkit|www|app|package|index|project\d*|untitled|contents|resources|downloads|desktop|documents|games|bin|binaries|win32|win64|x64|x86)$/i;
 
 export function meaningfulName(value: unknown): string | null {
   if (!isString(value)) return null;
@@ -80,7 +80,7 @@ export async function inspectRoot(folder: string, candidateRoot: string): Promis
   const artwork = isString(window.icon)
     ? await localFile(root, window.icon).catch(() => null)
     : null;
-  return { folder, root, name: name ?? "", confirmed, artwork };
+  return { kind: "nwjs", executable: null, folder, root, name: name ?? "", confirmed, artwork };
 }
 
 export const applicationRoots = (folder: string) => [

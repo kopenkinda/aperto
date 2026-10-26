@@ -299,7 +299,9 @@ export class RuntimeManager {
             { version, installedAt: new Date().toISOString(), sha256: expected },
           ],
           games: state.games.map((game) =>
-            !game.runtime && !game.removed ? { ...game, runtime: version } : game,
+            !game.runtime && !game.removed && (game.kind ?? "nwjs") === "nwjs"
+              ? { ...game, runtime: version }
+              : game,
           ),
         }));
       } catch (error) {

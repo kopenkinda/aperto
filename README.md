@@ -66,6 +66,28 @@ Display names prefer game metadata, including MV/MZ `data/System.json` and `pack
 then a descriptive containing folder. Generic names such as `Game`, `www`, and `app.nw`
 are skipped. Names, comma-separated tags, and artwork can be edited. Search covers names and tags.
 
+## Mac games
+
+App bundles in the games folder are added as Mac games, named from their `Info.plist` and shown
+with the app's own icon. Bundles that contain an NW.js app (`Contents/Resources/app.nw`) stay NW.js
+games, and helper bundles such as uninstallers are skipped. Play runs `open -W -n`, so macOS applies
+its usual first-launch checks and Aperto tracks the session until the app quits. Launch arguments
+are passed with `--args`. Stop ends the processes running from the bundle.
+
+## Windows games through CrossOver
+
+Folders without an NW.js game are checked for a Windows game: a Unity build (`Game.exe` beside
+`Game_Data`) or a folder with one plausible game executable. Installers, uninstallers, crash
+handlers, and redistributables are ignored, as are `.exe` files inside Mac `.app` bundles. When a
+folder has both, the NW.js game wins because it runs natively. Names come from a readable folder
+name, then the Unity product name, then the executable.
+
+Windows games run through CrossOver in `/Applications`. Choose a default bottle in Settings; a game
+can override it. Aperto runs `wine --bottle <bottle> --workdir <folder> <game.exe>`, which behaves
+like dropping the `.exe` on CrossOver's Run Command: nothing is installed or registered in the
+bottle. Launch arguments are passed one per line. Stop ends the game with `taskkill` inside the
+bottle, so other programs in that bottle keep running.
+
 The runtimes section in Settings downloads official stable macOS ARM64 normal builds. The installer verifies
 the detached release signature using the pinned NW.js signing key, verifies the archive SHA-256,
 checks extraction paths and symlinks, and checks the executable architecture and minimum macOS

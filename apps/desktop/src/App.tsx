@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
-import { GamePage } from "./GamePage";
+import { GamePage, playable } from "./GamePage";
 import { Settings } from "./Settings";
 import { request, useTask } from "./desktop";
 import type { Command, Game, ScanReport, Snapshot } from "./model";
@@ -94,9 +94,9 @@ export function App() {
                   missing && "text-muted-foreground",
                 )}
                 onClick={() => setSelected(item.id)}
-                onDoubleClick={() => !missing && item.runtime && toggle(item)}
+                onDoubleClick={() => (running || playable(item, snapshot!)) && toggle(item)}
                 onKeyDown={(event) => {
-                  if (event.key === "Enter" && !missing && item.runtime) {
+                  if (event.key === "Enter" && (running || playable(item, snapshot!))) {
                     event.preventDefault();
                     toggle(item);
                   }
@@ -183,8 +183,8 @@ export function App() {
               </h1>
               <p className="max-w-sm text-sm text-muted-foreground">
                 {snapshot.gamesFolder
-                  ? `Aperto looks for unpacked NW.js games in ${snapshot.gamesFolder}.`
-                  : "Aperto finds the NW.js games inside it and keeps the list up to date. Your files stay where they are."}
+                  ? `Aperto looks for NW.js, Mac, and Windows games in ${snapshot.gamesFolder}.`
+                  : "Aperto finds the NW.js, Mac, and Windows games inside it and keeps the list up to date. Your files stay where they are."}
               </p>
             </div>
             <Button

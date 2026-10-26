@@ -12,8 +12,14 @@ export const GameSchema = Schema.Struct({
   addedAt: Schema.String,
   lastPlayed: Schema.NullOr(Schema.String),
   removed: Schema.Boolean,
+  // Windows games run through CrossOver; Mac games are app bundles. Older libraries omit these.
+  kind: Schema.optionalKey(Schema.Literals(["nwjs", "windows", "mac"])),
+  executable: Schema.optionalKey(Schema.NullOr(Schema.String)),
+  /** CrossOver bottle for this game; unset uses the library's default bottle. */
+  bottle: Schema.optionalKey(Schema.NullOr(Schema.String)),
 });
 export type Game = typeof GameSchema.Type;
+export const gameKind = (game: Pick<Game, "kind">) => game.kind ?? "nwjs";
 export const RuntimeSchema = Schema.Struct({
   version: Schema.String,
   installedAt: Schema.String,
@@ -46,6 +52,7 @@ export const LibrarySchema = Schema.Struct({
   backups: Schema.Array(BackupSchema),
   // Folder scanned for games on startup, on focus, and on request. Older libraries omit it.
   gamesFolder: Schema.optionalKey(Schema.NullOr(Schema.String)),
+  defaultBottle: Schema.optionalKey(Schema.NullOr(Schema.String)),
 });
 export type Library = typeof LibrarySchema.Type;
 export type Snapshot = Library & {
@@ -54,8 +61,13 @@ export type Snapshot = Library & {
   downloads: { version: string; detail: string }[];
   scanning: boolean;
   lastScan: ScanReport | null;
+  /** CrossOver bottles, or null when CrossOver is not installed. */
+  bottles: string[] | null;
 };
 export type Candidate = {
+  kind: "nwjs" | "windows" | "mac";
+  /** The Windows .exe or the Mac .app; null for NW.js games, which launch their root. */
+  executable: string | null;
   folder: string;
   root: string;
   name: string;
@@ -90,11 +102,16 @@ export const CommandSchema = Schema.Union([
   Schema.Struct({ action: Schema.Literal("clearGamesFolder") }),
   Schema.Struct({ action: Schema.Literal("scan") }),
   Schema.Struct({
+    action: Schema.Literal("setDefaultBottle"),
+    bottle: Schema.NullOr(Schema.String),
+  }),
+  Schema.Struct({
     action: Schema.Literal("update"),
     ...id,
     name: Schema.String,
     tags: Schema.String,
     runtime: Schema.NullOr(Schema.String),
+    bottle: Schema.NullOr(Schema.String),
     flags: Schema.String,
   }),
   Schema.Struct({ action: Schema.Literal("artwork"), ...id }),
@@ -151,6 +168,17 @@ export function compareVersions(left: string, right: string): number {
     if (difference) return difference;
   }
   return 0;
+}
+
+/** Arguments passed to a Windows game, one per line. CrossOver quotes each one. */
+export function parseArguments(input: string): string[] {
+  const values = input
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (values.some((value) => value.includes("\0") || value.length > 1000))
+    throw new Error("Each argument must be one line of at most 1000 characters.");
+  return values;
 }
 
 export function parseFlags(input: string): string[] {
