@@ -70,7 +70,12 @@ else {
           const result = await dialog.showOpenDialog({
             title: "Choose game artwork",
             properties: ["openFile"],
-            filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "webp"] }],
+            filters: [
+              {
+                name: "Images",
+                extensions: ["png", "jpg", "jpeg", "webp", "avif", "heic", "gif", "tiff", "bmp"],
+              },
+            ],
           });
           return result.canceled ? null : (result.filePaths[0] ?? null);
         },

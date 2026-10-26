@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { spawn, type ChildProcess } from "node:child_process";
-import { cp, mkdir, rename, rm } from "node:fs/promises";
+import { cp, mkdir, readFile, rename, rm } from "node:fs/promises";
 import path from "node:path";
 import {
   compareVersions,
@@ -13,13 +13,14 @@ import {
   type ScanReport,
   type Snapshot,
 } from "../src/model";
+import { downloadImage, readableImage } from "./artwork";
 import { inspectRoot, readObject } from "./detection";
 import { detectGame, findGames, fingerprint, versionedName, within } from "./discovery";
 import { iconToPng } from "./mac";
 import { bottlesDirectory, crossoverWine, listBottles } from "./windows";
 import { changePlugins, listPlugins } from "./plugins";
 import { RuntimeManager, getReleases, runtimeExecutable, validVersion } from "./runtimes";
-import { exists, LibraryStore, message, ownedPath } from "./storage";
+import { atomicWrite, exists, LibraryStore, message, ownedPath } from "./storage";
 
 export type NativeActions = {
   chooseFolder: () => Promise<string | null>;
@@ -190,25 +191,44 @@ export class DesktopLibrary {
         }
         case "artwork": {
           const game = this.game(command.id);
-          const file = await this.native.chooseArtwork();
-          if (file) {
+          const chosen = command.url === undefined ? await this.native.chooseArtwork() : null;
+          if (command.url === undefined && !chosen) break;
+          const download = chosen ? null : await downloadImage(command.url!);
+          const readable = await readableImage(chosen ?? download!);
+          try {
+            if (!readable)
+              throw new Error(
+                chosen
+                  ? "This file could not be read as an image."
+                  : "The address does not point to an image.",
+              );
             // Banners span the whole header, so they keep more resolution than icons.
-            const image = await this.native.image(file, command.slot === "banner" ? 2400 : 900);
+            const image = await this.native.image(
+              readable.file,
+              command.slot === "banner" ? 2400 : 900,
+            );
             if (!image) throw new Error("This file could not be read as an image.");
+            await this.saveArtwork(game, command.slot, readable.file);
             await this.changeGame(game.id, (current) =>
               command.slot === "banner"
                 ? { ...current, banner: image }
                 : { ...current, artwork: image },
             );
+          } finally {
+            if (download) await rm(download, { force: true });
+            if (readable?.temporary) await rm(readable.file, { force: true });
           }
           break;
         }
-        case "clearBanner":
-          await this.changeGame(this.game(command.id).id, (current) => ({
+        case "clearBanner": {
+          const game = this.game(command.id);
+          await this.saveArtwork(game, "banner", null);
+          await this.changeGame(game.id, (current) => ({
             ...current,
             banner: null,
           }));
           break;
+        }
         case "remove": {
           const game = this.game(command.id);
           this.idle(game.id);
@@ -462,6 +482,28 @@ export class DesktopLibrary {
   private requireMac() {
     if (process.platform !== "darwin" || process.arch !== "arm64")
       throw new Error("Game launching and runtime installation require an Apple Silicon Mac.");
+  }
+
+  /**
+   * Keeps a copy of custom artwork in `.aperto` inside the game's folder. A Mac game's folder is
+   * its app bundle, and writing inside would break its signature, so its copy sits next to the
+   * bundle instead. Passing no source only removes the old copy.
+   */
+  private async saveArtwork(game: Game, slot: "icon" | "banner", source: string | null) {
+    const mac = gameKind(game) === "mac";
+    const directory = path.join(mac ? path.dirname(game.folder) : game.folder, ".aperto");
+    const name = mac ? `${path.basename(game.folder, path.extname(game.folder))}-${slot}` : slot;
+    const extension = source
+      ? path.extname(source).slice(1).toLowerCase().replace("jpeg", "jpg")
+      : null;
+    for (const stale of ["png", "jpg", "webp"])
+      if (stale !== extension) await rm(path.join(directory, `${name}.${stale}`), { force: true });
+    if (source)
+      await atomicWrite(
+        path.join(directory, `${name}.${extension}`),
+        await readFile(source),
+        0o644,
+      );
   }
 
   /** Imports discovered artwork, converting a Mac app's .icns icon first. */

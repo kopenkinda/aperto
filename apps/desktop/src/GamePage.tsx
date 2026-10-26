@@ -29,6 +29,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
@@ -101,7 +102,9 @@ export function GamePage({
   const [plugins, setPlugins] = useState<PluginList | null>(null);
   const [confirm, setConfirm] = useState<"remove" | "restore" | null>(null);
   const [deleteData, setDeleteData] = useState(false);
-  const { run, busy, error } = useTask();
+  const [artworkSlot, setArtworkSlot] = useState<"icon" | "banner" | null>(null);
+  const [artworkUrl, setArtworkUrl] = useState("");
+  const { run, busy, error, setError } = useTask();
   const running = snapshot.running.includes(game.id);
   const missing = snapshot.missing.includes(game.id);
   const launches = snapshot.launches.filter((launch) => launch.gameId === game.id);
@@ -155,7 +158,11 @@ export function GamePage({
               size="sm"
               className="bg-background/50 backdrop-blur"
               disabled={busy}
-              onClick={() => void run(() => request({ action: "artwork", id: game.id, slot }))}
+              onClick={() => {
+                setArtworkUrl("");
+                setError(null);
+                setArtworkSlot(slot);
+              }}
             >
               <ImageIcon />
               {slot === "icon" ? "Change icon" : "Change banner"}
@@ -599,6 +606,79 @@ export function GamePage({
           </ol>
         </aside>
       </div>
+
+      <Dialog
+        open={artworkSlot !== null}
+        onOpenChange={(open) => !open && !busy && setArtworkSlot(null)}
+      >
+        <DialogContent>
+          <form
+            className="contents"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (!artworkSlot || !artworkUrl.trim()) return;
+              void run(async () => {
+                await request({
+                  action: "artwork",
+                  id: game.id,
+                  slot: artworkSlot,
+                  url: artworkUrl.trim(),
+                });
+                setArtworkSlot(null);
+              });
+            }}
+          >
+            <DialogHeader>
+              <DialogTitle>
+                {artworkSlot === "banner" ? "Change banner" : "Change icon"}
+              </DialogTitle>
+              <DialogDescription>
+                Paste an image address or choose a file. Aperto keeps a copy in the game&rsquo;s
+                .aperto folder.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-2">
+              <Label htmlFor="artwork-url">Image address</Label>
+              <Input
+                id="artwork-url"
+                type="url"
+                placeholder="https://example.com/image.png"
+                value={artworkUrl}
+                onChange={(event) => setArtworkUrl(event.target.value)}
+                disabled={busy}
+                autoFocus
+              />
+            </div>
+            {error && (
+              <p className="text-sm text-destructive" role="alert">
+                {error}
+              </p>
+            )}
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                className="mr-auto"
+                disabled={busy}
+                onClick={() =>
+                  artworkSlot &&
+                  void run(async () => {
+                    await request({ action: "artwork", id: game.id, slot: artworkSlot });
+                    setArtworkSlot(null);
+                  })
+                }
+              >
+                <FolderOpenIcon />
+                Choose file…
+              </Button>
+              <Button type="submit" disabled={busy || !artworkUrl.trim()}>
+                {busy && <Spinner />}
+                Download
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={confirm !== null} onOpenChange={(open) => !open && !busy && setConfirm(null)}>
         <DialogContent>

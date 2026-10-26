@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { chmod, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { inspectFolder } from "./detection";
@@ -413,3 +415,60 @@ describe.runIf(process.platform === "darwin" && process.arch === "arm64")(
     });
   },
 );
+
+describe("custom artwork", () => {
+  const png = Buffer.from("89504e470d0a1a0a0000000d49484452", "hex");
+
+  it("keeps chosen and downloaded images in the game's .aperto folder", async () => {
+    const picked = path.join(directory, "picked.png");
+    await writeFile(picked, png);
+    library = new DesktopLibrary(
+      store,
+      {
+        chooseFolder: async () => gameFolder,
+        chooseArtwork: async () => picked,
+        image: async (file) => `data:image/png;base64,${(await readFile(file)).toString("base64")}`,
+        reveal: () => {},
+      },
+      () => {},
+    );
+    const game = await importGame();
+    const saved = (slot: string) => path.join(game.folder, ".aperto", `${slot}.png`);
+
+    await library.handle({ action: "artwork", id: game.id, slot: "icon" });
+    expect(await readFile(saved("icon"))).toEqual(png);
+    expect(store.value.games[0]?.artwork).toContain("data:image/png");
+
+    const server = createServer((request, response) => {
+      if (request.url === "/banner") response.end(png);
+      else response.end("not an image");
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const { port } = server.address() as AddressInfo;
+    try {
+      await library.handle({
+        action: "artwork",
+        id: game.id,
+        slot: "banner",
+        url: `http://127.0.0.1:${port}/banner`,
+      });
+      await expect(
+        library.handle({
+          action: "artwork",
+          id: game.id,
+          slot: "banner",
+          url: `http://127.0.0.1:${port}/text`,
+        }),
+      ).rejects.toThrow("does not point to an image");
+    } finally {
+      server.close();
+    }
+    expect(await readFile(saved("banner"))).toEqual(png);
+    expect(store.value.games[0]?.banner).toContain("data:image/png");
+
+    await library.handle({ action: "clearBanner", id: game.id });
+    expect(await exists(saved("banner"))).toBe(false);
+    expect(store.value.games[0]?.banner).toBeNull();
+    expect(await exists(saved("icon"))).toBe(true);
+  });
+});

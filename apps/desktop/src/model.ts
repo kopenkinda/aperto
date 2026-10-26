@@ -121,6 +121,8 @@ export const CommandSchema = Schema.Union([
     action: Schema.Literal("artwork"),
     ...id,
     slot: Schema.Literals(["icon", "banner"]),
+    /** Downloads the image from this address instead of asking for a file. */
+    url: Schema.optionalKey(Schema.String),
   }),
   Schema.Struct({ action: Schema.Literal("clearBanner"), ...id }),
   Schema.Struct({ action: Schema.Literal("remove"), ...id, deleteData: Schema.Boolean }),
