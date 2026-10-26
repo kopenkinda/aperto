@@ -46,7 +46,7 @@ The browser preview shows the renderer, but local filesystem operations require 
 ## Using the library
 
 The window works like the Steam library: games are listed on the left, and the selected game's page
-on the right has Play, its settings, plugins, and launch activity. Double-click a game in the list,
+on the right has Play, its settings and plugins, and its 10 latest launches. Double-click a game in the list,
 or press Return, to play it (or stop it while it runs).
 
 Choose a games folder in Settings. Aperto scans it when it opens, when you come back to the window
@@ -64,7 +64,9 @@ The + button adds games from any other folder, and it also restores games you re
 
 Display names prefer game metadata, including MV/MZ `data/System.json` and `package.json`,
 then a descriptive containing folder. Generic names such as `Game`, `www`, and `app.nw`
-are skipped. Names, comma-separated tags, and artwork can be edited. Search covers names and tags.
+are skipped. Names and comma-separated tags can be edited. Each game has an icon, used in the list and
+the page header, and an optional wide banner shown across the header (cropped to fill). Without a
+banner, the header shows a blurred copy of the icon. Hover the header to change either image. Search covers names and tags.
 
 ## Mac games
 

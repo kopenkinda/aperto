@@ -6,7 +6,10 @@ export const GameSchema = Schema.Struct({
   root: Schema.String,
   name: Schema.String,
   tags: Schema.Array(Schema.String),
+  /** Square icon, shown in the list and the page header. */
   artwork: Schema.NullOr(Schema.String),
+  /** Wide image across the page header; without one, the header uses a blur of the icon. */
+  banner: Schema.optionalKey(Schema.NullOr(Schema.String)),
   runtime: Schema.NullOr(Schema.String),
   flags: Schema.Array(Schema.String),
   addedAt: Schema.String,
@@ -114,7 +117,12 @@ export const CommandSchema = Schema.Union([
     bottle: Schema.NullOr(Schema.String),
     flags: Schema.String,
   }),
-  Schema.Struct({ action: Schema.Literal("artwork"), ...id }),
+  Schema.Struct({
+    action: Schema.Literal("artwork"),
+    ...id,
+    slot: Schema.Literals(["icon", "banner"]),
+  }),
+  Schema.Struct({ action: Schema.Literal("clearBanner"), ...id }),
   Schema.Struct({ action: Schema.Literal("remove"), ...id, deleteData: Schema.Boolean }),
   Schema.Struct({ action: Schema.Literal("relink"), ...id }),
   Schema.Struct({ action: Schema.Literal("plugins"), ...id }),

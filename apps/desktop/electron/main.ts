@@ -74,14 +74,14 @@ else {
           });
           return result.canceled ? null : (result.filePaths[0] ?? null);
         },
-        async image(file) {
+        async image(file, maxSize = 900) {
           try {
-            if (!/\.(png|jpe?g|webp)$/i.test(file) || (await stat(file)).size > 12 * 1024 * 1024)
+            if (!/\.(png|jpe?g|webp)$/i.test(file) || (await stat(file)).size > 24 * 1024 * 1024)
               return null;
             const image = nativeImage.createFromPath(file);
             if (image.isEmpty()) return null;
             const size = image.getSize();
-            const ratio = Math.min(1, 900 / size.width, 900 / size.height);
+            const ratio = Math.min(1, maxSize / size.width, maxSize / size.height);
             return image
               .resize({
                 width: Math.max(1, Math.round(size.width * ratio)),

@@ -24,7 +24,8 @@ import { exists, LibraryStore, message, ownedPath } from "./storage";
 export type NativeActions = {
   chooseFolder: () => Promise<string | null>;
   chooseArtwork: () => Promise<string | null>;
-  image: (file: string) => Promise<string | null>;
+  /** Reads an image as a data URL, scaled down to fit `maxSize` pixels on its longer side. */
+  image: (file: string, maxSize?: number) => Promise<string | null>;
   reveal: (file: string) => void;
 };
 
@@ -191,12 +192,23 @@ export class DesktopLibrary {
           const game = this.game(command.id);
           const file = await this.native.chooseArtwork();
           if (file) {
-            const artwork = await this.native.image(file);
-            if (!artwork) throw new Error("This file could not be read as an image.");
-            await this.changeGame(game.id, (current) => ({ ...current, artwork }));
+            // Banners span the whole header, so they keep more resolution than icons.
+            const image = await this.native.image(file, command.slot === "banner" ? 2400 : 900);
+            if (!image) throw new Error("This file could not be read as an image.");
+            await this.changeGame(game.id, (current) =>
+              command.slot === "banner"
+                ? { ...current, banner: image }
+                : { ...current, artwork: image },
+            );
           }
           break;
         }
+        case "clearBanner":
+          await this.changeGame(this.game(command.id).id, (current) => ({
+            ...current,
+            banner: null,
+          }));
+          break;
         case "remove": {
           const game = this.game(command.id);
           this.idle(game.id);

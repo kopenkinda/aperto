@@ -1,5 +1,13 @@
 import { useState, type ReactNode } from "react";
-import { FolderOpenIcon, ImageIcon, PlayIcon, RotateCcwIcon, SquareIcon } from "lucide-react";
+import {
+  FolderOpenIcon,
+  ImageIcon,
+  PlayIcon,
+  RotateCcwIcon,
+  SquareIcon,
+  Trash2Icon,
+  XIcon,
+} from "lucide-react";
 import { Artwork } from "@/components/Artwork";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -121,15 +129,52 @@ export function GamePage({
 
   return (
     <div className="flex flex-col">
-      <header className="relative h-64 shrink-0 overflow-hidden">
-        {game.artwork && (
-          <img
-            src={game.artwork}
-            alt=""
-            className="absolute inset-0 size-full scale-125 object-cover opacity-40 blur-3xl"
-          />
+      <header className="group/hero relative h-64 shrink-0 overflow-hidden">
+        {game.banner ? (
+          <img src={game.banner} alt="" className="absolute inset-0 size-full object-cover" />
+        ) : (
+          game.artwork && (
+            <img
+              src={game.artwork}
+              alt=""
+              className="absolute inset-0 size-full scale-125 object-cover opacity-40 blur-3xl"
+            />
+          )
         )}
-        <div className="absolute inset-0 bg-gradient-to-b from-transparent to-background" />
+        <div
+          className={`absolute inset-0 bg-gradient-to-b to-background ${
+            game.banner ? "from-background/10 via-background/40" : "from-transparent"
+          }`}
+        />
+        {/* Artwork controls stay out of the way until the header is hovered or focused. */}
+        <div className="absolute top-14 right-8 z-20 flex gap-2 opacity-0 transition-opacity group-hover/hero:opacity-100 focus-within:opacity-100">
+          {(["icon", "banner"] as const).map((slot) => (
+            <Button
+              key={slot}
+              variant="outline"
+              size="sm"
+              className="bg-background/50 backdrop-blur"
+              disabled={busy}
+              onClick={() => void run(() => request({ action: "artwork", id: game.id, slot }))}
+            >
+              <ImageIcon />
+              {slot === "icon" ? "Change icon" : "Change banner"}
+            </Button>
+          ))}
+          {game.banner && (
+            <Button
+              variant="outline"
+              size="icon-sm"
+              className="bg-background/50 backdrop-blur"
+              aria-label="Remove banner"
+              title="Remove banner"
+              disabled={busy}
+              onClick={() => void run(() => request({ action: "clearBanner", id: game.id }))}
+            >
+              <XIcon />
+            </Button>
+          )}
+        </div>
         <div className="relative flex h-full items-end gap-5 px-8 pb-6">
           <Artwork game={game} className="size-28 shrink-0 rounded-2xl ring-1 ring-foreground/10" />
           <div className="min-w-0 pb-1">
@@ -170,16 +215,27 @@ export function GamePage({
                   : "No runtime"}
           </Fact>
         </dl>
-        <Button
-          variant="outline"
-          size="icon-lg"
-          className="ml-auto"
-          aria-label="Show in Finder"
-          title="Show in Finder"
-          onClick={() => void run(() => request({ action: "reveal", id: game.id }))}
-        >
-          <FolderOpenIcon />
-        </Button>
+        <div className="ml-auto flex gap-2">
+          <Button
+            variant="outline"
+            size="icon-lg"
+            aria-label="Show in Finder"
+            title="Show in Finder"
+            onClick={() => void run(() => request({ action: "reveal", id: game.id }))}
+          >
+            <FolderOpenIcon />
+          </Button>
+          <Button
+            variant="destructive"
+            size="icon-lg"
+            aria-label="Remove from library"
+            title="Remove from library"
+            disabled={busy || running}
+            onClick={() => setConfirm("remove")}
+          >
+            <Trash2Icon />
+          </Button>
+        </div>
       </div>
 
       <div className="grid gap-8 px-8 py-6 lg:grid-cols-[minmax(0,1fr)_18rem]">
@@ -261,7 +317,6 @@ export function GamePage({
             <TabsList>
               <TabsTrigger value="general">General</TabsTrigger>
               {nwjs && <TabsTrigger value="plugins">Plugins</TabsTrigger>}
-              <TabsTrigger value="activity">Activity</TabsTrigger>
             </TabsList>
 
             <TabsContent value="general">
@@ -492,17 +547,39 @@ export function GamePage({
                 )}
               </TabsContent>
             )}
+          </Tabs>
+        </div>
 
-            <TabsContent value="activity" className="flex flex-col gap-2">
-              {!launches.length && <p className="text-muted-foreground">Not launched yet.</p>}
-              {launches.map((launch) => (
-                <details key={launch.id} className="rounded-lg border px-3 py-2">
-                  <summary className="flex cursor-pointer items-center justify-between gap-2">
+        <aside className="flex flex-col gap-3">
+          <h2 className="flex items-baseline justify-between font-medium">
+            Activity
+            {launches.length > 10 && (
+              <span className="text-xs font-normal text-muted-foreground">Latest 10</span>
+            )}
+          </h2>
+          {!launches.length && <p className="text-muted-foreground">Not launched yet.</p>}
+          <ol className="flex flex-col gap-1.5">
+            {launches.slice(0, 10).map((launch) => (
+              <li key={launch.id}>
+                <details className="group rounded-lg border bg-card/40 px-3 py-2">
+                  <summary className="flex cursor-pointer list-none items-center gap-2">
+                    <span
+                      className={`size-1.5 shrink-0 rounded-full ${
+                        launch.outcome === "failed"
+                          ? "bg-destructive"
+                          : launch.outcome === "running"
+                            ? "bg-emerald-500"
+                            : "bg-muted-foreground/50"
+                      }`}
+                    />
                     <span className={launch.outcome === "failed" ? "text-destructive" : undefined}>
                       {outcomes[launch.outcome]}
                     </span>
-                    <time className="text-xs text-muted-foreground">
-                      {new Date(launch.startedAt).toLocaleString()}
+                    <time className="ml-auto text-xs text-muted-foreground">
+                      {new Date(launch.startedAt).toLocaleString(undefined, {
+                        dateStyle: "short",
+                        timeStyle: "short",
+                      })}
                     </time>
                   </summary>
                   <p className="mt-2 text-xs text-muted-foreground">
@@ -517,50 +594,9 @@ export function GamePage({
                     {[...launch.flags, "", launch.log || "No output captured."].join("\n")}
                   </pre>
                 </details>
-              ))}
-            </TabsContent>
-          </Tabs>
-        </div>
-
-        <aside className="flex flex-col gap-4">
-          <section className="flex flex-col gap-3 rounded-xl border bg-card/40 p-4">
-            <Artwork game={game} className="aspect-video w-full rounded-lg" />
-            <Button
-              variant="outline"
-              disabled={busy}
-              onClick={() => void run(() => request({ action: "artwork", id: game.id }))}
-            >
-              <ImageIcon />
-              Change artwork
-            </Button>
-          </section>
-          <dl className="flex flex-col gap-3 rounded-xl border bg-card/40 p-4 text-sm">
-            <Fact label="Type">
-              {{ nwjs: "NW.js game", windows: "Windows game (CrossOver)", mac: "Mac app" }[kind]}
-            </Fact>
-            {windows && game.executable && (
-              <Fact label="Executable">
-                <span className="font-mono text-xs">{game.executable.split("/").at(-1)}</span>
-              </Fact>
-            )}
-            <Fact label="Folder">
-              <button
-                className="text-left text-xs break-all text-muted-foreground hover:text-foreground"
-                title="Show in Finder"
-                onClick={() => void run(() => request({ action: "reveal", id: game.id }))}
-              >
-                {game.folder}
-              </button>
-            </Fact>
-            <Fact label="Added">{new Date(game.addedAt).toLocaleDateString()}</Fact>
-          </dl>
-          <Button
-            variant="destructive"
-            disabled={busy || running}
-            onClick={() => setConfirm("remove")}
-          >
-            Remove from library
-          </Button>
+              </li>
+            ))}
+          </ol>
         </aside>
       </div>
 
