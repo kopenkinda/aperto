@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import {
   FolderOpenIcon,
   ImageIcon,
@@ -9,6 +9,7 @@ import {
   XIcon,
 } from "lucide-react";
 import { Artwork } from "@/components/Artwork";
+import { TagEditor } from "@/components/TagEditor";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -36,6 +37,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   compareVersions,
   gameKind,
+  tagCounts,
   type Game,
   type Launch,
   type PluginList,
@@ -86,16 +88,28 @@ export function GamePage({
   game,
   snapshot,
   onSettings,
+  onTag,
 }: {
   game: Game;
   snapshot: Snapshot;
   onSettings: () => void;
+  /** Shows the library's games with this tag. */
+  onTag: (tag: string) => void;
 }) {
   const kind = gameKind(game);
   const windows = kind === "windows";
   const nwjs = kind === "nwjs";
   const [name, setName] = useState(game.name);
-  const [tags, setTags] = useState(game.tags.join(", "));
+  // Tags save on every change. Saves run one after another, since the library rejects a second
+  // change to a game while one is in progress, and the field shows the latest list meanwhile.
+  const [tags, setTags] = useState(game.tags);
+  const tagSaves = useRef<Promise<unknown>>(Promise.resolve());
+  const changeTags = (next: string[]) => {
+    setTags(next);
+    tagSaves.current = tagSaves.current.then(() =>
+      run(() => request({ action: "setTags", id: game.id, tags: next })),
+    );
+  };
   const [flags, setFlags] = useState(game.flags.join("\n"));
   const [runtime, setRuntime] = useState(game.runtime);
   const [bottle, setBottle] = useState(game.bottle ?? null);
@@ -113,16 +127,15 @@ export function GamePage({
     (item) => game.runtime && compareVersions(item.version, game.runtime) < 0,
   );
   const activeBottle = bottleOf(game, snapshot);
+  const knownTags = tagCounts(snapshot.games).map(([tag]) => tag);
   const dirty =
     name !== game.name ||
-    tags !== game.tags.join(", ") ||
     flags !== game.flags.join("\n") ||
     runtime !== game.runtime ||
     bottle !== (game.bottle ?? null);
   const downgrading = game.runtime && runtime && compareVersions(runtime, game.runtime) < 0;
   const revert = () => {
     setName(game.name);
-    setTags(game.tags.join(", "));
     setFlags(game.flags.join("\n"));
     setRuntime(game.runtime);
     setBottle(game.bottle ?? null);
@@ -186,6 +199,22 @@ export function GamePage({
           <Artwork game={game} className="size-28 shrink-0 rounded-2xl ring-1 ring-foreground/10" />
           <div className="min-w-0 pb-1">
             <h1 className="text-3xl font-semibold tracking-tight text-balance">{game.name}</h1>
+            {tags.length > 0 && (
+              <ul aria-label="Tags" className="mt-2 flex flex-wrap gap-1.5">
+                {tags.map((tag) => (
+                  <li key={tag}>
+                    <button
+                      type="button"
+                      title={`Show games tagged ${tag}`}
+                      className="h-6 rounded-md bg-background/50 px-2 text-xs text-foreground/80 ring-1 ring-foreground/10 backdrop-blur outline-none hover:bg-background/80 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
+                      onClick={() => onTag(tag)}
+                    >
+                      {tag}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
             <p className="mt-1 truncate text-xs text-muted-foreground" title={game.root}>
               {game.root}
             </p>
@@ -336,7 +365,6 @@ export function GamePage({
                       action: "update",
                       id: game.id,
                       name,
-                      tags,
                       runtime,
                       bottle,
                       flags,
@@ -357,12 +385,7 @@ export function GamePage({
                 </div>
                 <div className="flex flex-col gap-2">
                   <Label htmlFor="game-tags">Tags</Label>
-                  <Input
-                    id="game-tags"
-                    placeholder="Separated by commas"
-                    value={tags}
-                    onChange={(event) => setTags(event.target.value)}
-                  />
+                  <TagEditor id="game-tags" tags={tags} known={knownTags} onChange={changeTags} />
                 </div>
 
                 {windows ? (

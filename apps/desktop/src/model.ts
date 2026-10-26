@@ -112,7 +112,6 @@ export const CommandSchema = Schema.Union([
     action: Schema.Literal("update"),
     ...id,
     name: Schema.String,
-    tags: Schema.String,
     runtime: Schema.NullOr(Schema.String),
     bottle: Schema.NullOr(Schema.String),
     flags: Schema.String,
@@ -125,6 +124,7 @@ export const CommandSchema = Schema.Union([
     url: Schema.optionalKey(Schema.String),
   }),
   Schema.Struct({ action: Schema.Literal("clearBanner"), ...id }),
+  Schema.Struct({ action: Schema.Literal("setTags"), ...id, tags: Schema.Array(Schema.String) }),
   Schema.Struct({ action: Schema.Literal("remove"), ...id, deleteData: Schema.Boolean }),
   Schema.Struct({ action: Schema.Literal("relink"), ...id }),
   Schema.Struct({ action: Schema.Literal("plugins"), ...id }),
@@ -159,15 +159,80 @@ export interface DesktopApi {
   onChange(listener: () => void): () => void;
 }
 
-export function normalizeTags(input: string): string[] {
+/** Lowercased, distinct tags. Text with commas counts as several tags. */
+export function normalizeTags(input: string | readonly string[]): string[] {
   return [
     ...new Set(
-      input
-        .split(",")
-        .map((tag) => tag.trim().toLocaleLowerCase())
+      (typeof input === "string" ? [input] : input)
+        .flatMap((text) => text.split(","))
+        .map((tag) => tag.trim().replace(/\s+/g, " ").toLocaleLowerCase())
         .filter(Boolean),
     ),
   ];
+}
+
+/** Every tag in the library with how many games carry it, most used first. */
+export function tagCounts(games: readonly Game[]): [tag: string, count: number][] {
+  const counts = new Map<string, number>();
+  for (const game of games)
+    for (const tag of game.tags) counts.set(tag, (counts.get(tag) ?? 0) + 1);
+  return [...counts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+}
+
+export const kindFilters = { nwjs: "NW.js", windows: "Windows", mac: "Mac" } as const;
+export const statusFilters = {
+  running: "Running",
+  recent: "Played in the last 2 weeks",
+  unplayed: "Never played",
+  missing: "Missing files",
+} as const;
+export type GameKind = keyof typeof kindFilters;
+export type GameStatus = keyof typeof statusFilters;
+/**
+ * Library filters. A game must carry every chosen tag and match every chosen status. Types
+ * match any one, since a game has only one.
+ */
+export type Filters = { tags: string[]; kinds: GameKind[]; statuses: GameStatus[] };
+export const noFilters: Filters = { tags: [], kinds: [], statuses: [] };
+export const filterCount = (filters: Filters) =>
+  filters.tags.length + filters.kinds.length + filters.statuses.length;
+
+const tagSearch = /(?:^|\s)tag:(?:"([^"]*)"?|(\S*))/gi;
+/** Splits search text into `tag:name` or `tag:"two words"` terms and the words left for the name. */
+export function parseSearch(text: string): { name: string; tags: string[] } {
+  const tags: string[] = [];
+  const name = text.replace(tagSearch, (_, quoted?: string, bare?: string) => {
+    tags.push(...normalizeTags(quoted ?? bare ?? ""));
+    return " ";
+  });
+  return { name: name.trim().replace(/\s+/g, " ").toLocaleLowerCase(), tags };
+}
+
+export function matchesGame(
+  game: Game,
+  filters: Filters,
+  search: string,
+  state: Pick<Snapshot, "running" | "missing">,
+  now = Date.now(),
+): boolean {
+  const query = parseSearch(search);
+  if (query.name && !game.name.toLocaleLowerCase().includes(query.name)) return false;
+  // Search terms may be partial while typing, so they match the start of a tag.
+  if (!query.tags.every((term) => game.tags.some((tag) => tag.startsWith(term)))) return false;
+  if (!filters.tags.every((tag) => game.tags.includes(tag))) return false;
+  if (filters.kinds.length && !filters.kinds.includes(gameKind(game))) return false;
+  return filters.statuses.every((status) => {
+    switch (status) {
+      case "running":
+        return state.running.includes(game.id);
+      case "missing":
+        return state.missing.includes(game.id);
+      case "unplayed":
+        return !game.lastPlayed;
+      case "recent":
+        return !!game.lastPlayed && now - Date.parse(game.lastPlayed) < 14 * 86_400_000;
+    }
+  });
 }
 
 export function compareVersions(left: string, right: string): number {

@@ -170,7 +170,6 @@ export class DesktopLibrary {
               return {
                 ...current,
                 name,
-                tags: normalizeTags(command.tags),
                 bottle: kind === "windows" ? command.bottle : null,
                 flags,
               };
@@ -182,7 +181,6 @@ export class DesktopLibrary {
             return {
               ...current,
               name,
-              tags: normalizeTags(command.tags),
               runtime: command.runtime,
               flags,
             };
@@ -220,6 +218,12 @@ export class DesktopLibrary {
           }
           break;
         }
+        case "setTags":
+          await this.changeGame(this.game(command.id).id, (current) => ({
+            ...current,
+            tags: normalizeTags(command.tags),
+          }));
+          break;
         case "clearBanner": {
           const game = this.game(command.id);
           await this.saveArtwork(game, "banner", null);

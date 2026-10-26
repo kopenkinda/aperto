@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import {
   FolderOpenIcon,
+  ListFilterIcon,
   PlusIcon,
   RefreshCwIcon,
   SearchIcon,
@@ -10,19 +11,36 @@ import {
 import { ApertoMark } from "@/components/ApertoMark";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import { GamePage, playable } from "./GamePage";
 import { Settings } from "./Settings";
 import { request, useTask } from "./desktop";
-import type { Command, Game, ScanReport, Snapshot } from "./model";
+import {
+  filterCount,
+  kindFilters,
+  matchesGame,
+  noFilters,
+  statusFilters,
+  tagCounts,
+  type Command,
+  type Filters,
+  type Game,
+  type GameKind,
+  type GameStatus,
+  type ScanReport,
+  type Snapshot,
+} from "./model";
 
 export function App() {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [filters, setFilters] = useState<Filters>(noFilters);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [dismissedScan, setDismissedScan] = useState<string | null>(null);
   const { run, busy, error, setError } = useTask();
@@ -52,10 +70,10 @@ export function App() {
   }, []);
 
   const games = [...(snapshot?.games ?? [])].sort((a, b) => a.name.localeCompare(b.name));
-  const query = search.trim().toLowerCase();
-  const visible = games.filter((game) =>
-    `${game.name} ${game.tags.join(" ")}`.toLowerCase().includes(query),
-  );
+  const visible = snapshot
+    ? games.filter((game) => matchesGame(game, filters, search, snapshot))
+    : [];
+  const filtering = filterCount(filters) > 0;
   // Like Steam, something is always open: the chosen game, else the first in the list.
   const game = games.find((item) => item.id === selected) ?? visible[0] ?? games[0];
   const scan = snapshot?.lastScan;
@@ -69,16 +87,38 @@ export function App() {
       <aside className="flex w-64 shrink-0 flex-col border-r bg-sidebar">
         <div className="app-drag h-12 shrink-0" />
         <div className="px-3 pb-3">
-          <div className="relative">
-            <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              aria-label="Search games"
-              placeholder="Search"
-              className="pl-8"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-            />
+          <div className="flex gap-1.5">
+            <div className="relative flex-1">
+              <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                aria-label="Search games"
+                placeholder="Search"
+                title={'Search names, or tags with tag:horror or tag:"rpg maker"'}
+                className="pl-8"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+              />
+            </div>
+            <LibraryFilters games={games} filters={filters} onChange={setFilters} />
           </div>
+          {filtering && (
+            <ul aria-label="Active filters" className="mt-2 flex flex-wrap gap-1">
+              {activeFilters(filters).map(({ key, label, without }) => (
+                <li key={key}>
+                  <button
+                    type="button"
+                    aria-label={`Remove filter: ${label}`}
+                    title={`Remove filter: ${label}`}
+                    className="inline-flex h-6 items-center gap-1 rounded-md bg-secondary pr-1 pl-2 text-xs text-secondary-foreground outline-none hover:bg-secondary/70 focus-visible:ring-2 focus-visible:ring-ring/50"
+                    onClick={() => setFilters(without)}
+                  >
+                    {label}
+                    <XIcon className="size-3 text-muted-foreground" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
         <nav aria-label="Games" className="flex-1 overflow-y-auto px-2 pb-2">
           {visible.map((item) => {
@@ -122,7 +162,14 @@ export function App() {
             );
           })}
           {games.length > 0 && !visible.length && (
-            <p className="px-2 py-6 text-center text-sm text-muted-foreground">No matches</p>
+            <div className="flex flex-col items-center gap-2 px-2 py-6 text-sm text-muted-foreground">
+              No matches
+              {filtering && (
+                <Button variant="outline" size="xs" onClick={() => setFilters(noFilters)}>
+                  Clear filters
+                </Button>
+              )}
+            </div>
           )}
         </nav>
         <footer className="flex items-center gap-1 border-t px-2 py-2">
@@ -204,6 +251,10 @@ export function App() {
             game={game}
             snapshot={snapshot}
             onSettings={() => setSettingsOpen(true)}
+            onTag={(tag) => {
+              setSearch("");
+              setFilters({ ...noFilters, tags: [tag] });
+            }}
           />
         )}
       </main>
@@ -303,5 +354,147 @@ function ScanSummary({ scan, onDismiss }: { scan: ScanReport; onDismiss: () => v
         </Button>
       </AlertAction>
     </Alert>
+  );
+}
+
+const without = <T,>(list: readonly T[], value: T) => list.filter((item) => item !== value);
+const toggled = <T,>(list: readonly T[], value: T) =>
+  list.includes(value) ? without(list, value) : [...list, value];
+
+function activeFilters(filters: Filters) {
+  return [
+    ...filters.tags.map((tag) => ({
+      key: `tag:${tag}`,
+      label: tag,
+      without: { ...filters, tags: without(filters.tags, tag) },
+    })),
+    ...filters.kinds.map((kind) => ({
+      key: `kind:${kind}`,
+      label: kindFilters[kind],
+      without: { ...filters, kinds: without(filters.kinds, kind) },
+    })),
+    ...filters.statuses.map((status) => ({
+      key: `status:${status}`,
+      label: statusFilters[status],
+      without: { ...filters, statuses: without(filters.statuses, status) },
+    })),
+  ];
+}
+
+function LibraryFilters({
+  games,
+  filters,
+  onChange,
+}: {
+  games: Game[];
+  filters: Filters;
+  onChange: (filters: Filters) => void;
+}) {
+  const count = filterCount(filters);
+  const tags = tagCounts(games);
+  // A chosen tag stays listed after its last game loses it, so it can still be turned off.
+  for (const tag of filters.tags) if (!tags.some(([name]) => name === tag)) tags.push([tag, 0]);
+  return (
+    <Popover>
+      <PopoverTrigger
+        render={
+          <Button
+            variant={count ? "secondary" : "outline"}
+            size="icon"
+            className="relative shrink-0"
+            aria-label={count ? `Filters, ${count} on` : "Filters"}
+            title="Filters"
+          />
+        }
+      >
+        <ListFilterIcon />
+        {count > 0 && (
+          <span className="absolute -top-1 -right-1 grid h-4 min-w-4 place-items-center rounded-full bg-primary px-1 text-[10px] leading-none font-semibold text-primary-foreground">
+            {count}
+          </span>
+        )}
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-64 gap-3">
+        <FilterSection title="Tags">
+          {tags.length ? (
+            <div className="-mx-1 max-h-64 overflow-y-auto">
+              {tags.map(([tag, uses]) => (
+                <FilterOption
+                  key={tag}
+                  label={tag}
+                  count={uses}
+                  checked={filters.tags.includes(tag)}
+                  onToggle={() => onChange({ ...filters, tags: toggled(filters.tags, tag) })}
+                />
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              No tags yet. Add them on a game&rsquo;s page.
+            </p>
+          )}
+        </FilterSection>
+        <FilterSection title="Type">
+          <div className="-mx-1">
+            {(Object.keys(kindFilters) as GameKind[]).map((kind) => (
+              <FilterOption
+                key={kind}
+                label={kindFilters[kind]}
+                checked={filters.kinds.includes(kind)}
+                onToggle={() => onChange({ ...filters, kinds: toggled(filters.kinds, kind) })}
+              />
+            ))}
+          </div>
+        </FilterSection>
+        <FilterSection title="Status">
+          <div className="-mx-1">
+            {(Object.keys(statusFilters) as GameStatus[]).map((status) => (
+              <FilterOption
+                key={status}
+                label={statusFilters[status]}
+                checked={filters.statuses.includes(status)}
+                onToggle={() =>
+                  onChange({ ...filters, statuses: toggled(filters.statuses, status) })
+                }
+              />
+            ))}
+          </div>
+        </FilterSection>
+        {count > 0 && (
+          <Button variant="ghost" size="sm" onClick={() => onChange(noFilters)}>
+            Clear filters
+          </Button>
+        )}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function FilterSection({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="flex flex-col gap-1">
+      <h3 className="text-xs font-medium text-muted-foreground">{title}</h3>
+      {children}
+    </section>
+  );
+}
+
+function FilterOption({
+  label,
+  count,
+  checked,
+  onToggle,
+}: {
+  label: string;
+  count?: number;
+  checked: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <label className="flex cursor-default items-center gap-2 rounded-md px-1 py-1 select-none hover:bg-accent">
+      <Checkbox checked={checked} onCheckedChange={onToggle} />
+      <span className="min-w-0 flex-1 truncate">{label}</span>
+      {count !== undefined && <span className="text-xs text-muted-foreground">{count}</span>}
+    </label>
   );
 }

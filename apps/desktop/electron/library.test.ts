@@ -109,11 +109,11 @@ describe("import and persistence", () => {
       action: "update",
       id: game.id,
       name: game.name,
-      tags: "Adventure, adventure",
       runtime: null,
       bottle: null,
       flags: "",
     });
+    await library.handle({ action: "setTags", id: game.id, tags: ["Adventure", " adventure "] });
     const browserData = ownedPath(store.directory, "browser-data", game.id);
     await mkdir(browserData, { recursive: true });
     await writeFile(path.join(browserData, "save.json"), "save");
@@ -265,7 +265,6 @@ describe("Windows games", () => {
       action: "update",
       id: game.id,
       name: game.name,
-      tags: "",
       runtime: null,
       bottle: "Steam",
       flags: "-screen-fullscreen 0\n-popupwindow",
