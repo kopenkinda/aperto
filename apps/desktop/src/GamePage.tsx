@@ -5,6 +5,7 @@ import {
   PlayIcon,
   RotateCcwIcon,
   SquareIcon,
+  SquareTerminalIcon,
   StarIcon,
   Trash2Icon,
   XIcon,
@@ -155,6 +156,8 @@ export function GamePage({
     (item) => game.runtime && compareVersions(item.version, game.runtime) < 0,
   );
   const activeBottle = bottleOf(game, snapshot);
+  const terminal =
+    snapshot.terminals.find((item) => item.id === snapshot.terminal) ?? snapshot.terminals[0];
   const knownTags = tagCounts(snapshot.games).map(([tag]) => tag);
   const dirty =
     name !== game.name ||
@@ -318,6 +321,17 @@ export function GamePage({
           >
             <FolderOpenIcon />
           </Button>
+          {terminal && (
+            <Button
+              variant="outline"
+              size="icon-lg"
+              aria-label={`Open in ${terminal.name}`}
+              title={`Open in ${terminal.name}`}
+              onClick={() => void run(() => request({ action: "openTerminal", id: game.id }))}
+            >
+              <SquareTerminalIcon />
+            </Button>
+          )}
           <Button
             variant="destructive"
             size="icon-lg"

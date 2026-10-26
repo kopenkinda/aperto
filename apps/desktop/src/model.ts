@@ -60,6 +60,8 @@ export const LibrarySchema = Schema.Struct({
   // Folder scanned for games on startup, on focus, and on request. Older libraries omit it.
   gamesFolder: Schema.optionalKey(Schema.NullOr(Schema.String)),
   defaultBottle: Schema.optionalKey(Schema.NullOr(Schema.String)),
+  /** Bundle ID of the terminal that opens game folders; unset picks one automatically. */
+  terminal: Schema.optionalKey(Schema.NullOr(Schema.String)),
 });
 export type Library = typeof LibrarySchema.Type;
 export type Snapshot = Library & {
@@ -70,6 +72,8 @@ export type Snapshot = Library & {
   lastScan: ScanReport | null;
   /** CrossOver bottles, or null when CrossOver is not installed. */
   bottles: string[] | null;
+  /** Supported terminals installed on this Mac, the automatic choice first. */
+  terminals: { id: string; name: string }[];
 };
 export type Candidate = {
   kind: "nwjs" | "windows" | "mac";
@@ -108,6 +112,7 @@ export const CommandSchema = Schema.Union([
   Schema.Struct({ action: Schema.Literal("chooseGamesFolder") }),
   Schema.Struct({ action: Schema.Literal("clearGamesFolder") }),
   Schema.Struct({ action: Schema.Literal("scan") }),
+  Schema.Struct({ action: Schema.Literal("setTerminal"), terminal: Schema.NullOr(Schema.String) }),
   Schema.Struct({
     action: Schema.Literal("setDefaultBottle"),
     bottle: Schema.NullOr(Schema.String),
@@ -148,6 +153,7 @@ export const CommandSchema = Schema.Union([
   Schema.Struct({ action: Schema.Literal("launch"), ...id }),
   Schema.Struct({ action: Schema.Literal("stop"), ...id }),
   Schema.Struct({ action: Schema.Literal("reveal"), ...id }),
+  Schema.Struct({ action: Schema.Literal("openTerminal"), ...id }),
   Schema.Struct({ action: Schema.Literal("revealPluginBackup"), ...id }),
 ]);
 export type Command = typeof CommandSchema.Type;

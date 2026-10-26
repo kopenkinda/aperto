@@ -18,6 +18,7 @@ import { downloadImage, readableImage } from "./artwork";
 import { inspectRoot, readObject } from "./detection";
 import { detectGame, findGames, fingerprint, versionedName, within } from "./discovery";
 import { iconToPng } from "./mac";
+import { installedTerminals, openInTerminal, terminalFor } from "./terminals";
 import { bottlesDirectory, crossoverWine, listBottles } from "./windows";
 import { changePlugins, listPlugins } from "./plugins";
 import { RuntimeManager, getReleases, runtimeExecutable, validVersion } from "./runtimes";
@@ -68,6 +69,7 @@ export class DesktopLibrary {
       scanning: this.scanning !== null,
       lastScan: this.lastScan,
       bottles: (await exists(crossoverWine)) ? await listBottles() : null,
+      terminals: await installedTerminals(),
     };
   }
 
@@ -106,6 +108,10 @@ export class DesktopLibrary {
     }
     if (command.action === "clearGamesFolder") {
       await this.store.update((state) => ({ ...state, gamesFolder: null }));
+      return this.snapshot();
+    }
+    if (command.action === "setTerminal") {
+      await this.store.update((state) => ({ ...state, terminal: command.terminal }));
       return this.snapshot();
     }
     if (command.action === "setDefaultBottle") {
@@ -362,6 +368,16 @@ export class DesktopLibrary {
         case "reveal":
           this.native.reveal(this.game(command.id).root);
           break;
+        case "openTerminal": {
+          const game = this.game(command.id);
+          const terminal = await terminalFor(this.store.value.terminal);
+          // A Mac game's root is its app bundle, so the shell opens in the folder holding it.
+          await openInTerminal(
+            terminal.id,
+            gameKind(game) === "mac" ? path.dirname(game.root) : game.root,
+          );
+          break;
+        }
         case "revealPluginBackup":
           this.native.reveal(
             path.join(

@@ -32,6 +32,9 @@ export function Settings({
   const [releases, setReleases] = useState<Release[]>([]);
   const [version, setVersion] = useState<string | null>(null);
   const { run, busy, error } = useTask();
+  const automaticTerminal = snapshot.terminals[0]
+    ? `Automatic (${snapshot.terminals[0].name})`
+    : "Automatic";
   const installed = [...snapshot.runtimes].sort((a, b) => compareVersions(b.version, a.version));
 
   return (
@@ -40,7 +43,7 @@ export function Settings({
         <DialogHeader>
           <DialogTitle>Settings</DialogTitle>
           <DialogDescription className="sr-only">
-            Games folder, CrossOver, and NW.js runtimes
+            Games folder, CrossOver, terminal, and NW.js runtimes
           </DialogDescription>
         </DialogHeader>
         {error && (
@@ -134,6 +137,42 @@ export function Settings({
               </SelectContent>
             </Select>
           )}
+        </section>
+
+        <section className="flex flex-col gap-3">
+          <div>
+            <h3 className="font-medium">Terminal</h3>
+            <p className="text-muted-foreground">
+              Opens a game&rsquo;s folder from its page. Automatic prefers Ghostty, iTerm, or Warp
+              over Terminal.
+            </p>
+          </div>
+          <Select
+            value={
+              snapshot.terminals.some((item) => item.id === snapshot.terminal)
+                ? snapshot.terminal!
+                : null
+            }
+            onValueChange={(value) =>
+              void run(() => request({ action: "setTerminal", terminal: value as string | null }))
+            }
+            items={[
+              { value: null, label: automaticTerminal },
+              ...snapshot.terminals.map((item) => ({ value: item.id, label: item.name })),
+            ]}
+          >
+            <SelectTrigger className="w-48">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={null}>{automaticTerminal}</SelectItem>
+              {snapshot.terminals.map((item) => (
+                <SelectItem key={item.id} value={item.id}>
+                  {item.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </section>
 
         <section className="flex flex-col gap-3">
