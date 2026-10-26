@@ -15,6 +15,7 @@ import {
   type Snapshot,
 } from "../src/model";
 import { downloadImage, readableImage } from "./artwork";
+import { extractExeIcon } from "./exe-icon";
 import { inspectRoot, readObject } from "./detection";
 import { detectGame, findGames, fingerprint, versionedName, within } from "./discovery";
 import { iconToPng } from "./mac";
@@ -38,6 +39,7 @@ export class DesktopLibrary {
   private readonly busy = new Set<string>();
   private scanning: Promise<ScanReport> | null = null;
   private lastScan: ScanReport | null = null;
+  private readonly iconAttempts = new Set<string>();
 
   constructor(
     readonly store: LibraryStore,
@@ -217,7 +219,7 @@ export class DesktopLibrary {
             await this.changeGame(game.id, (current) =>
               command.slot === "banner"
                 ? { ...current, banner: image }
-                : { ...current, artwork: image },
+                : { ...current, artwork: image, customIcon: true },
             );
           } finally {
             if (download) await rm(download, { force: true });
@@ -237,6 +239,17 @@ export class DesktopLibrary {
             favorite: command.favorite,
           }));
           break;
+        case "resetIcon": {
+          const game = this.game(command.id);
+          const artwork = await this.originalIcon(game);
+          await this.saveArtwork(game, "icon", null);
+          await this.changeGame(game.id, (current) => ({
+            ...current,
+            artwork,
+            customIcon: false,
+          }));
+          break;
+        }
         case "clearBanner": {
           const game = this.game(command.id);
           await this.saveArtwork(game, "banner", null);
@@ -476,6 +489,8 @@ export class DesktopLibrary {
         removed: false,
       });
     }
+    await this.markCustomIcons();
+    await this.fillWindowsIcons();
     if (added.length || restored.size)
       await this.store.update((state) => ({
         ...state,
@@ -511,15 +526,9 @@ export class DesktopLibrary {
       throw new Error("Game launching and runtime installation require an Apple Silicon Mac.");
   }
 
-  /**
-   * Keeps a copy of custom artwork in `.aperto` inside the game's folder. A Mac game's folder is
-   * its app bundle, and writing inside would break its signature, so its copy sits next to the
-   * bundle instead. Passing no source only removes the old copy.
-   */
+  /** Keeps a copy of custom artwork beside the game. Passing no source only removes the copy. */
   private async saveArtwork(game: Game, slot: "icon" | "banner", source: string | null) {
-    const mac = gameKind(game) === "mac";
-    const directory = path.join(mac ? path.dirname(game.folder) : game.folder, ".aperto");
-    const name = mac ? `${path.basename(game.folder, path.extname(game.folder))}-${slot}` : slot;
+    const { directory, name } = artworkCopy(game, slot);
     const extension = source
       ? path.extname(source).slice(1).toLowerCase().replace("jpeg", "jpg")
       : null;
@@ -533,8 +542,22 @@ export class DesktopLibrary {
       );
   }
 
-  /** Imports discovered artwork, converting a Mac app's .icns icon first. */
+  /**
+   * Imports discovered artwork, converting a Mac app's .icns icon first. A Windows .exe gives its
+   * own icon.
+   */
   private async artwork(file: string) {
+    if (/\.exe$/i.test(file)) {
+      const icon = await extractExeIcon(file);
+      if (!icon) return null;
+      const readable = await readableImage(icon);
+      try {
+        return readable ? await this.native.image(readable.file) : null;
+      } finally {
+        await rm(icon, { force: true });
+        if (readable?.temporary) await rm(readable.file, { force: true });
+      }
+    }
     if (!file.endsWith(".icns")) return this.native.image(file);
     const png = await iconToPng(file);
     if (!png) return null;
@@ -542,6 +565,61 @@ export class DesktopLibrary {
       return await this.native.image(png);
     } finally {
       await rm(png, { force: true });
+    }
+  }
+
+  /** The icon found in the game itself: the .exe's icon, the app's icon, or the manifest's. */
+  private async originalIcon(game: Game) {
+    const source =
+      gameKind(game) === "windows"
+        ? game.executable
+        : (
+            (await detectGame(game.folder)) ??
+            (await inspectRoot(game.folder, game.root).catch(() => null))
+          )?.artwork;
+    return source ? await this.artwork(source).catch(() => null) : null;
+  }
+
+  /**
+   * Libraries from before `customIcon` existed only record a chosen icon as its copy in
+   * `.aperto`, so each such game is checked once and the answer stored.
+   */
+  private async markCustomIcons() {
+    const found = new Map<string, boolean>();
+    for (const game of this.store.value.games) {
+      if (game.customIcon !== undefined) continue;
+      const { directory, name } = artworkCopy(game, "icon");
+      let custom = false;
+      for (const extension of ["png", "jpg", "webp"])
+        if (await exists(path.join(directory, `${name}.${extension}`))) custom = true;
+      found.set(game.id, custom);
+    }
+    if (found.size)
+      await this.store.update((state) => ({
+        ...state,
+        games: state.games.map((game) =>
+          game.customIcon === undefined && found.has(game.id)
+            ? { ...game, customIcon: found.get(game.id)! }
+            : game,
+        ),
+      }));
+  }
+
+  /**
+   * Gives Windows games imported before icon extraction, or whose icon was not readable then, the
+   * icon from their executable. Each game is tried once per session; a chosen icon is never replaced.
+   */
+  private async fillWindowsIcons() {
+    for (const game of this.store.value.games) {
+      if (game.removed || game.artwork || !game.executable || gameKind(game) !== "windows")
+        continue;
+      if (this.iconAttempts.has(game.id)) continue;
+      this.iconAttempts.add(game.id);
+      const artwork = await this.artwork(game.executable).catch(() => null);
+      if (artwork)
+        await this.changeGame(game.id, (current) =>
+          current.artwork ? current : { ...current, artwork },
+        );
     }
   }
 
@@ -694,4 +772,17 @@ export class DesktopLibrary {
           : current.plays + 1,
     }));
   }
+}
+
+/**
+ * Where the copy of custom artwork lives: `.aperto` inside the game's folder. A Mac game's folder
+ * is its app bundle, and writing inside would break its signature, so its copy sits next to the
+ * bundle instead.
+ */
+function artworkCopy(game: Game, slot: "icon" | "banner") {
+  const mac = gameKind(game) === "mac";
+  return {
+    directory: path.join(mac ? path.dirname(game.folder) : game.folder, ".aperto"),
+    name: mac ? `${path.basename(game.folder, path.extname(game.folder))}-${slot}` : slot,
+  };
 }

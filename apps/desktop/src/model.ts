@@ -10,6 +10,8 @@ export const GameSchema = Schema.Struct({
   favorite: Schema.optionalKey(Schema.Boolean),
   /** Square icon, shown in the list and the page header. */
   artwork: Schema.NullOr(Schema.String),
+  /** The icon was chosen by the user rather than found in the game. Older libraries omit it. */
+  customIcon: Schema.optionalKey(Schema.Boolean),
   /** Wide image across the page header; without one, the header uses a blur of the icon. */
   banner: Schema.optionalKey(Schema.NullOr(Schema.String)),
   runtime: Schema.NullOr(Schema.String),
@@ -133,6 +135,8 @@ export const CommandSchema = Schema.Union([
     url: Schema.optionalKey(Schema.String),
   }),
   Schema.Struct({ action: Schema.Literal("clearBanner"), ...id }),
+  /** Removes a chosen icon and goes back to the one found in the game. */
+  Schema.Struct({ action: Schema.Literal("resetIcon"), ...id }),
   Schema.Struct({ action: Schema.Literal("setTags"), ...id, tags: Schema.Array(Schema.String) }),
   Schema.Struct({ action: Schema.Literal("setFavorite"), ...id, favorite: Schema.Boolean }),
   Schema.Struct({ action: Schema.Literal("remove"), ...id, deleteData: Schema.Boolean }),

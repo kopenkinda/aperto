@@ -746,6 +746,29 @@ export function GamePage({
                 autoFocus
               />
             </div>
+            {(artworkSlot === "banner" ? !!game.banner : !!game.customIcon) && (
+              <p className="text-sm text-muted-foreground">
+                {artworkSlot === "banner"
+                  ? "This game has a banner. "
+                  : "This game uses an icon you chose. "}
+                <button
+                  type="button"
+                  className="text-foreground underline underline-offset-3 disabled:opacity-50"
+                  disabled={busy}
+                  onClick={() =>
+                    void run(async () => {
+                      await request({
+                        action: artworkSlot === "banner" ? "clearBanner" : "resetIcon",
+                        id: game.id,
+                      });
+                      setArtworkSlot(null);
+                    })
+                  }
+                >
+                  {artworkSlot === "banner" ? "Remove it" : "Use the original icon"}
+                </button>
+              </p>
+            )}
             {error && (
               <p className="text-sm text-destructive" role="alert">
                 {error}
@@ -755,7 +778,7 @@ export function GamePage({
               <Button
                 type="button"
                 variant="outline"
-                className="mr-auto"
+                className="sm:mr-auto"
                 disabled={busy}
                 onClick={() =>
                   artworkSlot &&

@@ -128,7 +128,8 @@ export async function inspectWindows(selected: string): Promise<Candidate | null
     executable: file,
     name: name ?? path.basename(folder),
     confirmed: true,
-    artwork: null,
+    // The icon is extracted from the executable on import.
+    artwork: file,
   };
 }
 

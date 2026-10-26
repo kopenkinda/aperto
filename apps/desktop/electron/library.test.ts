@@ -439,6 +439,7 @@ describe("custom artwork", () => {
     await library.handle({ action: "artwork", id: game.id, slot: "icon" });
     expect(await readFile(saved("icon"))).toEqual(png);
     expect(store.value.games[0]?.artwork).toContain("data:image/png");
+    expect(store.value.games[0]?.customIcon).toBe(true);
 
     const server = createServer((request, response) => {
       if (request.url === "/banner") response.end(png);
@@ -471,5 +472,11 @@ describe("custom artwork", () => {
     expect(await exists(saved("banner"))).toBe(false);
     expect(store.value.games[0]?.banner).toBeNull();
     expect(await exists(saved("icon"))).toBe(true);
+
+    // The test game's manifest names no icon, so going back leaves none.
+    await library.handle({ action: "resetIcon", id: game.id });
+    expect(await exists(saved("icon"))).toBe(false);
+    expect(store.value.games[0]?.artwork).toBeNull();
+    expect(store.value.games[0]?.customIcon).toBe(false);
   });
 });
