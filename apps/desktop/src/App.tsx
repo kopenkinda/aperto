@@ -1,35 +1,30 @@
 import { useEffect, useState } from "react";
 import {
-  FolderPlusIcon,
-  Gamepad2Icon,
-  HardDriveIcon,
-  LayoutGridIcon,
-  LibraryIcon,
-  ListIcon,
+  FolderOpenIcon,
+  PlusIcon,
+  RefreshCwIcon,
   SearchIcon,
+  SettingsIcon,
   XIcon,
 } from "lucide-react";
-import { Button } from "./components/ui/button";
-import { Modal } from "./components/Modal";
-import { GameDetails } from "./GameDetails";
-import { RuntimePanel } from "./RuntimePanel";
+import { ApertoMark } from "@/components/ApertoMark";
+import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Spinner } from "@/components/ui/spinner";
+import { cn } from "@/lib/utils";
+import { GamePage } from "./GamePage";
+import { Settings } from "./Settings";
 import { request, useTask } from "./desktop";
-import type { ImportReview, Snapshot } from "./model";
-import appIcon from "../resources/icon.svg";
+import type { Command, Game, ScanReport, Snapshot } from "./model";
 
 export function App() {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [page, setPage] = useState<"library" | "runtimes">("library");
   const [selected, setSelected] = useState<string | null>(null);
   const [search, setSearch] = useState("");
-  const [tag, setTag] = useState("");
-  const [sort, setSort] = useState("name");
-  const [layout, setLayout] = useState<"grid" | "list">("grid");
-  const [review, setReview] = useState<ImportReview | null>(null);
-  const [candidateIndex, setCandidateIndex] = useState(0);
-  const [importName, setImportName] = useState("");
-  const [importTags, setImportTags] = useState("");
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [dismissedScan, setDismissedScan] = useState<string | null>(null);
   const { run, busy, error, setError } = useTask();
 
   useEffect(() => {
@@ -56,397 +51,257 @@ export function App() {
     };
   }, []);
 
-  const games = snapshot?.games ?? [];
-  const allTags = [...new Set(games.flatMap((game) => game.tags))].sort();
-  const visible = games
-    .filter(
-      (game) =>
-        (!tag || game.tags.includes(tag)) &&
-        `${game.name} ${game.tags.join(" ")}`.toLowerCase().includes(search.toLowerCase()),
-    )
-    .sort((a, b) =>
-      sort === "recent"
-        ? (b.lastPlayed ?? "").localeCompare(a.lastPlayed ?? "")
-        : sort === "added"
-          ? b.addedAt.localeCompare(a.addedAt)
-          : a.name.localeCompare(b.name),
-    );
-  const game = games.find((item) => item.id === selected);
-  const candidate = review?.candidates[candidateIndex];
-  const addGame = () =>
-    void run(async () => {
-      const result = await request({ action: "chooseImport" });
-      if (result) {
-        setReview(result);
-        setCandidateIndex(0);
-        setImportName(result.candidates[0]?.name ?? "");
-        setImportTags("");
-      }
-    });
+  const games = [...(snapshot?.games ?? [])].sort((a, b) => a.name.localeCompare(b.name));
+  const query = search.trim().toLowerCase();
+  const visible = games.filter((game) =>
+    `${game.name} ${game.tags.join(" ")}`.toLowerCase().includes(query),
+  );
+  // Like Steam, something is always open: the chosen game, else the first in the list.
+  const game = games.find((item) => item.id === selected) ?? visible[0] ?? games[0];
+  const scan = snapshot?.lastScan;
+  const act = (command: Command) =>
+    void run(async () => setSnapshot((await request(command)) as Snapshot));
+  const toggle = (item: Game) =>
+    act({ action: snapshot?.running.includes(item.id) ? "stop" : "launch", id: item.id });
 
   return (
-    <div className="app-shell">
-      <aside className="sidebar">
-        <div className="brand">
-          <img className="brand-mark" src={appIcon} alt="" />
-          Aperto
-        </div>
-        <p className="eyebrow sidebar-label">Your collection</p>
-        <nav aria-label="Main navigation">
-          <button className={page === "library" ? "active" : ""} onClick={() => setPage("library")}>
-            <LibraryIcon size={18} />
-            Library<span className="nav-count">{games.length}</span>
-          </button>
-          <button
-            className={page === "runtimes" ? "active" : ""}
-            onClick={() => {
-              setPage("runtimes");
-              setSelected(null);
-            }}
-          >
-            <HardDriveIcon size={18} />
-            Runtimes
-          </button>
-        </nav>
-        <div className="sidebar-footer">
-          <span className="status-dot" />
-          Local library<p>Your games stay in their folders.</p>
-        </div>
-      </aside>
-      <main className="workspace">
-        <div className="topbar">
-          <span>{page === "library" ? "Library" : "Runtimes"}</span>
-          <span className="small muted">Aperto for macOS</span>
-        </div>
-        {loadError && (
-          <div role="alert" className="notice error load-error">
-            <strong>The library is unavailable</strong>
-            <p>{loadError}</p>
-            <Button
-              variant="outline"
-              onClick={() =>
-                void request({ action: "snapshot" })
-                  .then((state) => {
-                    setSnapshot(state);
-                    setLoadError(null);
-                  })
-                  .catch((cause: unknown) =>
-                    setLoadError(cause instanceof Error ? cause.message : String(cause)),
-                  )
-              }
-            >
-              Retry
-            </Button>
+    <div className="flex h-screen overflow-hidden">
+      <aside className="flex w-64 shrink-0 flex-col border-r bg-sidebar">
+        <div className="app-drag h-12 shrink-0" />
+        <div className="px-3 pb-3">
+          <div className="relative">
+            <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              aria-label="Search games"
+              placeholder="Search"
+              className="pl-8"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+            />
           </div>
-        )}
-        {!snapshot && !loadError && (
-          <p className="loading" role="status">
-            Opening your library…
-          </p>
-        )}
-        {snapshot && page === "runtimes" && <RuntimePanel snapshot={snapshot} />}
-        {snapshot && page === "library" && (
-          <div className="library-page">
-            <header className="page-heading">
-              <div>
-                <p className="eyebrow">All in one place</p>
-                <h1>Your library</h1>
-                <p className="muted">
-                  {games.length
-                    ? `${games.length} ${games.length === 1 ? "game" : "games"}, ready when you are.`
-                    : "A home for your local NW.js games."}
-                </p>
-              </div>
-              <Button size="lg" onClick={addGame} disabled={busy}>
-                <FolderPlusIcon />
-                Add game
-              </Button>
-            </header>
-            {error && !review && (
-              <p role="alert" className="notice error">
-                {error}
-              </p>
-            )}
-            {games.length > 0 && (
-              <div className="library-toolbar">
-                <label className="search">
-                  <SearchIcon size={17} />
-                  <input
-                    aria-label="Search library"
-                    placeholder="Search games or tags…"
-                    value={search}
-                    onChange={(event) => setSearch(event.target.value)}
+        </div>
+        <nav aria-label="Games" className="flex-1 overflow-y-auto px-2 pb-2">
+          {visible.map((item) => {
+            const running = snapshot?.running.includes(item.id);
+            const missing = snapshot?.missing.includes(item.id);
+            return (
+              <button
+                key={item.id}
+                aria-current={item.id === game?.id ? "true" : undefined}
+                title={`${item.name}\nDouble-click to ${running ? "stop" : "play"}`}
+                className={cn(
+                  "flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left text-sm outline-none select-none hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-ring/50 aria-current:bg-sidebar-accent aria-current:text-sidebar-accent-foreground",
+                  missing && "text-muted-foreground",
+                )}
+                onClick={() => setSelected(item.id)}
+                onDoubleClick={() => !missing && item.runtime && toggle(item)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && !missing && item.runtime) {
+                    event.preventDefault();
+                    toggle(item);
+                  }
+                }}
+              >
+                <span className="relative size-6 shrink-0 overflow-hidden rounded bg-muted">
+                  {item.artwork ? (
+                    <img src={item.artwork} alt="" className="size-full object-cover" />
+                  ) : (
+                    <span className="grid size-full place-items-center text-[10px] font-semibold text-muted-foreground">
+                      {item.name.slice(0, 1).toUpperCase()}
+                    </span>
+                  )}
+                </span>
+                <span className="min-w-0 flex-1 truncate">{item.name}</span>
+                {running && (
+                  <span
+                    className="size-2 shrink-0 rounded-full bg-emerald-500"
+                    aria-label="Running"
                   />
-                </label>
-                <select
-                  aria-label="Filter by tag"
-                  value={tag}
-                  onChange={(event) => setTag(event.target.value)}
-                >
-                  <option value="">All tags</option>
-                  {allTags.map((item) => (
-                    <option key={item}>{item}</option>
-                  ))}
-                </select>
-                <select
-                  aria-label="Sort games"
-                  value={sort}
-                  onChange={(event) => setSort(event.target.value)}
-                >
-                  <option value="name">Name</option>
-                  <option value="recent">Last played</option>
-                  <option value="added">Recently added</option>
-                </select>
-                <div className="layout-picker">
-                  <Button
-                    variant={layout === "grid" ? "secondary" : "ghost"}
-                    size="icon"
-                    aria-label="Grid layout"
-                    aria-pressed={layout === "grid"}
-                    onClick={() => setLayout("grid")}
-                  >
-                    <LayoutGridIcon />
-                  </Button>
-                  <Button
-                    variant={layout === "list" ? "secondary" : "ghost"}
-                    size="icon"
-                    aria-label="List layout"
-                    aria-pressed={layout === "list"}
-                    onClick={() => setLayout("list")}
-                  >
-                    <ListIcon />
-                  </Button>
-                </div>
-              </div>
+                )}
+              </button>
+            );
+          })}
+          {games.length > 0 && !visible.length && (
+            <p className="px-2 py-6 text-center text-sm text-muted-foreground">No matches</p>
+          )}
+        </nav>
+        <footer className="flex items-center gap-1 border-t px-2 py-2">
+          <span className="flex items-center gap-2 px-1 text-xs text-muted-foreground">
+            <ApertoMark className="size-4" />
+            {games.length} {games.length === 1 ? "game" : "games"}
+          </span>
+          <div className="ml-auto flex">
+            {snapshot?.gamesFolder && (
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Scan games folder"
+                title="Scan games folder"
+                disabled={snapshot.scanning}
+                onClick={() => act({ action: "scan" })}
+              >
+                {snapshot.scanning ? <Spinner /> : <RefreshCwIcon />}
+              </Button>
             )}
-            {!games.length ? (
-              <div className="empty-library">
-                <div className="empty-art">
-                  <div />
-                  <div />
-                  <div>
-                    <Gamepad2Icon size={42} strokeWidth={1.3} />
-                  </div>
-                </div>
-                <h2>Your library starts here</h2>
-                <p>
-                  Choose an unpacked game folder. Aperto will find its name
-                  <br className="wide-break" /> and keep a reference to the original files.
-                </p>
-                <Button size="lg" onClick={addGame} disabled={busy}>
-                  <FolderPlusIcon />
-                  Choose a game folder
-                </Button>
-                <span className="small muted">Your original files stay in place.</span>
-              </div>
-            ) : !visible.length ? (
-              <div className="empty-inline">
-                <SearchIcon />
-                <h2>No matching games</h2>
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setSearch("");
-                    setTag("");
-                  }}
-                >
-                  Clear filters
-                </Button>
-              </div>
-            ) : (
-              <div className={`game-collection ${layout}`}>
-                {visible.map((item) => (
-                  <button
-                    className={`game-card ${selected === item.id ? "selected" : ""}`}
-                    key={item.id}
-                    onClick={() => setSelected(item.id)}
-                    aria-label={`Open ${item.name}`}
-                  >
-                    <div className="game-art">
-                      {item.artwork ? (
-                        <img src={item.artwork} alt="" style={{ objectFit: item.artworkFit }} />
-                      ) : (
-                        <span>{item.name.slice(0, 1).toUpperCase()}</span>
-                      )}
-                      {snapshot.running.includes(item.id) && (
-                        <span className="game-status">Running</span>
-                      )}
-                    </div>
-                    <div className="game-card-copy">
-                      <h3>{item.name}</h3>
-                      <p>
-                        {snapshot.missing.includes(item.id)
-                          ? "Folder missing"
-                          : item.runtime
-                            ? `NW.js ${item.runtime}`
-                            : "Runtime needed"}
-                      </p>
-                      {item.tags.length > 0 && (
-                        <div className="tags">
-                          {item.tags.slice(0, 3).map((itemTag) => (
-                            <span key={itemTag}>{itemTag}</span>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-      </main>
-      {snapshot && game && page === "library" && (
-        <GameDetails
-          key={game.id}
-          game={game}
-          snapshot={snapshot}
-          onClose={() => setSelected(null)}
-          onRuntimes={() => {
-            setPage("runtimes");
-            setSelected(null);
-          }}
-        />
-      )}
-      {review && (
-        <Modal
-          className="import-dialog"
-          label="Review your game"
-          onClose={() => {
-            if (!busy) {
-              setReview(null);
-              setError(null);
-            }
-          }}
-        >
-          <header className="detail-heading">
-            <div>
-              <p className="eyebrow">Add to your library</p>
-              <h2 id="import-heading">Review your game</h2>
-            </div>
             <Button
               variant="ghost"
-              size="icon"
-              aria-label="Close import review"
+              size="icon-sm"
+              aria-label="Add games from a folder"
+              title="Add games from a folder"
               disabled={busy}
-              onClick={() => {
-                setReview(null);
-                setError(null);
-              }}
+              onClick={() => act({ action: "addGames" })}
             >
-              <XIcon />
+              <PlusIcon />
             </Button>
-          </header>
-          {review.problems.map((problem) => (
-            <p className="notice" key={problem}>
-              {problem}
-            </p>
-          ))}
-          {error && (
-            <p role="alert" className="notice error">
-              {error}
-            </p>
-          )}
-          {candidate ? (
-            <form
-              onSubmit={(event) => {
-                event.preventDefault();
-                void run(async () => {
-                  const state = await request({
-                    action: "import",
-                    token: candidate.token,
-                    name: importName,
-                    tags: importTags,
-                  });
-                  setSnapshot(state);
-                  setReview(null);
-                  setPage("library");
-                  setSelected(state.games.find((item) => item.root === candidate.root)?.id ?? null);
-                });
-              }}
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Settings"
+              title="Settings"
+              onClick={() => setSettingsOpen(true)}
             >
-              {review.candidates.length > 1 && (
-                <label>
-                  Application folder
-                  <select
-                    value={candidateIndex}
-                    onChange={(event) => {
-                      const index = Number(event.target.value);
-                      setCandidateIndex(index);
-                      setImportName(review.candidates[index]?.name ?? "");
-                    }}
-                  >
-                    {review.candidates.map((item, index) => (
-                      <option key={item.token} value={index}>
-                        {item.root}
-                      </option>
-                    ))}
-                  </select>
-                  <span className="field-help">
-                    More than one application was found. Choose the game to add.
-                  </span>
-                </label>
-              )}
-              <div className="import-preview">
-                {candidate.artwork ? (
-                  <img src={candidate.artwork} alt="Discovered artwork" />
-                ) : (
-                  <Gamepad2Icon size={44} strokeWidth={1.2} />
-                )}
-                <div>
-                  <strong>{candidate.evidence.join(" · ") || "Possible NW.js application"}</strong>
-                  <p className="small muted">{candidate.root}</p>
-                </div>
-              </div>
-              {candidate.warnings.map((warning) => (
-                <p className="notice small" key={warning}>
-                  {warning}
-                </p>
-              ))}
-              <label>
-                Display name
-                <input
-                  autoFocus
-                  required
-                  maxLength={160}
-                  placeholder="Name this game"
-                  value={importName}
-                  onChange={(event) => setImportName(event.target.value)}
-                />
-              </label>
-              <label>
-                Tags
-                <input
-                  placeholder="Adventure, unfinished"
-                  value={importTags}
-                  onChange={(event) => setImportTags(event.target.value)}
-                />
-                <span className="field-help">Optional, separated by commas.</span>
-              </label>
-              <p className="small muted">
-                The game stays in its current folder. You can change its name and artwork later.
+              <SettingsIcon />
+            </Button>
+          </div>
+        </footer>
+      </aside>
+
+      <main className="relative flex-1 overflow-y-auto">
+        <div className="app-drag absolute inset-x-0 top-0 z-10 h-12" />
+        {!snapshot && !loadError && (
+          <div className="grid h-full place-items-center">
+            <Spinner className="size-6 text-muted-foreground" />
+          </div>
+        )}
+
+        {snapshot && !games.length && (
+          <div className="flex h-full flex-col items-center justify-center gap-4 text-center">
+            <ApertoMark className="size-14 text-muted-foreground" />
+            <div className="flex flex-col gap-1">
+              <h1 className="text-lg font-medium">
+                {snapshot.gamesFolder ? "No games found yet" : "Choose your games folder"}
+              </h1>
+              <p className="max-w-sm text-sm text-muted-foreground">
+                {snapshot.gamesFolder
+                  ? `Aperto looks for unpacked NW.js games in ${snapshot.gamesFolder}.`
+                  : "Aperto finds the NW.js games inside it and keeps the list up to date. Your files stay where they are."}
               </p>
-              <footer>
-                <Button
-                  type="button"
-                  variant="outline"
-                  disabled={busy}
-                  onClick={() => setReview(null)}
-                >
-                  Cancel
-                </Button>
-                <Button type="submit" disabled={busy || !importName.trim()}>
-                  {busy ? "Adding…" : "Add game"}
-                </Button>
-              </footer>
-            </form>
-          ) : (
-            <Button variant="outline" onClick={addGame} disabled={busy}>
-              Choose another folder
+            </div>
+            <Button
+              size="lg"
+              disabled={busy || snapshot.scanning}
+              onClick={() => act({ action: snapshot.gamesFolder ? "scan" : "chooseGamesFolder" })}
+            >
+              {snapshot.scanning ? <Spinner /> : <FolderOpenIcon />}
+              {snapshot.gamesFolder ? "Scan again" : "Choose folder"}
             </Button>
-          )}
-        </Modal>
+          </div>
+        )}
+
+        {snapshot && game && (
+          <GamePage
+            key={game.id}
+            game={game}
+            snapshot={snapshot}
+            onSettings={() => setSettingsOpen(true)}
+          />
+        )}
+      </main>
+
+      <div
+        aria-live="polite"
+        className="pointer-events-none fixed right-4 bottom-4 z-40 flex w-88 flex-col gap-2 *:pointer-events-auto *:bg-popover *:shadow-lg *:animate-in *:fade-in *:slide-in-from-bottom-2"
+      >
+        {loadError && (
+          <Alert variant="destructive">
+            <AlertTitle>The library is unavailable</AlertTitle>
+            <AlertDescription>{loadError}</AlertDescription>
+          </Alert>
+        )}
+        {error && (
+          <Alert variant="destructive">
+            <AlertDescription>{error}</AlertDescription>
+            <AlertAction>
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                aria-label="Dismiss"
+                onClick={() => setError(null)}
+              >
+                <XIcon />
+              </Button>
+            </AlertAction>
+          </Alert>
+        )}
+        {scan && dismissedScan !== scan.finishedAt && (
+          <ScanSummary
+            key={scan.finishedAt}
+            scan={scan}
+            onDismiss={() => setDismissedScan(scan.finishedAt)}
+          />
+        )}
+      </div>
+
+      {snapshot && (
+        <Settings open={settingsOpen} onOpenChange={setSettingsOpen} snapshot={snapshot} />
       )}
     </div>
+  );
+}
+
+function ScanSummary({ scan, onDismiss }: { scan: ScanReport; onDismiss: () => void }) {
+  const [expanded, setExpanded] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  // Automatic scans repeat the same skipped copies, so only new games or a requested scan are shown.
+  const visible = scan.added.length > 0 || scan.requested;
+  useEffect(() => {
+    if (!visible || expanded || hovered) return;
+    const timer = setTimeout(onDismiss, 6000);
+    return () => clearTimeout(timer);
+  }, [visible, expanded, hovered, onDismiss]);
+  if (!visible) return null;
+  const parts = [
+    scan.added.length && `Added ${scan.added.length} ${scan.added.length === 1 ? "game" : "games"}`,
+    scan.duplicates.length &&
+      `ignored ${scan.duplicates.length} ${scan.duplicates.length === 1 ? "duplicate" : "duplicates"}`,
+    scan.problems.length && `${scan.problems.length} unreadable`,
+  ].filter(Boolean);
+  return (
+    <Alert onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}>
+      <AlertTitle>
+        {parts.length
+          ? parts.join(", ").replace(/^./, (letter) => letter.toUpperCase())
+          : "No new games found"}
+      </AlertTitle>
+      {parts.length > 0 && (
+        <AlertDescription>
+          <button className="underline underline-offset-3" onClick={() => setExpanded(!expanded)}>
+            {expanded ? "Hide details" : "Show details"}
+          </button>
+          {expanded && (
+            <ul className="mt-2 flex max-h-60 flex-col gap-1 overflow-y-auto text-xs">
+              {scan.added.map((name, index) => (
+                <li key={`added-${index}`}>Added {name}</li>
+              ))}
+              {scan.duplicates.map((item) => (
+                <li key={item.folder} className="break-all">
+                  Skipped {item.folder}, a copy of {item.of}
+                </li>
+              ))}
+              {scan.problems.map((problem) => (
+                <li key={problem} className="break-all">
+                  {problem}
+                </li>
+              ))}
+            </ul>
+          )}
+        </AlertDescription>
+      )}
+      <AlertAction>
+        <Button variant="ghost" size="icon-xs" aria-label="Dismiss" onClick={onDismiss}>
+          <XIcon />
+        </Button>
+      </AlertAction>
+    </Alert>
   );
 }

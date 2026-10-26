@@ -6,12 +6,13 @@ import {
   compareVersions,
   normalizeTags,
   parseFlags,
-  type Candidate,
   type Command,
   type Game,
+  type ScanReport,
   type Snapshot,
 } from "../src/model";
 import { inspectFolder, inspectRoot, readObject } from "./detection";
+import { findGames, fingerprint, versionedName, within } from "./discovery";
 import { changePlugins, listPlugins } from "./plugins";
 import { RuntimeManager, getReleases, runtimeExecutable, validVersion } from "./runtimes";
 import { exists, LibraryStore, message, ownedPath } from "./storage";
@@ -26,8 +27,9 @@ export type NativeActions = {
 export class DesktopLibrary {
   readonly runtimes: RuntimeManager;
   readonly running = new Map<string, { process: ChildProcess; stopped: boolean }>();
-  private readonly candidates = new Map<string, Candidate>();
   private readonly busy = new Set<string>();
+  private scanning: Promise<ScanReport> | null = null;
+  private lastScan: ScanReport | null = null;
 
   constructor(
     readonly store: LibraryStore,
@@ -56,6 +58,8 @@ export class DesktopLibrary {
         version,
         detail: item.detail,
       })),
+      scanning: this.scanning !== null,
+      lastScan: this.lastScan,
     };
   }
 
@@ -80,16 +84,25 @@ export class DesktopLibrary {
   async handle(command: Command): Promise<unknown> {
     if (command.action === "snapshot") return this.snapshot();
     if (command.action === "releases") return getReleases();
-    if (command.action === "chooseImport") {
+    if (command.action === "addGames") {
       const folder = await this.native.chooseFolder();
-      if (!folder) return null;
-      const review = await inspectFolder(folder);
-      this.candidates.clear();
-      for (const candidate of review.candidates) {
-        if (candidate.artwork) candidate.artwork = await this.native.image(candidate.artwork);
-        this.candidates.set(candidate.token, candidate);
-      }
-      return review;
+      if (folder) await this.scan(folder, { restoreRemoved: true, requested: true });
+      return this.snapshot();
+    }
+    if (command.action === "chooseGamesFolder") {
+      const folder = await this.native.chooseFolder();
+      if (!folder) return this.snapshot();
+      await this.store.update((state) => ({ ...state, gamesFolder: folder }));
+      await this.scan(folder, { restoreRemoved: false, requested: true });
+      return this.snapshot();
+    }
+    if (command.action === "clearGamesFolder") {
+      await this.store.update((state) => ({ ...state, gamesFolder: null }));
+      return this.snapshot();
+    }
+    if (command.action === "scan") {
+      await this.scanGamesFolder(true);
+      return this.snapshot();
     }
     if (command.action === "installRuntime") {
       this.requireMac();
@@ -100,57 +113,11 @@ export class DesktopLibrary {
       this.runtimes.downloads.get(command.version)?.controller.abort();
       return this.snapshot();
     }
-    const lock = "id" in command ? command.id : command.action === "import" ? "import" : "runtimes";
+    const lock = "id" in command ? command.id : "runtimes";
     if (this.busy.has(lock)) throw new Error("An operation for this game is already in progress.");
     this.busy.add(lock);
     try {
       switch (command.action) {
-        case "import": {
-          const candidate = this.candidates.get(command.token);
-          if (!candidate) throw new Error("The import review expired. Choose the folder again.");
-          await inspectRoot(candidate.folder, candidate.root);
-          const name = command.name.trim();
-          if (!name || name.length > 160)
-            throw new Error("Enter a display name between 1 and 160 characters.");
-          const existing = this.store.value.games.find((game) => game.root === candidate.root);
-          if (existing && !existing.removed)
-            throw new Error("This game is already in your library.");
-          const latest =
-            [...this.store.value.runtimes].sort((a, b) => compareVersions(b.version, a.version))[0]
-              ?.version ?? null;
-          const game: Game = existing
-            ? {
-                ...existing,
-                name,
-                removed: false,
-                tags: normalizeTags(command.tags),
-                runtime: this.store.value.runtimes.some(
-                  (runtime) => runtime.version === existing.runtime,
-                )
-                  ? existing.runtime
-                  : latest,
-              }
-            : {
-                id: randomUUID(),
-                folder: candidate.folder,
-                root: candidate.root,
-                name,
-                tags: normalizeTags(command.tags),
-                artwork: candidate.artwork,
-                artworkFit: "cover",
-                runtime: latest,
-                flags: [],
-                addedAt: new Date().toISOString(),
-                lastPlayed: null,
-                removed: false,
-              };
-          await this.store.update((state) => ({
-            ...state,
-            games: [...state.games.filter((item) => item.id !== game.id), game],
-          }));
-          this.candidates.delete(command.token);
-          break;
-        }
         case "update": {
           const game = this.game(command.id);
           this.idle(game.id);
@@ -192,7 +159,6 @@ export class DesktopLibrary {
               ...current,
               name,
               tags: normalizeTags(command.tags),
-              artworkFit: command.fit,
               runtime: command.runtime,
               flags,
             };
@@ -230,12 +196,8 @@ export class DesktopLibrary {
           this.idle(game.id);
           const folder = await this.native.chooseFolder();
           if (!folder) break;
-          const review = await inspectFolder(folder);
-          if (review.candidates.length !== 1)
-            throw new Error(
-              "Select the specific application folder so exactly one game can be found.",
-            );
-          const candidate = review.candidates[0]!;
+          const candidate = (await inspectFolder(folder)).game;
+          if (!candidate) throw new Error("No NW.js game was found in that folder.");
           if (
             this.store.value.games.some(
               (item) => item.id !== game.id && item.root === candidate.root,
@@ -317,6 +279,113 @@ export class DesktopLibrary {
     } finally {
       this.busy.delete(lock);
     }
+  }
+
+  /** Scans the configured games folder. Overlapping requests share one scan. */
+  async scanGamesFolder(requested = false): Promise<ScanReport | null> {
+    const folder = this.store.value.gamesFolder;
+    return folder ? this.scan(folder, { restoreRemoved: false, requested }) : null;
+  }
+
+  private async scan(
+    folder: string,
+    options: { restoreRemoved: boolean; requested: boolean },
+  ): Promise<ScanReport> {
+    while (this.scanning) await this.scanning.catch(() => {});
+    this.scanning = this.discover(folder, options);
+    this.changed();
+    try {
+      this.lastScan = await this.scanning;
+      return this.lastScan;
+    } finally {
+      this.scanning = null;
+      this.changed();
+    }
+  }
+
+  /**
+   * Adds every game found under `folder`. A folder already referenced by the library is skipped,
+   * including games the user removed, unless the user picked the folder by hand. A copy of a game
+   * that is already known (same name, folder version, and game data) is reported and ignored.
+   */
+  private async discover(
+    folder: string,
+    { restoreRemoved, requested }: { restoreRemoved: boolean; requested: boolean },
+  ): Promise<ScanReport> {
+    const { games: found, problems } = await findGames(folder);
+    const library = this.store.value.games;
+    const known = new Map<string, string>();
+    for (const game of library) {
+      // Use the folder's preferred root, as the scan does, so both sides hash the same manifest.
+      const current =
+        (await inspectFolder(game.folder).catch(() => null))?.game ??
+        (await inspectRoot(game.folder, game.root).catch(() => null));
+      if (current) known.set(await fingerprint(current), game.name);
+    }
+    const latest =
+      [...this.store.value.runtimes].sort((a, b) => compareVersions(b.version, a.version))[0]
+        ?.version ?? null;
+    const added: Game[] = [];
+    const restored = new Set<string>();
+    const duplicates: ScanReport["duplicates"] = [];
+    for (const candidate of found) {
+      const existing = library.find(
+        (game) => game.root === candidate.root || within(game.root, candidate.folder),
+      );
+      if (existing) {
+        if (existing.removed && restoreRemoved) restored.add(existing.id);
+        continue;
+      }
+      const key = await fingerprint(candidate);
+      const original = known.get(key);
+      if (original !== undefined) {
+        duplicates.push({ folder: candidate.folder, of: original });
+        continue;
+      }
+      const name = versionedName(
+        candidate.name || path.basename(candidate.folder),
+        candidate.folder,
+        folder,
+      );
+      known.set(key, name);
+      added.push({
+        id: randomUUID(),
+        folder: candidate.folder,
+        root: candidate.root,
+        name: name.slice(0, 160),
+        tags: [],
+        artwork: candidate.artwork ? await this.native.image(candidate.artwork) : null,
+        runtime: latest,
+        flags: [],
+        addedAt: new Date().toISOString(),
+        lastPlayed: null,
+        removed: false,
+      });
+    }
+    if (added.length || restored.size)
+      await this.store.update((state) => ({
+        ...state,
+        games: [
+          ...state.games.map((game) =>
+            restored.has(game.id)
+              ? { ...game, removed: false, runtime: game.runtime ?? latest }
+              : game,
+          ),
+          // Another scan or a relink may have claimed a folder while this one was reading.
+          ...added.filter((game) => !state.games.some((item) => item.root === game.root)),
+        ],
+      }));
+    return {
+      folder,
+      finishedAt: new Date().toISOString(),
+      requested,
+      added: [
+        ...added.map((game) => game.name),
+        ...library.filter((game) => restored.has(game.id)).map((game) => game.name),
+      ],
+      duplicates,
+      problems,
+    };
   }
 
   private requireMac() {

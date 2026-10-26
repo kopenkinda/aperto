@@ -1,23 +1,15 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
   <defs>
-    <linearGradient id="tile" x1="160" y1="100" x2="850" y2="950" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#526d57"/>
-      <stop offset="1" stop-color="#233c2f"/>
-    </linearGradient>
-    <linearGradient id="arch" x1="340" y1="300" x2="690" y2="770" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#ffffef"/>
-      <stop offset="1" stop-color="#d9dfc8"/>
-    </linearGradient>
-    <linearGradient id="play" x1="446" y1="454" x2="616" y2="624" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#d7edaa"/>
-      <stop offset="1" stop-color="#a9ce87"/>
+    <linearGradient id="tile" x1="512" y1="100" x2="512" y2="924" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#f7f7f8"/>
+      <stop offset="1" stop-color="#e4e4e7"/>
     </linearGradient>
   </defs>
-  <rect x="100" y="110" width="824" height="824" rx="184" fill="#142c21" opacity=".15"/>
   <rect x="100" y="100" width="824" height="824" rx="184" fill="url(#tile)"/>
-  <rect x="102" y="102" width="820" height="820" rx="182" fill="none" stroke="#ffffff" stroke-opacity=".16" stroke-width="4"/>
-  <path d="M322 746V450a190 190 0 0 1 380 0v296" fill="none" stroke="#122c1f" stroke-opacity=".22" stroke-width="76" stroke-linecap="round" transform="translate(0 12)"/>
-  <path d="M322 734V438a190 190 0 0 1 380 0v296" fill="none" stroke="url(#arch)" stroke-width="76" stroke-linecap="round"/>
-  <path d="M464 469c-12-7-26 1-26 15v166c0 14 14 22 26 15l143-83c12-7 12-23 0-30z" fill="#142f22" opacity=".2" transform="translate(0 9)"/>
-  <path d="M464 457c-12-7-26 1-26 15v166c0 14 14 22 26 15l143-83c12-7 12-23 0-30z" fill="url(#play)"/>
+  <rect x="101" y="101" width="822" height="822" rx="183" fill="none" stroke="#000" stroke-opacity=".06" stroke-width="2"/>
+  <g transform="translate(512 512) scale(0.86) translate(-525 -521)" fill="#262831">
+    <path d="M302 792V330A66 66 0 0 1 368 264H524A66 66 0 0 1 590 330V792" fill="none" stroke="#262831" stroke-width="44" stroke-linecap="round" stroke-linejoin="round"/>
+    <path fill-rule="evenodd" d="M632 262C632 252 638 244 647 240L718 209C732 203 748 213 748 228V828C748 843 732 853 718 847L647 816C638 812 632 804 632 794Z M682 528a16 16 0 1 0 32 0a16 16 0 1 0 -32 0Z"/>
+    <path d="M408 446V638L540 542Z" stroke="#262831" stroke-width="44" stroke-linejoin="round"/>
+  </g>
 </svg>

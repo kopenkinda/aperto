@@ -11,6 +11,7 @@ app.setPath("userData", process.env.APERTO_DATA_DIR || path.join(app.getPath("ap
 let library: DesktopLibrary;
 let startupError: string | null = null;
 let quitting = false;
+let lastScan = 0;
 
 const changed = () => {
   for (const window of BrowserWindow.getAllWindows()) window.webContents.send("aperto:changed");
@@ -23,13 +24,21 @@ const createWindow = () => {
     minWidth: 900,
     minHeight: 640,
     title: "Aperto",
-    backgroundColor: "#fafaf9",
+    backgroundColor: "#0a0a0a",
+    titleBarStyle: "hiddenInset",
+    trafficLightPosition: { x: 16, y: 18 },
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
       preload: path.join(import.meta.dirname, "preload.js"),
     },
+  });
+  // Pick up games added to the games folder while Aperto was in the background.
+  window.on("focus", () => {
+    if (Date.now() - lastScan < 30_000) return;
+    lastScan = Date.now();
+    void library?.scanGamesFolder().catch((error) => console.error("Scan failed:", error));
   });
   window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   window.webContents.on("will-navigate", (event) => event.preventDefault());
@@ -52,7 +61,7 @@ else {
       {
         async chooseFolder() {
           const result = await dialog.showOpenDialog({
-            title: "Choose an unpacked game folder",
+            title: "Choose a folder with games",
             properties: ["openDirectory", "treatPackageAsDirectory"],
           });
           return result.canceled ? null : (result.filePaths[0] ?? null);
@@ -93,6 +102,10 @@ else {
       await store.load();
     } catch (error) {
       startupError = message(error);
+    }
+    if (!startupError) {
+      lastScan = Date.now();
+      void library.scanGamesFolder().catch((error) => console.error("Scan failed:", error));
     }
     const request = Effect.fn("desktop.request")((input: unknown) =>
       Schema.decodeUnknownEffect(CommandSchema)(input).pipe(

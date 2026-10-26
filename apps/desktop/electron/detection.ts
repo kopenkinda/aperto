@@ -1,16 +1,15 @@
-import { randomUUID } from "node:crypto";
 import { readFile, realpath, stat } from "node:fs/promises";
 import path from "node:path";
 import { homedir } from "node:os";
 import { Schema } from "effect";
-import type { Candidate, ImportReview } from "../src/model";
+import type { Candidate } from "../src/model";
 import { exists, message } from "./storage";
 
 const RecordSchema = Schema.Record(Schema.String, Schema.Unknown);
 const isRecord = Schema.is(RecordSchema);
 const isString = Schema.is(Schema.String);
 const placeholders =
-  /^(?:game(?:[ _-]?\d+)?|nwjs|nw|node-webkit|www|app|package|index|project\d*|untitled|contents|resources|downloads|desktop|documents|games)$/i;
+  /^(?:game(?:[ _-]?\d+)?|rmmv|rmmz|nwjs|nw|node-webkit|www|app|package|index|project\d*|untitled|contents|resources|downloads|desktop|documents|games)$/i;
 
 export function meaningfulName(value: unknown): string | null {
   if (!isString(value)) return null;
@@ -54,28 +53,18 @@ export async function inspectRoot(folder: string, candidateRoot: string): Promis
   const mainPath = decodeURIComponent(manifest.main.split(/[?#]/)[0]!);
   await localFile(root, mainPath);
   const window = isRecord(manifest.window) ? manifest.window : {};
-  const system = await readObject(path.join(root, "data", "System.json")).catch(
+  // Deployed MV games keep their data beside the main page, often in `www`, not beside the manifest.
+  const app = path.join(root, path.dirname(mainPath));
+  const system = await readObject(path.join(app, "data", "System.json")).catch(
     () => ({}) as Record<string, unknown>,
   );
-  const mv = await exists(path.join(root, "js", "rpg_core.js"));
-  const mz = await exists(path.join(root, "js", "rmmz_core.js"));
-  const evidence: string[] = [];
-  if (mv || mz) evidence.push(mz ? "RPG Maker MZ application" : "RPG Maker MV application");
-  if (
+  const confirmed =
+    /\.html?$/i.test(mainPath) ||
+    (await exists(path.join(app, "js", "rpg_core.js"))) ||
+    (await exists(path.join(app, "js", "rmmz_core.js"))) ||
     (await exists(path.join(folder, "nw.dll"))) ||
-    (await exists(path.join(folder, "nw_elf.dll")))
-  )
-    evidence.push("NW.js distribution files");
-  if (folder.endsWith(".app") && root.endsWith("app.nw")) evidence.push("NW.js application bundle");
-  const warnings: string[] = [];
-  if (!evidence.length)
-    warnings.push(
-      "This has a compatible manifest, but NW.js could not be confirmed. Only add it if you recognize this game.",
-    );
-  if (manifest["chromium-args"])
-    warnings.push(
-      `The game supplies its own launch flags: ${String(manifest["chromium-args"]).slice(0, 1000)}. Aperto cannot remove those flags.`,
-    );
+    (await exists(path.join(folder, "nw_elf.dll"))) ||
+    (folder.endsWith(".app") && root.endsWith("app.nw"));
   let name =
     meaningfulName(system.gameTitle) ??
     meaningfulName(window.title) ??
@@ -91,34 +80,32 @@ export async function inspectRoot(folder: string, candidateRoot: string): Promis
   const artwork = isString(window.icon)
     ? await localFile(root, window.icon).catch(() => null)
     : null;
-  return { token: randomUUID(), folder, root, name: name ?? "", evidence, warnings, artwork };
+  return { folder, root, name: name ?? "", confirmed, artwork };
 }
 
-export async function inspectFolder(selected: string): Promise<ImportReview> {
+export const applicationRoots = (folder: string) => [
+  folder,
+  path.join(folder, "www"),
+  path.join(folder, "package.nw"),
+  path.join(folder, "Contents", "Resources", "app.nw"),
+];
+
+/**
+ * Finds the game in one folder. Deployed MV games often ship both a root and a `www`
+ * manifest for the same game, so the first valid root in `applicationRoots` order wins.
+ */
+export async function inspectFolder(
+  selected: string,
+): Promise<{ game: Candidate | null; problems: string[] }> {
   const folder = await realpath(selected);
-  const roots = [
-    folder,
-    path.join(folder, "www"),
-    path.join(folder, "package.nw"),
-    path.join(folder, "Contents", "Resources", "app.nw"),
-  ];
-  const review: ImportReview = { candidates: [], problems: [] };
-  const seen = new Set<string>();
-  for (const root of roots) {
+  const problems: string[] = [];
+  for (const root of applicationRoots(folder)) {
     if (!(await exists(path.join(root, "package.json")))) continue;
     try {
-      const candidate = await inspectRoot(folder, root);
-      if (!seen.has(candidate.root)) review.candidates.push(candidate);
-      seen.add(candidate.root);
+      return { game: await inspectRoot(folder, root), problems };
     } catch (error) {
-      review.problems.push(
-        `${path.relative(folder, root) || "Selected folder"}: ${message(error)}`,
-      );
+      problems.push(`${path.relative(folder, root) || folder}: ${message(error)}`);
     }
   }
-  if (!review.candidates.length && !review.problems.length)
-    review.problems.push(
-      "No unpacked NW.js application was found. Select a folder containing package.json, a www folder, or an unpacked NW.js app. Archives and installers are not supported.",
-    );
-  return review;
+  return { game: null, problems };
 }

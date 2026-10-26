@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { inspectFolder } from "./detection";
+import { versionsIn } from "./discovery";
 import { DesktopLibrary } from "./library";
 import { runtimeExecutable } from "./runtimes";
 import { changePlugins, listPlugins, parsePlugins } from "./plugins";
@@ -49,27 +50,30 @@ afterEach(async () => {
 });
 
 async function importGame() {
-  const review = (await library.handle({ action: "chooseImport" })) as Awaited<
-    ReturnType<typeof inspectFolder>
-  >;
-  const candidate = review.candidates[0]!;
-  await library.handle({
-    action: "import",
-    token: candidate.token,
-    name: candidate.name,
-    tags: "Adventure, adventure",
-  });
-  return store.value.games[0]!;
+  await library.handle({ action: "addGames" });
+  return store.value.games.find((game) => !game.removed)!;
+}
+
+async function writeGame(folder: string, system: object) {
+  await mkdir(path.join(folder, "data"), { recursive: true });
+  await mkdir(path.join(folder, "js"), { recursive: true });
+  await writeFile(
+    path.join(folder, "package.json"),
+    JSON.stringify({ name: "rmmv", main: "index.html" }),
+  );
+  await writeFile(path.join(folder, "index.html"), "<!doctype html>");
+  await writeFile(path.join(folder, "js", "rpg_core.js"), "// MV fixture");
+  await writeFile(path.join(folder, "data", "System.json"), JSON.stringify(system));
 }
 
 describe("import and persistence", () => {
   it("finds an internal www application, skips generic metadata, and prefers a real game title", async () => {
-    expect((await inspectFolder(gameFolder)).candidates[0]?.name).toBe("The Quiet Valley");
+    expect((await inspectFolder(gameFolder)).game?.name).toBe("The Quiet Valley");
     await writeFile(
       path.join(root, "data", "System.json"),
       JSON.stringify({ gameTitle: "Valley at Night" }),
     );
-    expect((await inspectFolder(gameFolder)).candidates[0]?.name).toBe("Valley at Night");
+    expect((await inspectFolder(gameFolder)).game?.name).toBe("Valley at Night");
     await writeFile(path.join(root, "data", "System.json"), "invalid");
     await writeFile(
       path.join(root, "package.json"),
@@ -79,28 +83,39 @@ describe("import and persistence", () => {
         window: { title: "The Game of Seasons" },
       }),
     );
-    expect((await inspectFolder(gameFolder)).candidates[0]?.name).toBe("The Game of Seasons");
+    expect((await inspectFolder(gameFolder)).game?.name).toBe("The Game of Seasons");
   });
-  it("reports ambiguous applications and rejects escaping entries", async () => {
+  it("prefers the outer manifest of a deployed game and rejects escaping entries", async () => {
     await writeFile(
       path.join(gameFolder, "package.json"),
       JSON.stringify({ name: "another-game", main: "www/index.html" }),
     );
-    expect((await inspectFolder(gameFolder)).candidates).toHaveLength(2);
+    expect((await inspectFolder(gameFolder)).game?.root).toBe(await realpath(gameFolder));
+    await rm(path.join(gameFolder, "package.json"));
     await writeFile(
       path.join(root, "package.json"),
       JSON.stringify({ name: "game", main: "../../outside.html" }),
     );
     await writeFile(path.join(directory, "outside.html"), "outside");
     const review = await inspectFolder(gameFolder);
+    expect(review.game).toBeNull();
     expect(review.problems.join(" ")).toContain("outside its folder");
   });
-  it("persists records, prevents duplicate imports, and reconnects retained data on re-import", async () => {
+  it("persists records, ignores repeat imports, and reconnects retained data on re-import", async () => {
     const game = await importGame();
+    await library.handle({
+      action: "update",
+      id: game.id,
+      name: game.name,
+      tags: "Adventure, adventure",
+      runtime: null,
+      flags: "",
+    });
     const browserData = ownedPath(store.directory, "browser-data", game.id);
     await mkdir(browserData, { recursive: true });
     await writeFile(path.join(browserData, "save.json"), "save");
-    await expect(importGame()).rejects.toThrow("already in your library");
+    await importGame();
+    expect(store.value.games).toHaveLength(1);
     await library.handle({ action: "remove", id: game.id, deleteData: false });
     expect((await library.snapshot()).games).toHaveLength(0);
     const restored = await importGame();
@@ -130,6 +145,69 @@ describe("import and persistence", () => {
     await writeFile(store.file, "damaged data");
     await expect(new LibraryStore(store.directory).load()).rejects.toThrow("has not been replaced");
     expect(await readFile(store.file, "utf8")).toBe("damaged data");
+  });
+});
+
+describe("games folder discovery", () => {
+  it("adds each game once, ignores copies, and keeps separate versions", async () => {
+    const shelf = path.join(directory, "shelf");
+    await writeGame(path.join(shelf, "Moon_Road_v1.0.2", "Moon Road"), {
+      gameTitle: "Moon Road",
+      versionId: 1,
+    });
+    await writeGame(path.join(shelf, "Moon_Road_v1.0.4", "Moon Road"), {
+      gameTitle: "Moon Road",
+      versionId: 1,
+    });
+    await writeGame(path.join(shelf, "Moon_Road_v1.0.4 (copy)", "Moon Road"), {
+      gameTitle: "Moon Road",
+      versionId: 1,
+    });
+    await writeGame(path.join(shelf, "Moon Road extracted", "Moon Road"), {
+      gameTitle: "Moon Road",
+      versionId: 9,
+    });
+    // A deployed game with both a root and a www manifest is one game.
+    const deployed = path.join(shelf, "Ember Hall");
+    await writeGame(path.join(deployed, "www"), { gameTitle: "Ember Hall" });
+    await writeFile(
+      path.join(deployed, "package.json"),
+      JSON.stringify({ name: "rmmv", main: "www/index.html" }),
+    );
+    await mkdir(path.join(shelf, "Unity Game", "Unity_Data"), { recursive: true });
+    await store.update((state) => ({ ...state, gamesFolder: shelf }));
+    const report = (await library.scanGamesFolder())!;
+    expect(report.added.sort()).toEqual([
+      "Ember Hall",
+      "Moon Road",
+      "Moon Road v1.0.2",
+      "Moon Road v1.0.4",
+    ]);
+    expect(report.duplicates).toEqual([
+      {
+        folder: await realpath(path.join(shelf, "Moon_Road_v1.0.4 (copy)", "Moon Road")),
+        of: "Moon Road v1.0.4",
+      },
+    ]);
+    const again = (await library.scanGamesFolder())!;
+    expect(again.added).toEqual([]);
+    expect(store.value.games).toHaveLength(4);
+  });
+  it("does not bring back a removed game on a later scan", async () => {
+    await store.update((state) => ({ ...state, gamesFolder: directory }));
+    await library.scanGamesFolder();
+    const game = store.value.games[0]!;
+    await library.handle({ action: "remove", id: game.id, deleteData: false });
+    expect((await library.scanGamesFolder())!.added).toEqual([]);
+    expect((await library.snapshot()).games).toHaveLength(0);
+  });
+  it("reads versions from folder names but not catalogue numbers", () => {
+    expect(versionsIn(["Game_v1.0.2"])).toEqual(["1.0.2"]);
+    expect(versionsIn(["Rinas-1.18c", "www"])).toEqual(["1.18c"]);
+    expect(versionsIn(["Peeping.Dorm.Manager.Build.14407700"])).toEqual(["14407700"]);
+    expect(versionsIn(["Five Nights ver1.03"])).toEqual(["1.03"]);
+    expect(versionsIn(["Demon_Hand-2026-01-31"])).toEqual(["2026-01-31"]);
+    expect(versionsIn(["072project_Half-Elf_EN", "x86_64"])).toEqual([]);
   });
 });
 
@@ -229,12 +307,12 @@ describe.runIf(process.platform === "darwin" && process.arch === "arm64")(
       await writeFile(executable, "#!/bin/sh\nprintf '%s\\n' \"$@\"\nexit 0\n");
       await chmod(executable, 0o755);
       await library.handle({ action: "launch", id: game.id });
-      await expect.poll(() => store.value.launches[0]?.outcome).toBe("ended");
+      await expect.poll(() => store.value.launches[0]?.outcome, { timeout: 10_000 }).toBe("ended");
       expect(store.value.launches[0]?.log).toContain("--user-data-dir=");
       expect(store.value.launches[0]?.log).toContain(game.root);
       await writeFile(executable, '#!/bin/sh\nprintf "failed fixture" >&2\nexit 2\n');
       await library.handle({ action: "launch", id: game.id });
-      await expect.poll(() => store.value.launches[0]?.outcome).toBe("failed");
+      await expect.poll(() => store.value.launches[0]?.outcome, { timeout: 10_000 }).toBe("failed");
       expect(store.value.launches[0]?.detail).toContain("code 2");
       expect(store.value.games[0]?.runtime).toBe(version);
     });

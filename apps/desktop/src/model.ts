@@ -7,7 +7,6 @@ export const GameSchema = Schema.Struct({
   name: Schema.String,
   tags: Schema.Array(Schema.String),
   artwork: Schema.NullOr(Schema.String),
-  artworkFit: Schema.Literals(["cover", "contain"]),
   runtime: Schema.NullOr(Schema.String),
   flags: Schema.Array(Schema.String),
   addedAt: Schema.String,
@@ -45,23 +44,35 @@ export const LibrarySchema = Schema.Struct({
   runtimes: Schema.Array(RuntimeSchema),
   launches: Schema.Array(LaunchSchema),
   backups: Schema.Array(BackupSchema),
+  // Folder scanned for games on startup, on focus, and on request. Older libraries omit it.
+  gamesFolder: Schema.optionalKey(Schema.NullOr(Schema.String)),
 });
 export type Library = typeof LibrarySchema.Type;
 export type Snapshot = Library & {
   missing: string[];
   running: string[];
   downloads: { version: string; detail: string }[];
+  scanning: boolean;
+  lastScan: ScanReport | null;
 };
 export type Candidate = {
-  token: string;
   folder: string;
   root: string;
   name: string;
-  evidence: string[];
-  warnings: string[];
+  /** NW.js or RPG Maker files corroborate the manifest, or the entry is an HTML page. */
+  confirmed: boolean;
   artwork: string | null;
 };
-export type ImportReview = { candidates: Candidate[]; problems: string[] };
+export type ScanReport = {
+  folder: string;
+  finishedAt: string;
+  /** Started by the user rather than on launch or focus. */
+  requested: boolean;
+  added: string[];
+  /** Copies of a game already in the library or found earlier in the same scan. */
+  duplicates: { folder: string; of: string }[];
+  problems: string[];
+};
 export type Plugin = { name: string; description: string; enabled: boolean; missing: boolean };
 export type PluginList = {
   hash: string;
@@ -74,19 +85,15 @@ export type Release = { version: string; chromium: string; node: string };
 const id = { id: Schema.String };
 export const CommandSchema = Schema.Union([
   Schema.Struct({ action: Schema.Literal("snapshot") }),
-  Schema.Struct({ action: Schema.Literal("chooseImport") }),
-  Schema.Struct({
-    action: Schema.Literal("import"),
-    token: Schema.String,
-    name: Schema.String,
-    tags: Schema.String,
-  }),
+  Schema.Struct({ action: Schema.Literal("addGames") }),
+  Schema.Struct({ action: Schema.Literal("chooseGamesFolder") }),
+  Schema.Struct({ action: Schema.Literal("clearGamesFolder") }),
+  Schema.Struct({ action: Schema.Literal("scan") }),
   Schema.Struct({
     action: Schema.Literal("update"),
     ...id,
     name: Schema.String,
     tags: Schema.String,
-    fit: Schema.Literals(["cover", "contain"]),
     runtime: Schema.NullOr(Schema.String),
     flags: Schema.String,
   }),
@@ -112,13 +119,14 @@ export const CommandSchema = Schema.Union([
   Schema.Struct({ action: Schema.Literal("revealPluginBackup"), ...id }),
 ]);
 export type Command = typeof CommandSchema.Type;
-export type ResultFor<C extends Command> = C["action"] extends "chooseImport"
-  ? ImportReview | null
-  : C["action"] extends "plugins" | "togglePlugin" | "restorePlugins"
-    ? PluginList
-    : C["action"] extends "releases"
-      ? Release[]
-      : Snapshot;
+export type ResultFor<C extends Command> = C["action"] extends
+  | "plugins"
+  | "togglePlugin"
+  | "restorePlugins"
+  ? PluginList
+  : C["action"] extends "releases"
+    ? Release[]
+    : Snapshot;
 export interface DesktopApi {
   request<C extends Command>(command: C): Promise<ResultFor<C>>;
   onChange(listener: () => void): () => void;
