@@ -85,9 +85,11 @@ folder has both, the NW.js game wins because it runs natively. Names come from a
 name, then the Unity product name, then the executable.
 
 Windows games run through CrossOver in `/Applications`. Choose a default bottle in Settings; a game
-can override it. Aperto runs `wine --bottle <bottle> --workdir <folder> <game.exe>`, which behaves
-like dropping the `.exe` on CrossOver's Run Command: nothing is installed or registered in the
-bottle. Launch arguments are passed one per line. Stop ends the game with `taskkill` inside the
+can override it. Aperto runs `wine --bottle <bottle> --no-update --dll winemenubuilder.exe=d --workdir
+<folder> <game.exe>`, which behaves like dropping the `.exe` on CrossOver's Run Command: nothing is
+installed or registered in the bottle. `--no-update` matters on macOS: a bottle update resyncs
+CrossOver's launchers in `~/Applications/CrossOver`, and macOS blocks that as Aperto modifying other
+apps. CrossOver upgrades its bottles itself when you open it after an update. Launch arguments are passed one per line. Stop ends the game with `taskkill` inside the
 bottle, so other programs in that bottle keep running.
 
 The runtimes section in Settings downloads official stable macOS ARM64 normal builds. The installer verifies

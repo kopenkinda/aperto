@@ -305,6 +305,7 @@ export class DesktopLibrary {
                 [
                   "--bottle",
                   this.bottleFor(game),
+                  "--no-update",
                   "--no-gui",
                   "--cx-app",
                   "taskkill.exe",
@@ -508,6 +509,12 @@ export class DesktopLibrary {
       return this.start(game, bottle, crossoverWine, [
         "--bottle",
         bottle,
+        // Updating the bottle resyncs CrossOver's Mac launchers in ~/Applications/CrossOver, which
+        // macOS blocks as Aperto modifying other apps. CrossOver itself upgrades bottles when opened.
+        "--no-update",
+        // Keep the game from adding shortcuts or file associations to the bottle and the Mac.
+        "--dll",
+        "winemenubuilder.exe=d",
         "--workdir",
         game.root,
         // A path as the first argument runs that file; `--cx-app` would look it up in the bottle.
