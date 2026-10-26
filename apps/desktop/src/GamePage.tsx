@@ -178,6 +178,7 @@ export function GamePage({
   const [flags, setFlags] = useState(game.flags.join("\n"));
   const [runtime, setRuntime] = useState(game.runtime);
   const [bottle, setBottle] = useState(game.bottle ?? null);
+  const [highResolution, setHighResolution] = useState(!!game.highResolution);
   // Undefined while loading; null when the game is not an RPG Maker export and has no plugin list.
   const [plugins, setPlugins] = useState<PluginList | null | undefined>(undefined);
   const [pluginError, setPluginError] = useState<string | null>(null);
@@ -201,13 +202,15 @@ export function GamePage({
     name !== game.name ||
     flags !== game.flags.join("\n") ||
     runtime !== game.runtime ||
-    bottle !== (game.bottle ?? null);
+    bottle !== (game.bottle ?? null) ||
+    highResolution !== !!game.highResolution;
   const downgrading = game.runtime && runtime && compareVersions(runtime, game.runtime) < 0;
   const revert = () => {
     setName(game.name);
     setFlags(game.flags.join("\n"));
     setRuntime(game.runtime);
     setBottle(game.bottle ?? null);
+    setHighResolution(!!game.highResolution);
   };
 
   useEffect(() => {
@@ -467,6 +470,7 @@ export function GamePage({
                     name,
                     runtime,
                     bottle,
+                    highResolution,
                     flags,
                   });
                   setName(name.trim());
@@ -487,39 +491,56 @@ export function GamePage({
               </Field>
 
               {windows ? (
-                <Field
-                  label="CrossOver bottle"
-                  hint="Runs like CrossOver's Run Command. Nothing is installed in the bottle."
-                >
-                  <Select
-                    value={bottle}
-                    disabled={running || snapshot.bottles === null}
-                    onValueChange={(value) => setBottle(value as string | null)}
-                    items={[
-                      {
-                        value: null,
-                        label: snapshot.defaultBottle
-                          ? `Default (${snapshot.defaultBottle})`
-                          : "Default",
-                      },
-                      ...(snapshot.bottles ?? []).map((item) => ({ value: item, label: item })),
-                    ]}
+                <>
+                  <Field
+                    label="CrossOver bottle"
+                    hint="Runs like CrossOver's Run Command. Nothing is installed in the bottle."
                   >
-                    <SelectTrigger className="w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value={null}>
-                        {snapshot.defaultBottle ? `Default (${snapshot.defaultBottle})` : "Default"}
-                      </SelectItem>
-                      {(snapshot.bottles ?? []).map((item) => (
-                        <SelectItem key={item} value={item}>
-                          {item}
+                    <Select
+                      value={bottle}
+                      disabled={running || snapshot.bottles === null}
+                      onValueChange={(value) => setBottle(value as string | null)}
+                      items={[
+                        {
+                          value: null,
+                          label: snapshot.defaultBottle
+                            ? `Default (${snapshot.defaultBottle})`
+                            : "Default",
+                        },
+                        ...(snapshot.bottles ?? []).map((item) => ({ value: item, label: item })),
+                      ]}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={null}>
+                          {snapshot.defaultBottle
+                            ? `Default (${snapshot.defaultBottle})`
+                            : "Default"}
                         </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </Field>
+                        {(snapshot.bottles ?? []).map((item) => (
+                          <SelectItem key={item} value={item}>
+                            {item}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                  <Field
+                    label="High resolution"
+                    htmlFor="game-high-resolution"
+                    hint="Sharp on Retina displays, but slower in demanding games. CrossOver applies it to the whole bottle, so Aperto switches the bottle when this game starts."
+                  >
+                    <div className="flex min-h-8 items-center">
+                      <Switch
+                        id="game-high-resolution"
+                        checked={highResolution}
+                        onCheckedChange={setHighResolution}
+                      />
+                    </div>
+                  </Field>
+                </>
               ) : nwjs ? (
                 <Field
                   label="NW.js runtime"

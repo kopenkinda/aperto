@@ -9,6 +9,7 @@ import { versionsIn } from "./discovery";
 import { DesktopLibrary } from "./library";
 import { runtimeExecutable } from "./runtimes";
 import { changePlugins, listPlugins, parsePlugins } from "./plugins";
+import { retinaModeIn } from "./windows";
 import { digest, exists, LibraryStore, ownedPath } from "./storage";
 
 let directory: string;
@@ -111,6 +112,7 @@ describe("import and persistence", () => {
       name: game.name,
       runtime: null,
       bottle: null,
+      highResolution: false,
       flags: "",
     });
     await library.handle({ action: "setTags", id: game.id, tags: ["Adventure", " adventure "] });
@@ -269,10 +271,12 @@ describe("Windows games", () => {
       name: game.name,
       runtime: null,
       bottle: "Steam",
+      highResolution: true,
       flags: "-screen-fullscreen 0\n-popupwindow",
     });
     expect(store.value.games[0]).toMatchObject({
       bottle: "Steam",
+      highResolution: true,
       flags: ["-screen-fullscreen 0", "-popupwindow"],
     });
   });
@@ -478,5 +482,17 @@ describe("custom artwork", () => {
     expect(await exists(saved("icon"))).toBe(false);
     expect(store.value.games[0]?.artwork).toBeNull();
     expect(store.value.games[0]?.customIcon).toBe(false);
+  });
+});
+
+describe("CrossOver high resolution mode", () => {
+  const registry = (lines: string) =>
+    `[Software\\\\Wine\\\\Fonts] 1\n"x"="y"\n\n[Software\\\\Wine\\\\Mac Driver] 1784146269\n#time=1dd\n${lines}\n[Software\\\\Wine\\\\Systray] 1\n"RetinaMode"="y"\n`;
+  it("reads the Mac driver's RetinaMode value from a bottle's registry", () => {
+    expect(retinaModeIn(registry('"AllowSetGamma"=dword:00000000\n'))).toBe(false);
+    expect(retinaModeIn(registry('"RetinaMode"="y"\n'))).toBe(true);
+    expect(retinaModeIn(registry('"RetinaMode"="true"\n'))).toBe(true);
+    expect(retinaModeIn(registry('"RetinaMode"="n"\n'))).toBe(false);
+    expect(retinaModeIn("")).toBe(false);
   });
 });

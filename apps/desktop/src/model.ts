@@ -26,6 +26,8 @@ export const GameSchema = Schema.Struct({
   executable: Schema.optionalKey(Schema.NullOr(Schema.String)),
   /** CrossOver bottle for this game; unset uses the library's default bottle. */
   bottle: Schema.optionalKey(Schema.NullOr(Schema.String)),
+  /** Runs a Windows game in CrossOver's high resolution (Retina) mode. */
+  highResolution: Schema.optionalKey(Schema.Boolean),
 });
 export type Game = typeof GameSchema.Type;
 export const gameKind = (game: Pick<Game, "kind">) => game.kind ?? "nwjs";
@@ -125,6 +127,7 @@ export const CommandSchema = Schema.Union([
     name: Schema.String,
     runtime: Schema.NullOr(Schema.String),
     bottle: Schema.NullOr(Schema.String),
+    highResolution: Schema.Boolean,
     flags: Schema.String,
   }),
   Schema.Struct({

@@ -20,7 +20,7 @@ import { inspectRoot, readObject } from "./detection";
 import { detectGame, findGames, fingerprint, versionedName, within } from "./discovery";
 import { iconToPng } from "./mac";
 import { installedTerminals, openInTerminal, terminalFor } from "./terminals";
-import { bottlesDirectory, crossoverWine, listBottles } from "./windows";
+import { bottlesDirectory, crossoverWine, listBottles, setRetinaMode } from "./windows";
 import { changePlugins, listPlugins } from "./plugins";
 import { RuntimeManager, getReleases, runtimeExecutable, validVersion } from "./runtimes";
 import { atomicWrite, exists, LibraryStore, message, ownedPath } from "./storage";
@@ -180,6 +180,7 @@ export class DesktopLibrary {
                 ...current,
                 name,
                 bottle: kind === "windows" ? command.bottle : null,
+                highResolution: kind === "windows" && command.highResolution,
                 flags,
               };
             if (
@@ -652,6 +653,20 @@ export class DesktopLibrary {
         throw new Error(`The CrossOver bottle "${bottle}" no longer exists. Choose another one.`);
       if (!game.executable || !(await exists(game.executable)))
         throw new Error("The game's executable is missing. Locate the game folder again.");
+      const highResolution = !!game.highResolution;
+      const sharing = this.store.value.games.find(
+        (other) =>
+          other.id !== game.id &&
+          this.running.has(other.id) &&
+          gameKind(other) === "windows" &&
+          this.bottleFor(other) === bottle &&
+          !!other.highResolution !== highResolution,
+      );
+      if (sharing)
+        throw new Error(
+          `Close ${sharing.name} first. High resolution mode applies to the whole "${bottle}" bottle.`,
+        );
+      await setRetinaMode(bottle, highResolution);
       // Like dropping the .exe on CrossOver's Run Command: nothing is registered in the bottle.
       return this.start(game, bottle, crossoverWine, [
         "--bottle",

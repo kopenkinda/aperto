@@ -1,9 +1,13 @@
+import { execFile } from "node:child_process";
 import { readdir, readFile, realpath, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 import type { Candidate } from "../src/model";
 import { meaningfulName } from "./detection";
 import { exists } from "./storage";
+
+const execute = promisify(execFile);
 
 // Executables that ship next to a game but are not the game.
 const helpers =
@@ -153,4 +157,51 @@ export async function listBottles(): Promise<string[]> {
     )
       bottles.push(entry.name);
   return bottles.sort((a, b) => a.localeCompare(b));
+}
+
+/** Whether a bottle's registry text turns on the Mac driver's high resolution (Retina) mode. */
+export function retinaModeIn(registry: string): boolean {
+  const header = registry.indexOf("[Software\\\\Wine\\\\Mac Driver]");
+  if (header < 0) return false;
+  const body = registry.slice(registry.indexOf("\n", header) + 1);
+  // A section ends at a blank line or the next section's header.
+  const section = body.split(/\n(?:\s*\n|\[)/)[0]!;
+  const value = /^"RetinaMode"="([^"]*)"/m.exec(section);
+  // Wine reads the first letter: y, t, or 1 means on.
+  return !!value && /^[yt1]/i.test(value[1]!);
+}
+
+/**
+ * Turns high resolution mode on or off for a whole bottle, as CrossOver's own bottle setting does.
+ * Wine reads the setting once per bottle rather than per program, so it cannot be set for one
+ * game alone. The saved registry is checked first so most launches skip starting Wine for it.
+ */
+export async function setRetinaMode(bottle: string, on: boolean) {
+  const registry = await readFile(path.join(bottlesDirectory, bottle, "user.reg"), "utf8").catch(
+    () => "",
+  );
+  if (retinaModeIn(registry) === on) return;
+  await execute(
+    crossoverWine,
+    [
+      "--bottle",
+      bottle,
+      "--no-update",
+      "--no-gui",
+      "--cx-app",
+      "reg.exe",
+      "add",
+      "HKCU\\Software\\Wine\\Mac Driver",
+      "/v",
+      "RetinaMode",
+      "/t",
+      "REG_SZ",
+      "/d",
+      on ? "y" : "n",
+      "/f",
+    ],
+    { timeout: 60_000 },
+  ).catch(() => {
+    throw new Error("CrossOver could not change the bottle's high resolution mode.");
+  });
 }
