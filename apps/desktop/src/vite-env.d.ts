@@ -1,13 +1,8 @@
 /// <reference types="vite/client" />
+import type { DesktopApi } from "./model";
 
-interface DesktopVersions {
-  readonly chrome: string;
-  readonly electron: string;
-  readonly node: string;
-}
-
-interface Window {
-  readonly desktop: {
-    readonly versions: () => DesktopVersions;
-  };
+declare global {
+  interface Window {
+    readonly desktop?: DesktopApi;
+  }
 }

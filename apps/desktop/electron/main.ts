@@ -1,54 +1,148 @@
 import path from "node:path";
-import { app, BrowserWindow, shell } from "electron";
-import * as Effect from "effect/Effect";
+import { stat } from "node:fs/promises";
+import { app, BrowserWindow, dialog, ipcMain, nativeImage, shell } from "electron";
+import { Effect, Schema } from "effect";
+import { CommandSchema } from "../src/model";
+import { DesktopLibrary } from "./library";
+import { LibraryStore, message } from "./storage";
 
-const applicationName = Effect.runSync(Effect.succeed("Aperto"));
+app.setName("Aperto");
+app.setPath("userData", process.env.APERTO_DATA_DIR || path.join(app.getPath("appData"), "Aperto"));
+let library: DesktopLibrary;
+let startupError: string | null = null;
+let quitting = false;
 
-const createWindow = (): BrowserWindow => {
+const changed = () => {
+  for (const window of BrowserWindow.getAllWindows()) window.webContents.send("aperto:changed");
+};
+
+const createWindow = () => {
   const window = new BrowserWindow({
-    width: 1120,
-    height: 760,
-    minWidth: 760,
-    minHeight: 560,
-    title: applicationName,
-    backgroundColor: "#11110f",
+    width: 1240,
+    height: 820,
+    minWidth: 900,
+    minHeight: 640,
+    title: "Aperto",
+    backgroundColor: "#fafaf9",
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
-      preload: path.join(import.meta.dirname, "preload.js"),
       sandbox: true,
+      preload: path.join(import.meta.dirname, "preload.js"),
     },
   });
-
-  window.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith("https://")) {
-      void shell.openExternal(url);
-    }
-
-    return { action: "deny" };
-  });
-
-  if (process.env.VITE_DEV_SERVER_URL) {
-    void window.loadURL(process.env.VITE_DEV_SERVER_URL);
-  } else {
-    void window.loadFile(path.join(import.meta.dirname, "../dist/index.html"));
-  }
-
+  window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  window.webContents.on("will-navigate", (event) => event.preventDefault());
+  if (process.env.VITE_DEV_SERVER_URL) void window.loadURL(process.env.VITE_DEV_SERVER_URL);
+  else void window.loadFile(path.join(import.meta.dirname, "../dist/index.html"));
   return window;
 };
 
-app.whenReady().then(() => {
-  createWindow();
-
-  app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
-    }
+if (!app.requestSingleInstanceLock()) app.quit();
+else {
+  app.on("second-instance", () => {
+    const window = BrowserWindow.getAllWindows()[0] ?? createWindow();
+    if (window.isMinimized()) window.restore();
+    window.focus();
   });
-});
-
-app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") {
-    app.quit();
-  }
-});
+  void app.whenReady().then(async () => {
+    const store = new LibraryStore(app.getPath("userData"), changed);
+    library = new DesktopLibrary(
+      store,
+      {
+        async chooseFolder() {
+          const result = await dialog.showOpenDialog({
+            title: "Choose an unpacked game folder",
+            properties: ["openDirectory", "treatPackageAsDirectory"],
+          });
+          return result.canceled ? null : (result.filePaths[0] ?? null);
+        },
+        async chooseArtwork() {
+          const result = await dialog.showOpenDialog({
+            title: "Choose game artwork",
+            properties: ["openFile"],
+            filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "webp"] }],
+          });
+          return result.canceled ? null : (result.filePaths[0] ?? null);
+        },
+        async image(file) {
+          try {
+            if (!/\.(png|jpe?g|webp)$/i.test(file) || (await stat(file)).size > 12 * 1024 * 1024)
+              return null;
+            const image = nativeImage.createFromPath(file);
+            if (image.isEmpty()) return null;
+            const size = image.getSize();
+            const ratio = Math.min(1, 900 / size.width, 900 / size.height);
+            return image
+              .resize({
+                width: Math.max(1, Math.round(size.width * ratio)),
+                height: Math.max(1, Math.round(size.height * ratio)),
+              })
+              .toDataURL();
+          } catch {
+            return null;
+          }
+        },
+        reveal(file) {
+          shell.showItemInFolder(file);
+        },
+      },
+      changed,
+    );
+    try {
+      await store.load();
+    } catch (error) {
+      startupError = message(error);
+    }
+    const request = Effect.fn("desktop.request")((input: unknown) =>
+      Schema.decodeUnknownEffect(CommandSchema)(input).pipe(
+        Effect.flatMap((command) =>
+          Effect.tryPromise({ try: () => library.handle(command), catch: message }),
+        ),
+        Effect.map((value) => ({ ok: true as const, value })),
+        Effect.catch((error) => Effect.succeed({ ok: false as const, message: message(error) })),
+      ),
+    );
+    ipcMain.handle("aperto:request", (event, input: unknown) => {
+      const window = BrowserWindow.fromWebContents(event.sender);
+      if (!window || event.senderFrame !== event.sender.mainFrame)
+        return { ok: false, message: "Untrusted request." };
+      const expected = process.env.VITE_DEV_SERVER_URL;
+      const url = event.senderFrame.url;
+      if (expected ? new URL(url).origin !== new URL(expected).origin : !url.startsWith("file://"))
+        return { ok: false, message: "Untrusted request." };
+      if (startupError) return { ok: false, message: startupError };
+      return Effect.runPromise(request(input));
+    });
+    createWindow();
+    app.on("activate", () => {
+      if (!BrowserWindow.getAllWindows().length) createWindow();
+    });
+  });
+  app.on("before-quit", (event) => {
+    if (quitting || (!library?.running.size && !library?.runtimes.downloads.size)) return;
+    event.preventDefault();
+    void dialog
+      .showMessageBox({
+        type: "question",
+        message: "Quit Aperto?",
+        detail: "Running games will be stopped and runtime downloads will be cancelled.",
+        buttons: ["Keep open", "Stop and quit"],
+        defaultId: 0,
+        cancelId: 0,
+      })
+      .then(({ response }) => {
+        if (response !== 1) return;
+        quitting = true;
+        for (const session of library.running.values()) {
+          session.stopped = true;
+          session.process.kill("SIGTERM");
+        }
+        for (const download of library.runtimes.downloads.values()) download.controller.abort();
+        setTimeout(() => app.quit(), 1000);
+      });
+  });
+  app.on("window-all-closed", () => {
+    if (process.platform !== "darwin") app.quit();
+  });
+}

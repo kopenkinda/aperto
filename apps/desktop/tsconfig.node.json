@@ -8,5 +8,5 @@
     "noEmit": true,
     "types": ["node", "vite-plugin-electron/electron-env"]
   },
-  "include": ["electron/**/*.ts", "vite.config.mts"]
+  "include": ["electron/**/*.ts", "src/model.ts", "vite.config.mts"]
 }

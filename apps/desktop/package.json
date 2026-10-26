@@ -30,18 +30,21 @@
     "clsx": "catalog:",
     "effect": "catalog:",
     "lucide-react": "catalog:",
+    "openpgp": "catalog:",
     "react": "catalog:",
     "react-dom": "catalog:",
     "scheduler": "catalog:",
     "shadcn": "catalog:",
     "tailwind-merge": "catalog:",
-    "tw-animate-css": "catalog:"
+    "tw-animate-css": "catalog:",
+    "yauzl": "catalog:"
   },
   "devDependencies": {
     "@tailwindcss/vite": "catalog:",
     "@types/node": "catalog:",
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
+    "@types/yauzl": "catalog:",
     "@vitejs/plugin-react": "catalog:",
     "electron": "catalog:",
     "electron-builder": "catalog:",
@@ -66,7 +69,9 @@
       "package.json"
     ],
     "mac": {
+      "icon": "resources/icon.icns",
       "target": "dmg",
+      "minimumSystemVersion": "14.0",
       "category": "public.app-category.productivity"
     },
     "win": {

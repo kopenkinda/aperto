@@ -7,6 +7,9 @@
     "node": ">=22.12.0"
   },
   "scripts": {
+    "start": "./scripts/run.sh",
+    "build:app": "./scripts/build.sh",
+    "icon": "swift scripts/icon.swift",
     "build": "pnpm --recursive build",
     "dev": "pnpm --filter @aperto/desktop dev",
     "format": "pnpm --recursive format",

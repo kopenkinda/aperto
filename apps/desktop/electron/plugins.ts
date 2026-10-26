@@ -1,0 +1,147 @@
+import { lstat, readFile, realpath } from "node:fs/promises";
+import path from "node:path";
+import { Schema } from "effect";
+import type { Game, PluginList } from "../src/model";
+import { localFile } from "./detection";
+import { atomicWrite, digest, exists, LibraryStore, ownedPath } from "./storage";
+
+const PluginsSchema = Schema.Array(
+  Schema.Struct({
+    name: Schema.String,
+    status: Schema.Boolean,
+    description: Schema.optional(Schema.String),
+    parameters: Schema.Record(Schema.String, Schema.Unknown),
+  }),
+);
+
+export function parsePlugins(source: string) {
+  const match =
+    /^(\uFEFF?(?:(?:\s+)|(?:\/\/[^\r\n]*(?:\r?\n|$))|(?:\/\*[\s\S]*?\*\/))*(?:var|let|const)\s+\$plugins\s*=\s*)(\[[\s\S]*\])(\s*;?\s*)$/.exec(
+      source,
+    );
+  if (!match)
+    throw new Error(
+      "This game uses a custom plugin configuration. Aperto only edits standard MV/MZ plugin lists.",
+    );
+  const plugins = Schema.decodeUnknownSync(PluginsSchema, { onExcessProperty: "preserve" })(
+    JSON.parse(match[2]!),
+  );
+  if (plugins.length > 5000) throw new Error("This plugin list is too large.");
+  return { prefix: match[1]!, suffix: match[3]!, plugins };
+}
+
+async function readConfiguration(game: Game) {
+  if (
+    !(await exists(path.join(game.root, "js", "rpg_core.js"))) &&
+    !(await exists(path.join(game.root, "js", "rmmz_core.js")))
+  ) {
+    throw new Error("Plugin toggles are available for RPG Maker MV/MZ exports only.");
+  }
+  const file = path.join(game.root, "js", "plugins.js");
+  const info = await lstat(file);
+  if (!info.isFile() || info.size > 4 * 1024 * 1024 || (await realpath(file)) !== file) {
+    throw new Error(
+      "Plugin configuration must be a regular file inside the game folder, no larger than 4 MB.",
+    );
+  }
+  const source = await readFile(file, "utf8");
+  return { file, source, hash: digest(source), mode: info.mode & 0o777, ...parsePlugins(source) };
+}
+
+export async function listPlugins(store: LibraryStore, game: Game): Promise<PluginList> {
+  const configuration = await readConfiguration(game);
+  const backup = store.value.backups.find((item) => item.gameId === game.id);
+  const conflict = Boolean(
+    backup && ![backup.lastWritten, backup.pending, backup.original].includes(configuration.hash),
+  );
+  return {
+    hash: configuration.hash,
+    conflict,
+    canRestore: Boolean(backup && !conflict && configuration.hash !== backup.original),
+    plugins: await Promise.all(
+      configuration.plugins.map(async (plugin) => ({
+        name: plugin.name,
+        description: plugin.description ?? "",
+        enabled: plugin.status,
+        missing:
+          !plugin.name ||
+          !(await localFile(game.root, `js/plugins/${plugin.name}.js`).then(
+            () => true,
+            () => false,
+          )),
+      })),
+    ),
+  };
+}
+
+export async function changePlugins(
+  store: LibraryStore,
+  game: Game,
+  expectedHash: string,
+  change: { index: number; enabled: boolean } | "restore",
+) {
+  const configuration = await readConfiguration(game);
+  if (configuration.hash !== expectedHash)
+    throw new Error("The plugin configuration changed. Refresh the list before editing it.");
+  let backup = store.value.backups.find((item) => item.gameId === game.id);
+  if (
+    backup &&
+    ![backup.original, backup.lastWritten, backup.pending].includes(configuration.hash)
+  ) {
+    throw new Error(
+      "The plugin configuration was changed outside Aperto. Your backup is preserved. Restore or reconcile it manually before making further changes.",
+    );
+  }
+  const backupFile = path.join(
+    ownedPath(store.directory, "plugin-backups", game.id),
+    "original.js",
+  );
+  let next: string;
+  if (change === "restore") {
+    if (!backup) throw new Error("There is no original configuration to restore.");
+    next = await readFile(backupFile, "utf8");
+    if (digest(next) !== backup.original)
+      throw new Error("The plugin backup is damaged. The game configuration has not been changed.");
+  } else {
+    const selected = configuration.plugins[change.index];
+    if (!selected) throw new Error("That plugin is no longer in the list.");
+    if (change.enabled) await localFile(game.root, `js/plugins/${selected.name}.js`);
+    const plugins = configuration.plugins.map((plugin, index) =>
+      index === change.index ? { ...plugin, status: change.enabled } : plugin,
+    );
+    next = configuration.prefix + JSON.stringify(plugins, null, 2) + configuration.suffix;
+    if (!backup) {
+      if (await exists(backupFile)) {
+        if (digest(await readFile(backupFile)) !== configuration.hash)
+          throw new Error(
+            "An older plugin backup already exists. Resolve it before editing this game.",
+          );
+      } else {
+        await atomicWrite(backupFile, configuration.source);
+      }
+      backup = {
+        gameId: game.id,
+        original: configuration.hash,
+        lastWritten: configuration.hash,
+        pending: null,
+      };
+    }
+  }
+  const pending = { ...backup, pending: digest(next) };
+  await store.update((state) => ({
+    ...state,
+    backups: [...state.backups.filter((item) => item.gameId !== game.id), pending],
+  }));
+  await atomicWrite(configuration.file, next, configuration.mode, async () => {
+    const current = await readConfiguration(game);
+    if (current.hash !== expectedHash)
+      throw new Error("The configuration changed while saving. No game changes were written.");
+  });
+  await store.update((state) => ({
+    ...state,
+    backups: state.backups.map((item) =>
+      item.gameId === game.id ? { ...item, lastWritten: digest(next), pending: null } : item,
+    ),
+  }));
+  return listPlugins(store, game);
+}

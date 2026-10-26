@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="tile" x1="160" y1="100" x2="850" y2="950" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#526d57"/>
+      <stop offset="1" stop-color="#233c2f"/>
+    </linearGradient>
+    <linearGradient id="arch" x1="340" y1="300" x2="690" y2="770" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ffffef"/>
+      <stop offset="1" stop-color="#d9dfc8"/>
+    </linearGradient>
+    <linearGradient id="play" x1="446" y1="454" x2="616" y2="624" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#d7edaa"/>
+      <stop offset="1" stop-color="#a9ce87"/>
+    </linearGradient>
+  </defs>
+  <rect x="100" y="110" width="824" height="824" rx="184" fill="#142c21" opacity=".15"/>
+  <rect x="100" y="100" width="824" height="824" rx="184" fill="url(#tile)"/>
+  <rect x="102" y="102" width="820" height="820" rx="182" fill="none" stroke="#ffffff" stroke-opacity=".16" stroke-width="4"/>
+  <path d="M322 746V450a190 190 0 0 1 380 0v296" fill="none" stroke="#122c1f" stroke-opacity=".22" stroke-width="76" stroke-linecap="round" transform="translate(0 12)"/>
+  <path d="M322 734V438a190 190 0 0 1 380 0v296" fill="none" stroke="url(#arch)" stroke-width="76" stroke-linecap="round"/>
+  <path d="M464 469c-12-7-26 1-26 15v166c0 14 14 22 26 15l143-83c12-7 12-23 0-30z" fill="#142f22" opacity=".2" transform="translate(0 9)"/>
+  <path d="M464 457c-12-7-26 1-26 15v166c0 14 14 22 26 15l143-83c12-7 12-23 0-30z" fill="url(#play)"/>
+</svg>
