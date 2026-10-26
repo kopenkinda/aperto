@@ -44,6 +44,7 @@ beforeEach(async () => {
       chooseArtwork: async () => null,
       image: async () => null,
       reveal: () => {},
+      trash: async () => {},
     },
     () => {},
   );
@@ -260,6 +261,45 @@ describe("Windows games", () => {
     expect(games["Hybrid Tale"]!.kind).toBe("nwjs");
     expect((await library.snapshot()).missing).toEqual([]);
   });
+  it("trashes a game's folder with its archive wrapper, but never the games folder", async () => {
+    await mkdir(path.join(directory, "trash"));
+    const shelf = await realpath(path.join(directory, "trash"));
+    await writeFiles(path.join(shelf, "Ember_Road-v1", "Ember Road"), { "EmberRoad.exe": "x" });
+    await writeFiles(path.join(shelf, "Ash"), { "Ash.exe": "y", "notes.txt": "z" });
+    await store.update((state) => ({ ...state, gamesFolder: shelf }));
+    await library.scanGamesFolder();
+    const trashed: string[] = [];
+    library = new DesktopLibrary(
+      store,
+      {
+        chooseFolder: async () => null,
+        chooseArtwork: async () => null,
+        image: async () => null,
+        reveal: () => {},
+        trash: async (file) => void trashed.push(file),
+      },
+      () => {},
+    );
+    const named = (name: string) => store.value.games.find((game) => game.name.startsWith(name))!;
+    expect(await library.handle({ action: "folderToTrash", id: named("Ember").id })).toBe(
+      path.join(shelf, "Ember_Road-v1"),
+    );
+    await library.handle({
+      action: "remove",
+      id: named("Ash").id,
+      deleteData: false,
+      trashFolder: true,
+    });
+    expect(trashed).toEqual([path.join(shelf, "Ash")]);
+    expect(named("Ash").removed).toBe(true);
+
+    // A game sitting directly in the games folder would take every other game with it.
+    const ember = named("Ember");
+    await store.update((state) => ({ ...state, gamesFolder: ember.folder }));
+    await expect(library.handle({ action: "folderToTrash", id: ember.id })).rejects.toThrow(
+      "will not move",
+    );
+  });
   it("keeps launch arguments as written and refuses NW.js switch rules for them", async () => {
     await writeFiles(path.join(directory, "win", "Ember Road"), { "EmberRoad.exe": "x" });
     await store.update((state) => ({ ...state, gamesFolder: path.join(directory, "win") }));
@@ -434,6 +474,7 @@ describe("custom artwork", () => {
         chooseArtwork: async () => picked,
         image: async (file) => `data:image/png;base64,${(await readFile(file)).toString("base64")}`,
         reveal: () => {},
+        trash: async () => {},
       },
       () => {},
     );

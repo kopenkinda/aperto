@@ -142,7 +142,15 @@ export const CommandSchema = Schema.Union([
   Schema.Struct({ action: Schema.Literal("resetIcon"), ...id }),
   Schema.Struct({ action: Schema.Literal("setTags"), ...id, tags: Schema.Array(Schema.String) }),
   Schema.Struct({ action: Schema.Literal("setFavorite"), ...id, favorite: Schema.Boolean }),
-  Schema.Struct({ action: Schema.Literal("remove"), ...id, deleteData: Schema.Boolean }),
+  Schema.Struct({
+    action: Schema.Literal("remove"),
+    ...id,
+    deleteData: Schema.Boolean,
+    /** Also moves the game's folder to the Trash. */
+    trashFolder: Schema.optionalKey(Schema.Boolean),
+  }),
+  /** The folder that removing the game with `trashFolder` would move to the Trash. */
+  Schema.Struct({ action: Schema.Literal("folderToTrash"), ...id }),
   Schema.Struct({ action: Schema.Literal("relink"), ...id }),
   Schema.Struct({ action: Schema.Literal("plugins"), ...id }),
   Schema.Struct({
@@ -170,7 +178,9 @@ export type ResultFor<C extends Command> = C["action"] extends "plugins"
     ? PluginList
     : C["action"] extends "releases"
       ? Release[]
-      : Snapshot;
+      : C["action"] extends "folderToTrash"
+        ? string
+        : Snapshot;
 export interface DesktopApi {
   request<C extends Command>(command: C): Promise<ResultFor<C>>;
   onChange(listener: () => void): () => void;

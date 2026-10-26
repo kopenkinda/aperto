@@ -182,7 +182,9 @@ export function GamePage({
   // Undefined while loading; null when the game is not an RPG Maker export and has no plugin list.
   const [plugins, setPlugins] = useState<PluginList | null | undefined>(undefined);
   const [pluginError, setPluginError] = useState<string | null>(null);
-  const [confirm, setConfirm] = useState<"remove" | "restore" | null>(null);
+  const [confirm, setConfirm] = useState<"remove" | "trash" | "restore" | null>(null);
+  // The folder a Shift-click removal moves to the Trash, shown in the dialog before it happens.
+  const [trashFolder, setTrashFolder] = useState<string | null>(null);
   const [deleteData, setDeleteData] = useState(false);
   const [artworkSlot, setArtworkSlot] = useState<"icon" | "banner" | null>(null);
   const [artworkUrl, setArtworkUrl] = useState("");
@@ -377,9 +379,15 @@ export function GamePage({
             variant="destructive"
             size="icon-lg"
             aria-label="Remove from library"
-            title="Remove from library"
+            title={"Remove from library\nShift-click to also move its folder to the Trash"}
             disabled={busy || running}
-            onClick={() => setConfirm("remove")}
+            onClick={(event) => {
+              if (!event.shiftKey) return setConfirm("remove");
+              void run(async () => {
+                setTrashFolder(await request({ action: "folderToTrash", id: game.id }));
+                setConfirm("trash");
+              });
+            }}
           >
             <Trash2Icon />
           </Button>
@@ -872,15 +880,26 @@ export function GamePage({
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              {confirm === "remove" ? `Remove ${game.name}?` : "Restore original plugins?"}
+              {confirm === "remove"
+                ? `Remove ${game.name}?`
+                : confirm === "trash"
+                  ? `Delete ${game.name}?`
+                  : "Restore original plugins?"}
             </DialogTitle>
             <DialogDescription>
               {confirm === "remove"
                 ? "The game folder stays where it is, and later scans will not add it back. Add the folder by hand to bring it back."
-                : "This puts back the plugin list from before Aperto first changed it."}
+                : confirm === "trash"
+                  ? "Aperto removes the game and moves its folder to the Trash, with any saves kept inside it. You can put it back from the Trash until it is emptied."
+                  : "This puts back the plugin list from before Aperto first changed it."}
             </DialogDescription>
           </DialogHeader>
-          {confirm === "remove" && nwjs && (
+          {confirm === "trash" && trashFolder && (
+            <p className="rounded-md bg-muted px-2 py-1.5 font-mono text-xs break-all">
+              {trashFolder}
+            </p>
+          )}
+          {confirm !== "restore" && nwjs && (
             <Label className="items-start font-normal">
               <Checkbox
                 checked={deleteData}
@@ -898,8 +917,13 @@ export function GamePage({
               disabled={busy}
               onClick={() =>
                 void run(async () => {
-                  if (confirm === "remove") {
-                    await request({ action: "remove", id: game.id, deleteData });
+                  if (confirm === "remove" || confirm === "trash") {
+                    await request({
+                      action: "remove",
+                      id: game.id,
+                      deleteData,
+                      trashFolder: confirm === "trash",
+                    });
                   } else if (plugins) {
                     setPlugins(
                       await request({ action: "restorePlugins", id: game.id, hash: plugins.hash }),
@@ -909,7 +933,7 @@ export function GamePage({
                 })
               }
             >
-              {confirm === "remove" ? "Remove" : "Restore"}
+              {confirm === "remove" ? "Remove" : confirm === "trash" ? "Move to Trash" : "Restore"}
             </Button>
           </DialogFooter>
         </DialogContent>

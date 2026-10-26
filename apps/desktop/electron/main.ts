@@ -100,6 +100,7 @@ else {
         reveal(file) {
           shell.showItemInFolder(file);
         },
+        trash: (file) => shell.trashItem(file),
       },
       changed,
     );

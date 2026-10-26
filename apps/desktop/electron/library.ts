@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { spawn, type ChildProcess } from "node:child_process";
-import { cp, mkdir, readFile, rename, rm } from "node:fs/promises";
+import { cp, mkdir, readdir, readFile, realpath, rename, rm } from "node:fs/promises";
+import { homedir } from "node:os";
 import path from "node:path";
 import {
   compareVersions,
@@ -31,6 +32,8 @@ export type NativeActions = {
   /** Reads an image as a data URL, scaled down to fit `maxSize` pixels on its longer side. */
   image: (file: string, maxSize?: number) => Promise<string | null>;
   reveal: (file: string) => void;
+  /** Moves a file or folder to the Trash. */
+  trash: (file: string) => Promise<void>;
 };
 
 export class DesktopLibrary {
@@ -260,9 +263,13 @@ export class DesktopLibrary {
           }));
           break;
         }
+        case "folderToTrash":
+          return await this.folderToTrash(this.game(command.id));
         case "remove": {
           const game = this.game(command.id);
           this.idle(game.id);
+          // Checked again here, since the library may have changed since the dialog asked.
+          if (command.trashFolder) await this.native.trash(await this.folderToTrash(game));
           if (command.deleteData) {
             await rm(ownedPath(this.store.directory, "browser-data", game.id), {
               recursive: true,
@@ -567,6 +574,38 @@ export class DesktopLibrary {
     } finally {
       await rm(png, { force: true });
     }
+  }
+
+  /**
+   * The folder to trash with a game: its own folder, widened through wrapper folders that hold
+   * nothing else, as an extracted archive often leaves (`Game-v1.2/Game/`), but never to the games
+   * folder itself. Refuses folders that hold the games folder, the home folder, or another game.
+   */
+  private async folderToTrash(game: Game) {
+    // Game folders are stored resolved, so the games folder is compared resolved too.
+    const setting = this.store.value.gamesFolder;
+    const top = setting ? await realpath(setting).catch(() => setting) : null;
+    let target = game.folder;
+    while (top && within(path.dirname(target), top) && path.dirname(target) !== top) {
+      const siblings = await readdir(path.dirname(target)).catch(() => null);
+      if (siblings?.filter((name) => name !== ".DS_Store").length !== 1) break;
+      target = path.dirname(target);
+    }
+    const others = this.store.value.games.filter(
+      (other) => other.id !== game.id && !other.removed && within(other.folder, target),
+    );
+    if (
+      target === path.parse(target).root ||
+      within(homedir(), target) ||
+      (top && within(top, target)) ||
+      others.length
+    )
+      throw new Error(
+        others.length
+          ? `The game's folder also holds ${others[0]!.name}, so Aperto will not move it to the Trash.`
+          : "Aperto will not move this folder to the Trash. Remove it in Finder instead.",
+      );
+    return target;
   }
 
   /** The icon found in the game itself: the .exe's icon, the app's icon, or the manifest's. */
