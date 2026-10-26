@@ -30,18 +30,25 @@ export function parsePlugins(source: string) {
   return { prefix: match[1]!, suffix: match[3]!, plugins };
 }
 
-/** Whether the game is an RPG Maker MV/MZ export, the only kind with editable plugins. */
-async function rpgMaker(game: Game) {
-  return (
-    (await exists(path.join(game.root, "js", "rpg_core.js"))) ||
-    (await exists(path.join(game.root, "js", "rmmz_core.js")))
-  );
+/**
+ * The folder holding an RPG Maker MV/MZ export's js folder, the only kind with editable plugins,
+ * or null for other games. Windows deployments keep the export in www next to package.json.
+ */
+async function rpgMakerFolder(game: Game) {
+  for (const folder of [game.root, path.join(game.root, "www")]) {
+    if (
+      (await exists(path.join(folder, "js", "rpg_core.js"))) ||
+      (await exists(path.join(folder, "js", "rmmz_core.js")))
+    )
+      return folder;
+  }
+  return null;
 }
 
 async function readConfiguration(game: Game) {
-  if (!(await rpgMaker(game)))
-    throw new Error("Plugin toggles are available for RPG Maker MV/MZ exports only.");
-  const file = path.join(game.root, "js", "plugins.js");
+  const folder = await rpgMakerFolder(game);
+  if (!folder) throw new Error("Plugin toggles are available for RPG Maker MV/MZ exports only.");
+  const file = path.join(folder, "js", "plugins.js");
   const info = await lstat(file);
   if (!info.isFile() || info.size > 4 * 1024 * 1024 || (await realpath(file)) !== file) {
     throw new Error(
@@ -49,12 +56,19 @@ async function readConfiguration(game: Game) {
     );
   }
   const source = await readFile(file, "utf8");
-  return { file, source, hash: digest(source), mode: info.mode & 0o777, ...parsePlugins(source) };
+  return {
+    file,
+    folder,
+    source,
+    hash: digest(source),
+    mode: info.mode & 0o777,
+    ...parsePlugins(source),
+  };
 }
 
 /** The game's plugins, or null when it is not an RPG Maker MV/MZ export. */
 export async function listPlugins(store: LibraryStore, game: Game): Promise<PluginList | null> {
-  if (!(await rpgMaker(game))) return null;
+  if (!(await rpgMakerFolder(game))) return null;
   const configuration = await readConfiguration(game);
   const backup = store.value.backups.find((item) => item.gameId === game.id);
   const conflict = Boolean(
@@ -71,7 +85,7 @@ export async function listPlugins(store: LibraryStore, game: Game): Promise<Plug
         enabled: plugin.status,
         missing:
           !plugin.name ||
-          !(await localFile(game.root, `js/plugins/${plugin.name}.js`).then(
+          !(await localFile(configuration.folder, `js/plugins/${plugin.name}.js`).then(
             () => true,
             () => false,
           )),
@@ -111,7 +125,7 @@ export async function changePlugins(
   } else {
     const selected = configuration.plugins[change.index];
     if (!selected) throw new Error("That plugin is no longer in the list.");
-    if (change.enabled) await localFile(game.root, `js/plugins/${selected.name}.js`);
+    if (change.enabled) await localFile(configuration.folder, `js/plugins/${selected.name}.js`);
     const plugins = configuration.plugins.map((plugin, index) =>
       index === change.index ? { ...plugin, status: change.enabled } : plugin,
     );

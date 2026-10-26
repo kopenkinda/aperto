@@ -354,6 +354,23 @@ describe("Mac games", () => {
 });
 
 describe("plugin editing", () => {
+  it("finds plugins in the www folder of a Windows deployment", async () => {
+    // Windows deployments keep package.json beside the executable and point it into www.
+    await writeFile(
+      path.join(gameFolder, "package.json"),
+      JSON.stringify({ name: "game", main: "www/index.html", window: { title: "Game" } }),
+    );
+    await rm(path.join(root, "package.json"));
+    const game = await importGame();
+    expect(game.root).toBe(await realpath(gameFolder));
+    const list = (await listPlugins(store, game))!;
+    expect(list.plugins.map((plugin) => [plugin.name, plugin.missing])).toEqual([
+      ["Lighting", false],
+      ["Weather", false],
+    ]);
+    await changePlugins(store, game, list.hash, { index: 1, enabled: true });
+    expect(await readFile(path.join(root, "js", "plugins.js"), "utf8")).toContain('"status": true');
+  });
   it("keeps the game locked until a plugin edit finishes", async () => {
     const game = await importGame();
     const editing = library.handle({
