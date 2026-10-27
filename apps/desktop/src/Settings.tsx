@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState } from "react";
 import { ArrowUpIcon, DownloadIcon, FolderOpenIcon, RefreshCwIcon, XIcon } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -25,29 +25,8 @@ import {
   type Snapshot,
 } from "./model";
 import { request, useTask } from "./desktop";
+import { Field, Section } from "@/components/settings";
 import { TagManager } from "@/components/TagManager";
-
-/** One setting: its label on the left, the control and an optional hint on the right. */
-function Row({ label, hint, children }: { label: string; hint?: ReactNode; children: ReactNode }) {
-  return (
-    <div className="grid gap-2 px-4 py-3 sm:grid-cols-[8rem_minmax(0,1fr)] sm:gap-4">
-      <span className="font-medium sm:leading-8">{label}</span>
-      <div className="flex min-w-0 flex-col gap-1.5">
-        {children}
-        {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
-      </div>
-    </div>
-  );
-}
-
-function Section({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <section className="flex flex-col gap-2">
-      <h3 className="text-xs font-medium text-muted-foreground">{title}</h3>
-      <div className="divide-y rounded-lg border bg-card/40">{children}</div>
-    </section>
-  );
-}
 
 const relative = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
 /** "5 minutes ago", "yesterday". */
@@ -159,7 +138,7 @@ export function Settings({
         )}
 
         <Section title="Library">
-          <Row
+          <Field
             label="Games folder"
             hint="Aperto adds the NW.js, Ren'Py, RPG Maker XP–VX Ace, Windows, and Mac games in this folder when it opens and when you come back to it. Copies of a game you already have are skipped; other versions are added separately."
           >
@@ -204,11 +183,11 @@ export function Settings({
                 {snapshot.gamesFolder ? "Change" : "Choose"}
               </Button>
             </div>
-          </Row>
+          </Field>
         </Section>
 
         <Section title="Apps">
-          <Row
+          <Field
             label="CrossOver bottle"
             hint="Windows games run in this bottle unless a game picks another. Aperto runs the game's .exe directly, like Run Command, without installing anything in the bottle."
           >
@@ -242,8 +221,8 @@ export function Settings({
                 </SelectContent>
               </Select>
             )}
-          </Row>
-          <Row
+          </Field>
+          <Field
             label="Terminal"
             hint="Opens a game's folder from its page. Automatic prefers Ghostty, iTerm, or Warp over Terminal."
           >
@@ -273,11 +252,11 @@ export function Settings({
                 ))}
               </SelectContent>
             </Select>
-          </Row>
+          </Field>
         </Section>
 
         <Section title="Updates">
-          <Row
+          <Field
             label="F95zone"
             hint={`Aperto compares the version in each game's folder name with its F95zone thread twice a day, while it runs. Games tagged from Steam are found on F95zone by their exact title. ${
               snapshot.updatesCheckedAt
@@ -307,7 +286,7 @@ export function Settings({
                     : "Everything is up to date."}
               </span>
             </div>
-          </Row>
+          </Field>
         </Section>
 
         <Section title="Tags">

@@ -1,11 +1,11 @@
 import { useState } from "react";
-import { CheckIcon, MinusIcon, SearchIcon, TagIcon } from "lucide-react";
+import { SearchInput } from "./SearchInput";
+import { CheckIcon, MinusIcon, TagIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import type { Filters, TagColor } from "../model";
-import { tagDot } from "./tag-colors";
+import { TagDot } from "./tag-colors";
 
 /**
  * The tag filter beside the sort and filter button. Clicking a tag cycles it through showing only
@@ -56,16 +56,12 @@ export function TagFilter({
         )}
       </PopoverTrigger>
       <PopoverContent align="start" className="w-64 gap-2">
-        <div className="relative">
-          <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            aria-label="Search tags"
-            placeholder="Search tags"
-            className="pl-8"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-          />
-        </div>
+        <SearchInput
+          aria-label="Search tags"
+          placeholder="Search tags"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+        />
         <p className="text-xs text-muted-foreground">
           Click once to show only games with a tag, again to hide them.
         </p>
@@ -95,7 +91,7 @@ export function TagFilter({
                     {state === "include" && <CheckIcon className="size-3" />}
                     {state === "exclude" && <MinusIcon className="size-3" />}
                   </span>
-                  <span className={cn("size-2 shrink-0 rounded-full", tagDot(colors[tag]))} />
+                  <TagDot color={colors[tag]} />
                   <span
                     className={cn(
                       "min-w-0 flex-1 truncate",

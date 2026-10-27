@@ -5,9 +5,7 @@ import {
   FolderOpenIcon,
   ImageIcon,
   PlayIcon,
-  RotateCcwIcon,
   ArrowUpCircleIcon,
-  SearchIcon,
   SparklesIcon,
   SquareIcon,
   SquareTerminalIcon,
@@ -17,6 +15,9 @@ import {
 } from "lucide-react";
 import { Artwork } from "@/components/Artwork";
 import { MetadataDialog } from "@/components/MetadataDialog";
+import { PluginsSection } from "@/components/PluginsSection";
+import { Field, Note, SettingsCard, useSaved } from "@/components/settings";
+import { Label } from "@/components/ui/label";
 import { TagEditor } from "@/components/TagEditor";
 import { TagLine } from "@/components/TagLine";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -31,7 +32,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -58,7 +58,6 @@ import {
   compareVersions,
   gameKind,
   launchOptions,
-  managedPlugins,
   metadataSites,
   updateAvailable,
   sandboxable,
@@ -68,7 +67,6 @@ import {
   type Engine,
   type Game,
   type Launch,
-  type PluginList,
   type Snapshot,
 } from "./model";
 import { request, useTask } from "./desktop";
@@ -139,28 +137,22 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
 }
 
 /** One settings row: the label on the left, the control and its hint on the right. */
-function Field({
-  label,
-  htmlFor,
-  hint,
-  children,
-}: {
-  label: string;
-  htmlFor?: string;
-  hint?: ReactNode;
-  children: ReactNode;
-}) {
-  return (
-    <div className="grid gap-2 px-4 py-3 sm:grid-cols-[9rem_minmax(0,1fr)] sm:gap-4">
-      <Label htmlFor={htmlFor} className="sm:h-8">
-        {label}
-      </Label>
-      <div className="flex min-w-0 flex-col gap-1.5">
-        {children}
-        {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
-      </div>
-    </div>
-  );
+/** What starts the game, as shown beside Play. */
+function runsWith(game: Game, launches: readonly Launch[], bottle: string | null) {
+  if (game.steam) return `Steam · ${game.steam.bottle}`;
+  switch (gameKind(game)) {
+    case "mac":
+      return "macOS";
+    case "rgss":
+      return "mkxp-z";
+    case "renpy":
+      // The release a Ren'Py game needs is only known once it has launched.
+      return launches.find((launch) => launch.runtime.startsWith("Ren'Py"))?.runtime ?? "Ren'Py";
+    case "windows":
+      return bottle ? `CrossOver · ${bottle}` : "CrossOver";
+    case "nwjs":
+      return game.runtime ? `NW.js ${game.runtime}` : "No runtime";
+  }
 }
 
 export function GamePage({
@@ -202,24 +194,20 @@ export function GamePage({
     setFlags(next);
     if (next !== savedFlags) void save({ flags: next });
   };
-  const [runtime, setRuntime] = useState(game.runtime);
-  const [bottle, setBottle] = useState(game.bottle ?? null);
-  const [highResolution, setHighResolution] = useState(!!game.highResolution);
-  const [sandbox, setSandbox] = useState(game.sandbox !== false);
-  const [pixelFix, setPixelFix] = useState(game.pixelFix !== false);
+  const [runtime, saveRuntime] = useSaved(game.runtime, (next) => save({ runtime: next }));
+  const [bottle, changeBottle] = useSaved(game.bottle ?? null, (next) => save({ bottle: next }));
+  const [highResolution, changeHighResolution] = useSaved(!!game.highResolution, (on) =>
+    save({ highResolution: on }),
+  );
+  const [sandbox, changeSandbox] = useSaved(game.sandbox !== false, (on) => save({ sandbox: on }));
   // Shown after choosing an older runtime, which backs up the game's browser data first.
   const [downgraded, setDowngraded] = useState(false);
   const changeRuntime = (next: string | null) => {
     setDowngraded(!!game.runtime && !!next && compareVersions(next, game.runtime) < 0);
-    setRuntime(next);
-    void save({ runtime: next }).then((result) => result === undefined && setRuntime(game.runtime));
+    saveRuntime(next);
   };
-  // Undefined while loading; null when the game is not an RPG Maker export and has no plugin list.
-  const [plugins, setPlugins] = useState<PluginList | null | undefined>(undefined);
-  const [pluginError, setPluginError] = useState<string | null>(null);
-  const [pluginSearch, setPluginSearch] = useState("");
   const [engine, setEngine] = useState<Engine | null>(null);
-  const [confirm, setConfirm] = useState<"remove" | "trash" | "restore" | null>(null);
+  const [confirm, setConfirm] = useState<"remove" | "trash" | null>(null);
   // The folder a Shift-click removal moves to the Trash, shown in the dialog before it happens.
   const [trashFolder, setTrashFolder] = useState<string | null>(null);
   const [deleteData, setDeleteData] = useState(false);
@@ -227,17 +215,6 @@ export function GamePage({
   const [artworkUrl, setArtworkUrl] = useState("");
   const { run, busy, error, setError } = useTask();
   const running = snapshot.running.includes(game.id);
-  // Keeps each plugin's position in the game's list, which toggling refers to.
-  const pluginQuery = pluginSearch.trim().toLowerCase();
-  const gamePlugins = (plugins?.plugins ?? [])
-    .map((plugin, index) => ({ plugin, index }))
-    .filter(({ plugin }) => !managedPlugins.includes(plugin.name));
-  const shownPlugins = gamePlugins.filter(
-    ({ plugin }) =>
-      !pluginQuery ||
-      plugin.name.toLowerCase().includes(pluginQuery) ||
-      plugin.description.toLowerCase().includes(pluginQuery),
-  );
   const missing = snapshot.missing.includes(game.id);
   const launches = snapshot.launches.filter((launch) => launch.gameId === game.id);
   const runtimes = [...snapshot.runtimes].sort((a, b) => compareVersions(b.version, a.version));
@@ -263,20 +240,6 @@ export function GamePage({
       active = false;
     };
   }, [game.id, nwjs]);
-
-  // Launching can add the getPixel fix, so the list is read again when the game closes.
-  useEffect(() => {
-    if (!nwjs || running) return;
-    let active = true;
-    request({ action: "plugins", id: game.id }).then(
-      (list) => active && setPlugins(list),
-      (cause: unknown) =>
-        active && setPluginError(cause instanceof Error ? cause.message : String(cause)),
-    );
-    return () => {
-      active = false;
-    };
-  }, [game.id, nwjs, running]);
 
   return (
     <div className="flex flex-col">
@@ -381,22 +344,7 @@ export function GamePage({
         <dl className="flex gap-8 text-sm">
           <Fact label="Last played">{running ? "Now" : lastPlayed(game)}</Fact>
           <Fact label="Times played">{playCount(game, snapshot.launches)}</Fact>
-          <Fact label="Runs with">
-            {kind === "mac"
-              ? "macOS"
-              : kind === "rgss"
-                ? "mkxp-z"
-                : kind === "renpy"
-                  ? (launches.find((launch) => launch.runtime.startsWith("Ren'Py"))?.runtime ??
-                    "Ren'Py")
-                  : game.steam
-                    ? `Steam · ${game.steam.bottle}`
-                    : windows
-                      ? `CrossOver${activeBottle ? ` · ${activeBottle}` : ""}`
-                      : game.runtime
-                        ? `NW.js ${game.runtime}`
-                        : "No runtime"}
-          </Fact>
+          <Fact label="Runs with">{runsWith(game, launches, activeBottle)}</Fact>
         </dl>
         <div className="ml-auto flex gap-2">
           <Button
@@ -537,7 +485,7 @@ export function GamePage({
                 </span>
               )}
             </h2>
-            <div className="divide-y rounded-lg border bg-card/40">
+            <SettingsCard>
               <Field label="Name" htmlFor="game-name">
                 <form
                   className="flex gap-2"
@@ -620,12 +568,10 @@ export function GamePage({
               {windows ? (
                 <>
                   {game.steam ? (
-                    <Field label="Runs through">
-                      <p className="flex min-h-8 items-center text-sm text-muted-foreground">
-                        Steam in the &ldquo;{game.steam.bottle}&rdquo; CrossOver bottle, which keeps
-                        the game&rsquo;s updates and DRM working.
-                      </p>
-                    </Field>
+                    <Note label="Runs through">
+                      Steam in the &ldquo;{game.steam.bottle}&rdquo; CrossOver bottle, which keeps
+                      the game&rsquo;s updates and DRM working.
+                    </Note>
                   ) : (
                     <Field
                       label="CrossOver bottle"
@@ -634,13 +580,7 @@ export function GamePage({
                       <Select
                         value={bottle}
                         disabled={running || snapshot.bottles === null}
-                        onValueChange={(value) => {
-                          const next = value as string | null;
-                          setBottle(next);
-                          void save({ bottle: next }).then(
-                            (result) => result === undefined && setBottle(game.bottle ?? null),
-                          );
-                        }}
+                        onValueChange={(value) => changeBottle(value as string | null)}
                         items={[
                           {
                             value: null,
@@ -679,13 +619,7 @@ export function GamePage({
                         id="game-high-resolution"
                         checked={highResolution}
                         disabled={running}
-                        onCheckedChange={(on) => {
-                          setHighResolution(on);
-                          void save({ highResolution: on }).then(
-                            (result) =>
-                              result === undefined && setHighResolution(!!game.highResolution),
-                          );
-                        }}
+                        onCheckedChange={changeHighResolution}
                       />
                     </div>
                   </Field>
@@ -723,25 +657,17 @@ export function GamePage({
                   </Select>
                 </Field>
               ) : kind === "rgss" ? (
-                <Field label="Runs with">
-                  <p className="flex min-h-8 items-center text-sm text-muted-foreground">
-                    mkxp-z, natively on this Mac, with the RPG Maker RTP when the game needs it.
-                    Both are downloaded the first time.
-                  </p>
-                </Field>
+                <Note label="Runs with">
+                  mkxp-z, natively on this Mac, with the RPG Maker RTP when the game needs it. Both
+                  are downloaded the first time.
+                </Note>
               ) : kind === "renpy" ? (
-                <Field label="Runs with">
-                  <p className="flex min-h-8 items-center text-sm text-muted-foreground">
-                    The game's own Mac build if it has one, otherwise the Ren'Py release it was made
-                    with, downloaded from renpy.org the first time.
-                  </p>
-                </Field>
+                <Note label="Runs with">
+                  The game's own Mac build if it has one, otherwise the Ren'Py release it was made
+                  with, downloaded from renpy.org the first time.
+                </Note>
               ) : (
-                <Field label="Opens with">
-                  <p className="flex min-h-8 items-center text-sm text-muted-foreground">
-                    macOS, like double-clicking the app in Finder.
-                  </p>
-                </Field>
+                <Note label="Opens with">macOS, like double-clicking the app in Finder.</Note>
               )}
 
               {sandboxable(game) && (
@@ -755,12 +681,7 @@ export function GamePage({
                       id="game-sandbox"
                       checked={sandbox}
                       disabled={running}
-                      onCheckedChange={(on) => {
-                        setSandbox(on);
-                        void save({ sandbox: on }).then(
-                          (result) => result === undefined && setSandbox(game.sandbox !== false),
-                        );
-                      }}
+                      onCheckedChange={changeSandbox}
                     />
                   </div>
                 </Field>
@@ -848,176 +769,11 @@ export function GamePage({
                   onBlur={() => saveFlags(flags)}
                 />
               </Field>
-            </div>
+            </SettingsCard>
           </section>
 
-          {nwjs && plugins !== null && (
-            <section className="flex flex-col gap-3">
-              <h2 className="flex items-baseline justify-between font-medium">
-                Plugins
-                {gamePlugins.length > 0 && (
-                  <span className="text-xs font-normal text-muted-foreground">
-                    {gamePlugins.filter(({ plugin }) => plugin.enabled).length} of{" "}
-                    {gamePlugins.length} on
-                  </span>
-                )}
-              </h2>
-              <p className="text-xs text-muted-foreground">
-                Changes edit the game's own plugin list and apply on the next launch, also outside
-                Aperto.
-              </p>
-              {running && (
-                <p className="text-xs text-muted-foreground">Close the game to edit plugins.</p>
-              )}
-              {plugins?.conflict && (
-                <Alert variant="destructive">
-                  <AlertDescription>
-                    The plugin list was changed outside Aperto. Editing is paused so those changes
-                    are not overwritten.
-                  </AlertDescription>
-                </Alert>
-              )}
-              {pluginError && <p className="text-muted-foreground">{pluginError}</p>}
-              {plugins === undefined && !pluginError && (
-                <p className="text-muted-foreground">Reading plugins…</p>
-              )}
-              {plugins && (
-                <div className="divide-y rounded-lg border bg-card/40">
-                  <Field
-                    label="Cheat menu"
-                    htmlFor="game-cheat-menu"
-                    hint="Press 1 in the game to open it. Aperto downloads emerladCoder's RPG Maker Cheat Menu the first time."
-                  >
-                    <div className="flex min-h-8 items-center">
-                      <Switch
-                        id="game-cheat-menu"
-                        checked={plugins.cheatMenu}
-                        disabled={busy || running || plugins.conflict}
-                        onCheckedChange={(enabled) =>
-                          void queue(async () =>
-                            setPlugins(
-                              await request({
-                                action: "setCheatMenu",
-                                id: game.id,
-                                hash: plugins.hash,
-                                enabled,
-                              }),
-                            ),
-                          )
-                        }
-                      />
-                    </div>
-                  </Field>
-                  <Field
-                    label="getPixel fix"
-                    htmlFor="game-pixel-fix"
-                    hint="Prevents a crash in some games that read a pixel at an invalid position in newer NW.js. Added when the game launches."
-                  >
-                    <div className="flex min-h-8 items-center">
-                      <Switch
-                        id="game-pixel-fix"
-                        checked={pixelFix}
-                        disabled={running || plugins.conflict}
-                        onCheckedChange={(enabled) => {
-                          setPixelFix(enabled);
-                          void queue(async () => {
-                            const list = await request({
-                              action: "setPixelFix",
-                              id: game.id,
-                              enabled,
-                            });
-                            if (list) setPlugins(list);
-                            return true;
-                          }).then(
-                            (result) =>
-                              result === undefined && setPixelFix(game.pixelFix !== false),
-                          );
-                        }}
-                      />
-                    </div>
-                  </Field>
-                </div>
-              )}
-              {plugins && !gamePlugins.length && (
-                <p className="text-muted-foreground">This game has no plugins.</p>
-              )}
-              {gamePlugins.length > 0 && (
-                <div className="relative">
-                  <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input
-                    aria-label="Search plugins"
-                    placeholder="Search plugins"
-                    className="pl-8"
-                    value={pluginSearch}
-                    onChange={(event) => setPluginSearch(event.target.value)}
-                  />
-                </div>
-              )}
-              {gamePlugins.length > 0 && !shownPlugins.length && (
-                <p className="text-muted-foreground">No plugins match “{pluginSearch.trim()}”.</p>
-              )}
-              {shownPlugins.length > 0 && plugins && (
-                <ul className="divide-y rounded-lg border">
-                  {shownPlugins.map(({ plugin, index }) => (
-                    <li
-                      key={`${index}-${plugin.name}`}
-                      className="flex items-center gap-3 px-3 py-2"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate font-medium">{plugin.name || "Unnamed entry"}</p>
-                        <p className="truncate text-xs text-muted-foreground">
-                          {plugin.missing ? "Plugin file is missing" : plugin.description}
-                        </p>
-                      </div>
-                      <Switch
-                        aria-label={`Enable ${plugin.name || "unnamed plugin"}`}
-                        checked={plugin.enabled}
-                        disabled={
-                          busy ||
-                          running ||
-                          plugins.conflict ||
-                          !plugin.name ||
-                          (plugin.missing && !plugin.enabled)
-                        }
-                        onCheckedChange={(enabled) =>
-                          void run(async () =>
-                            setPlugins(
-                              await request({
-                                action: "togglePlugin",
-                                id: game.id,
-                                hash: plugins.hash,
-                                index,
-                                enabled,
-                              }),
-                            ),
-                          )
-                        }
-                      />
-                    </li>
-                  ))}
-                </ul>
-              )}
-              {plugins?.canRestore && (
-                <div className="flex gap-2">
-                  <Button
-                    variant="outline"
-                    disabled={busy || running}
-                    onClick={() => setConfirm("restore")}
-                  >
-                    <RotateCcwIcon />
-                    Restore original
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    onClick={() =>
-                      void run(() => request({ action: "revealPluginBackup", id: game.id }))
-                    }
-                  >
-                    Show backup
-                  </Button>
-                </div>
-              )}
-            </section>
+          {nwjs && (
+            <PluginsSection game={game} running={running} busy={busy} run={run} queue={queue} />
           )}
         </div>
 
@@ -1180,18 +936,12 @@ export function GamePage({
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              {confirm === "remove"
-                ? `Remove ${game.name}?`
-                : confirm === "trash"
-                  ? `Delete ${game.name}?`
-                  : "Restore original plugins?"}
+              {confirm === "trash" ? `Delete ${game.name}?` : `Remove ${game.name}?`}
             </DialogTitle>
             <DialogDescription>
-              {confirm === "remove"
-                ? "The game folder stays where it is, and later scans will not add it back. Add the folder by hand to bring it back."
-                : confirm === "trash"
-                  ? "Aperto removes the game and moves its folder to the Trash, with any saves kept inside it. You can put it back from the Trash until it is emptied."
-                  : "This puts back the plugin list from before Aperto first changed it."}
+              {confirm === "trash"
+                ? "Aperto removes the game and moves its folder to the Trash, with any saves kept inside it. You can put it back from the Trash until it is emptied."
+                : "The game folder stays where it is, and later scans will not add it back. Add the folder by hand to bring it back."}
             </DialogDescription>
           </DialogHeader>
           {confirm === "trash" && trashFolder && (
@@ -1199,7 +949,7 @@ export function GamePage({
               {trashFolder}
             </p>
           )}
-          {confirm !== "restore" && nwjs && (
+          {nwjs && (
             <Label className="items-start font-normal">
               <Checkbox
                 checked={deleteData}
@@ -1217,23 +967,17 @@ export function GamePage({
               disabled={busy}
               onClick={() =>
                 void run(async () => {
-                  if (confirm === "remove" || confirm === "trash") {
-                    await request({
-                      action: "remove",
-                      id: game.id,
-                      deleteData,
-                      trashFolder: confirm === "trash",
-                    });
-                  } else if (plugins) {
-                    setPlugins(
-                      await request({ action: "restorePlugins", id: game.id, hash: plugins.hash }),
-                    );
-                  }
+                  await request({
+                    action: "remove",
+                    id: game.id,
+                    deleteData,
+                    trashFolder: confirm === "trash",
+                  });
                   setConfirm(null);
                 })
               }
             >
-              {confirm === "remove" ? "Remove" : confirm === "trash" ? "Move to Trash" : "Restore"}
+              {confirm === "trash" ? "Move to Trash" : "Remove"}
             </Button>
           </DialogFooter>
         </DialogContent>

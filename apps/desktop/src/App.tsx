@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useState, type ReactNode } from "react";
+import { SearchInput } from "@/components/SearchInput";
 import {
   ArrowUpCircleIcon,
   ArrowUpDownIcon,
@@ -7,7 +8,6 @@ import {
   ListFilterIcon,
   PlusIcon,
   RefreshCwIcon,
-  SearchIcon,
   SettingsIcon,
   XIcon,
 } from "lucide-react";
@@ -15,12 +15,11 @@ import { ApertoMark } from "@/components/ApertoMark";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import { TagFilter } from "@/components/TagFilter";
-import { tagDot } from "@/components/tag-colors";
+import { TagDot } from "@/components/tag-colors";
 import { GamePage, playable } from "./GamePage";
 import { Settings } from "./Settings";
 import { request, useTask } from "./desktop";
@@ -101,7 +100,7 @@ export function App() {
   const visible = snapshot
     ? games.filter((game) => matchesGame(game, filters, search, snapshot))
     : [];
-  const filtering = filterCount(filters) + filters.tags.length + filters.excludedTags.length > 0;
+  const filtering = activeFilters(filters).length > 0;
   // Like Steam, something is always open: the chosen game, else the first in the list.
   const game = games.find((item) => item.id === selected) ?? visible[0] ?? games[0];
   const scan = snapshot?.lastScan;
@@ -116,17 +115,14 @@ export function App() {
         <div className="app-drag h-12 shrink-0" />
         <div className="px-3 pb-3">
           <div className="flex gap-1.5">
-            <div className="relative flex-1">
-              <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                aria-label="Search games"
-                placeholder="Search"
-                title={'Search names, or tags with tag:horror or tag:"rpg maker"'}
-                className="pl-8"
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-              />
-            </div>
+            <SearchInput
+              className="flex-1"
+              aria-label="Search games"
+              placeholder="Search"
+              title={'Search names, or tags with tag:horror or tag:"rpg maker"'}
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+            />
             <TagFilter
               tags={libraryTags}
               colors={snapshot?.tagColors ?? {}}
@@ -151,11 +147,7 @@ export function App() {
                     className="inline-flex h-6 items-center gap-1 rounded-md bg-secondary pr-1 pl-2 text-xs text-secondary-foreground outline-none hover:bg-secondary/70 focus-visible:ring-2 focus-visible:ring-ring/50"
                     onClick={() => setFilters(without)}
                   >
-                    {tag && (
-                      <span
-                        className={cn("size-2 rounded-full", tagDot(snapshot?.tagColors?.[tag]))}
-                      />
-                    )}
+                    {tag && <TagDot color={snapshot?.tagColors?.[tag]} />}
                     {label}
                     <XIcon className="size-3 text-muted-foreground" />
                   </button>

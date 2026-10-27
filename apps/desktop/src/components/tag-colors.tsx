@@ -1,3 +1,4 @@
+import { cn } from "@/lib/utils";
 import type { TagColor } from "../model";
 
 // Full class names, so Tailwind finds them in this file.
@@ -23,8 +24,17 @@ const chips: Record<TagColor, string> = {
 };
 
 /** The dot shown beside a tag's name; gray for tags without a color. */
-export const tagDot = (color: TagColor | undefined) =>
-  color ? dots[color] : "bg-muted-foreground/40";
+export function TagDot({ color, className }: { color: TagColor | undefined; className?: string }) {
+  return (
+    <span
+      className={cn(
+        "size-2 shrink-0 rounded-full",
+        color ? dots[color] : "bg-muted-foreground/40",
+        className,
+      )}
+    />
+  );
+}
 
 /** Background and text of a tag chip; the neutral secondary style for tags without a color. */
 export const tagChip = (color: TagColor | undefined) =>

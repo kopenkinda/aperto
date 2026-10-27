@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { CheckIcon, SearchIcon } from "lucide-react";
+import { SearchInput } from "./SearchInput";
+import { CheckIcon } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -11,7 +12,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import { request, useTask } from "../desktop";
@@ -105,16 +105,13 @@ export function MetadataDialog({
           </Alert>
         )}
         <form
-          className="relative"
           onSubmit={(event) => {
             event.preventDefault();
             search(query);
           }}
         >
-          <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
+          <SearchInput
             aria-label="Search F95zone and Steam"
-            className="pl-8"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
           />

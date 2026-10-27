@@ -2,7 +2,7 @@ import { useId, useState, type KeyboardEvent } from "react";
 import { PlusIcon, XIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { normalizeTags, type TagColor } from "../model";
-import { tagChip, tagDot } from "./tag-colors";
+import { tagChip, TagDot } from "./tag-colors";
 
 /**
  * Tags as removable chips with an inline field. Enter adds the highlighted suggestion, which is an
@@ -177,7 +177,7 @@ export function TagEditor({
                   </>
                 ) : (
                   <>
-                    <span className={cn("size-2 rounded-full", tagDot(colors[tag]))} />
+                    <TagDot color={colors[tag]} />
                     {tag}
                   </>
                 )}

@@ -333,27 +333,25 @@ export const CommandSchema = Schema.Union([
   Schema.Struct({ action: Schema.Literal("revealPluginBackup"), ...id }),
 ]);
 export type Command = typeof CommandSchema.Type;
-export type ResultFor<C extends Command> = C["action"] extends "plugins"
-  ? PluginList | null
-  : C["action"] extends "togglePlugin" | "restorePlugins" | "setCheatMenu"
-    ? PluginList
-    : C["action"] extends "setPixelFix"
-      ? PluginList | null
-      : C["action"] extends "releases"
-        ? Release[]
-        : C["action"] extends "folderToTrash"
-          ? string
-          : C["action"] extends "engine"
-            ? Engine | null
-            : C["action"] extends "components" | "removeComponent"
-              ? Component[]
-              : C["action"] extends "findMetadata"
-                ? MetadataMatch[]
-                : C["action"] extends "metadataDetails"
-                  ? MetadataDetails
-                  : C["action"] extends "autoTag"
-                    ? AutoTagReport
-                    : Snapshot;
+/** What each command returns besides the library snapshot most of them answer with. */
+type Results = {
+  plugins: PluginList | null;
+  togglePlugin: PluginList;
+  restorePlugins: PluginList;
+  setCheatMenu: PluginList;
+  setPixelFix: PluginList | null;
+  releases: Release[];
+  folderToTrash: string;
+  engine: Engine | null;
+  components: Component[];
+  removeComponent: Component[];
+  findMetadata: MetadataMatch[];
+  metadataDetails: MetadataDetails;
+  autoTag: AutoTagReport;
+};
+export type ResultFor<C extends Command> = C["action"] extends keyof Results
+  ? Results[C["action"]]
+  : Snapshot;
 export interface DesktopApi {
   request<C extends Command>(command: C): Promise<ResultFor<C>>;
   onChange(listener: () => void): () => void;

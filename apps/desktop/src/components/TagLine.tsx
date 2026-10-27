@@ -1,9 +1,11 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
-import { cn } from "@/lib/utils";
 import type { TagColor } from "../model";
-import { tagDot } from "./tag-colors";
+import { TagDot } from "./tag-colors";
 
+// Tags in the hover card sit on the popover, so they take the plain secondary style.
+const listed =
+  "inline-flex h-6 items-center gap-1.5 rounded-md bg-secondary px-2 text-xs text-secondary-foreground outline-none hover:bg-secondary/70 focus-visible:ring-2 focus-visible:ring-ring/50";
 const chip =
   "inline-flex h-6 shrink-0 items-center gap-1.5 rounded-md bg-background/50 px-2 text-xs whitespace-nowrap text-foreground/80 ring-1 ring-foreground/10 backdrop-blur outline-none hover:bg-background/80 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50";
 
@@ -23,6 +25,8 @@ export function TagLine({
   const line = useRef<HTMLDivElement>(null);
   const measure = useRef<HTMLDivElement>(null);
   const [shown, setShown] = useState(tags.length);
+  // Snapshots bring new objects each time, so the line refits only when its chips change.
+  const chips = tags.map((tag) => `${tag}:${colors[tag] ?? ""}`).join("\n");
 
   useLayoutEffect(() => {
     const fit = () => {
@@ -46,17 +50,17 @@ export function TagLine({
     const observer = new ResizeObserver(fit);
     if (line.current) observer.observe(line.current);
     return () => observer.disconnect();
-  }, [tags, colors]);
+  }, [chips]);
 
-  const button = (tag: string) => (
+  const button = (tag: string, className = chip) => (
     <button
       key={tag}
       type="button"
       title={`Show games tagged ${tag}`}
-      className={chip}
+      className={className}
       onClick={() => onTag(tag)}
     >
-      {colors[tag] && <span className={cn("size-2 rounded-full", tagDot(colors[tag]))} />}
+      {colors[tag] && <TagDot color={colors[tag]} />}
       {tag}
     </button>
   );
@@ -68,7 +72,7 @@ export function TagLine({
       className="relative mt-2 flex min-w-0 gap-1.5 overflow-hidden"
       aria-label="Tags"
     >
-      {tags.slice(0, shown).map(button)}
+      {tags.slice(0, shown).map((tag) => button(tag))}
       {hidden.length > 0 && (
         <HoverCard>
           <HoverCardTrigger
@@ -84,18 +88,7 @@ export function TagLine({
             +{hidden.length}
           </HoverCardTrigger>
           <HoverCardContent align="start" className="flex w-auto max-w-sm flex-wrap gap-1.5 p-2">
-            {hidden.map((tag) => (
-              <button
-                key={tag}
-                type="button"
-                title={`Show games tagged ${tag}`}
-                className="inline-flex h-6 items-center gap-1.5 rounded-md bg-secondary px-2 text-xs text-secondary-foreground outline-none hover:bg-secondary/70 focus-visible:ring-2 focus-visible:ring-ring/50"
-                onClick={() => onTag(tag)}
-              >
-                {colors[tag] && <span className={cn("size-2 rounded-full", tagDot(colors[tag]))} />}
-                {tag}
-              </button>
-            ))}
+            {hidden.map((tag) => button(tag, listed))}
           </HoverCardContent>
         </HoverCard>
       )}

@@ -1,14 +1,15 @@
 import { useState } from "react";
-import { BanIcon, EllipsisIcon, SearchIcon, SparklesIcon, Trash2Icon } from "lucide-react";
+import { SearchInput } from "./SearchInput";
+import { BanIcon, EllipsisIcon, SparklesIcon, Trash2Icon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Spinner } from "@/components/ui/spinner";
-import { cn } from "@/lib/utils";
 import { request } from "../desktop";
 import { normalizeTags, tagColorNames, tagCounts, type Snapshot, type TagColor } from "../model";
+import { Field } from "./settings";
 import { TagEditor } from "./TagEditor";
-import { tagDot } from "./tag-colors";
+import { TagDot } from "./tag-colors";
 
 /**
  * Settings for the library's tags: finding tags online for every game, renaming, recoloring,
@@ -33,6 +34,7 @@ export function TagManager({
   const [query, setQuery] = useState("");
   const [tagging, setTagging] = useState(false);
   const [report, setReport] = useState<string | null>(null);
+  const names = tags.map(([tag]) => tag);
   const shown = tags.filter(([tag]) => tag.includes(query.trim().toLocaleLowerCase()));
   const block = (more: readonly string[]) =>
     run(() => request({ action: "setBlockedTags", tags: [...blocked, ...more] }));
@@ -63,7 +65,7 @@ export function TagManager({
 
   return (
     <>
-      <Row
+      <Field
         label="Find online"
         hint={
           tagging
@@ -85,9 +87,9 @@ export function TagManager({
               ? `Find banners for ${bannerless} ${bannerless === 1 ? "game" : "games"}`
               : "Every game is linked"}
         </Button>
-      </Row>
+      </Field>
 
-      <Row
+      <Field
         label="Blocked"
         hint="Removed from every game and never added again, by hand or from F95zone and Steam."
       >
@@ -108,19 +110,15 @@ export function TagManager({
             Block the {single.length} tags only one game has
           </button>
         )}
-      </Row>
+      </Field>
 
       <div className="flex flex-col gap-2 px-4 py-3">
-        <div className="relative">
-          <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            aria-label="Search tags"
-            placeholder={`Search ${tags.length} tags`}
-            className="pl-8"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-          />
-        </div>
+        <SearchInput
+          aria-label="Search tags"
+          placeholder={`Search ${tags.length} tags`}
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+        />
         <ul className="-mx-2 max-h-72 overflow-y-auto">
           {shown.map(([tag, count]) => (
             <TagRow
@@ -128,7 +126,7 @@ export function TagManager({
               tag={tag}
               count={count}
               color={colors[tag]}
-              existing={tags.map(([name]) => name)}
+              existing={names}
               onRename={(to) => run(() => request({ action: "renameTag", from: tag, to }))}
               onColor={(color) => run(() => request({ action: "setTagColor", tag, color }))}
               onBlock={() => block([tag])}
@@ -143,26 +141,6 @@ export function TagManager({
         </ul>
       </div>
     </>
-  );
-}
-
-function Row({
-  label,
-  hint,
-  children,
-}: {
-  label: string;
-  hint?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="grid gap-2 px-4 py-3 sm:grid-cols-[8rem_minmax(0,1fr)] sm:gap-4">
-      <span className="font-medium sm:leading-8">{label}</span>
-      <div className="flex min-w-0 flex-col gap-1.5">
-        {children}
-        {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
-      </div>
-    </div>
   );
 }
 
@@ -192,7 +170,7 @@ function TagRow({
   const merges = target !== tag && existing.includes(target);
   return (
     <li className="group/tag flex items-center gap-2.5 rounded-md px-2 py-1 hover:bg-accent/50">
-      <span className={cn("size-2.5 shrink-0 rounded-full", tagDot(color))} />
+      <TagDot color={color} className="size-2.5" />
       <span className="min-w-0 flex-1 truncate">{tag}</span>
       <span className="text-xs text-muted-foreground">
         {count} {count === 1 ? "game" : "games"}
@@ -250,7 +228,7 @@ function TagRow({
                 className="grid size-6 place-items-center rounded-full ring-offset-2 ring-offset-popover outline-none hover:ring-2 hover:ring-foreground/20 focus-visible:ring-2 focus-visible:ring-ring aria-checked:ring-2 aria-checked:ring-foreground/60"
                 onClick={() => onColor(option)}
               >
-                <span className={cn("size-4 rounded-full", tagDot(option ?? undefined))} />
+                <TagDot color={option ?? undefined} className="size-4" />
               </button>
             ))}
           </div>
