@@ -18,8 +18,7 @@ import {
 import { Artwork } from "@/components/Artwork";
 import { MetadataDialog } from "@/components/MetadataDialog";
 import { TagEditor } from "@/components/TagEditor";
-import { cn } from "@/lib/utils";
-import { tagDot } from "@/components/tag-colors";
+import { TagLine } from "@/components/TagLine";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -333,7 +332,7 @@ export function GamePage({
         </div>
         <div className="relative flex h-full items-end gap-5 px-8 pb-6">
           <Artwork game={game} className="size-28 shrink-0 rounded-2xl ring-1 ring-foreground/10" />
-          <div className="min-w-0 pb-1">
+          <div className="min-w-0 flex-1 pb-1">
             <div className="flex items-center gap-2">
               <h1 className="text-3xl font-semibold tracking-tight text-balance">{game.name}</h1>
               <button
@@ -354,25 +353,7 @@ export function GamePage({
               </button>
             </div>
             {tags.length > 0 && (
-              <ul aria-label="Tags" className="mt-2 flex flex-wrap gap-1.5">
-                {tags.map((tag) => (
-                  <li key={tag}>
-                    <button
-                      type="button"
-                      title={`Show games tagged ${tag}`}
-                      className="inline-flex h-6 items-center gap-1.5 rounded-md bg-background/50 px-2 text-xs text-foreground/80 ring-1 ring-foreground/10 backdrop-blur outline-none hover:bg-background/80 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
-                      onClick={() => onTag(tag)}
-                    >
-                      {snapshot.tagColors?.[tag] && (
-                        <span
-                          className={cn("size-2 rounded-full", tagDot(snapshot.tagColors[tag]))}
-                        />
-                      )}
-                      {tag}
-                    </button>
-                  </li>
-                ))}
-              </ul>
+              <TagLine tags={tags} colors={snapshot.tagColors ?? {}} onTag={onTag} />
             )}
             <p className="mt-1 truncate text-xs text-muted-foreground" title={game.root}>
               {game.root}
