@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  chooseOption,
+  chosenOption,
   compareVersions,
+  launchOptions,
   matchesGame,
   noFilters,
   normalizeTags,
@@ -108,5 +111,38 @@ describe("library filters", () => {
     expect(sorted("name", [], true)).toEqual(["Grpg Quest", "Moon Road", "Ember", "Ash"]);
     expect(sorted("lastPlayed", [], true)).toEqual(["Grpg Quest", "Ember", "Moon Road", "Ash"]);
     expect(sorted("plays", history, true)).toEqual(["Grpg Quest", "Ash", "Ember", "Moon Road"]);
+  });
+});
+
+describe("launch options", () => {
+  const [display, graphics] = launchOptions({ kind: "windows" }, "unity");
+
+  it("offers controls by engine", () => {
+    expect(launchOptions({ kind: "windows" }, null)).toEqual([]);
+    expect(launchOptions({ kind: "mac" }, "unity").map((option) => option.id)).toEqual([
+      "unity-display",
+    ]);
+    expect(launchOptions({}, null).map((option) => option.id)).toEqual(["nwjs-software"]);
+  });
+
+  it("reads the choice from the text and writes it back, keeping other lines", () => {
+    let text = "-popupwindow\n";
+    expect(chosenOption(display!, text)).toBe(0);
+    text = chooseOption(display!, text, 1);
+    expect(text).toBe("-popupwindow\n-screen-fullscreen\n1");
+    expect(chosenOption(display!, text)).toBe(1);
+    text = chooseOption(graphics!, text, 3);
+    text = chooseOption(display!, text, 2);
+    expect(text).toBe("-popupwindow\n-force-vulkan\n-screen-fullscreen\n0");
+    expect(chosenOption(graphics!, text)).toBe(3);
+    text = chooseOption(graphics!, chooseOption(display!, text, 0), 0);
+    expect(text).toBe("-popupwindow");
+  });
+
+  it("treats unknown values and one-line pairs as custom, and replaces them on change", () => {
+    expect(chosenOption(display!, "-screen-fullscreen\n2")).toBeNull();
+    expect(chosenOption(display!, "-screen-fullscreen 0")).toBeNull();
+    expect(chosenOption(graphics!, "-force-d3d11\n-force-vulkan")).toBeNull();
+    expect(chooseOption(display!, "-screen-fullscreen 0\n-x", 1)).toBe("-x\n-screen-fullscreen\n1");
   });
 });

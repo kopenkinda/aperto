@@ -49,10 +49,14 @@ import {
   TraceTitle,
 } from "@/components/ui/trace";
 import {
+  chooseOption,
+  chosenOption,
   compareVersions,
   gameKind,
+  launchOptions,
   playCount,
   tagCounts,
+  type Engine,
   type Game,
   type Launch,
   type PluginList,
@@ -184,6 +188,7 @@ export function GamePage({
   const [plugins, setPlugins] = useState<PluginList | null | undefined>(undefined);
   const [pluginError, setPluginError] = useState<string | null>(null);
   const [pluginSearch, setPluginSearch] = useState("");
+  const [engine, setEngine] = useState<Engine | null>(null);
   const [confirm, setConfirm] = useState<"remove" | "trash" | "restore" | null>(null);
   // The folder a Shift-click removal moves to the Trash, shown in the dialog before it happens.
   const [trashFolder, setTrashFolder] = useState<string | null>(null);
@@ -226,6 +231,20 @@ export function GamePage({
     setBottle(game.bottle ?? null);
     setHighResolution(!!game.highResolution);
   };
+
+  useEffect(() => {
+    setEngine(null);
+    if (nwjs) return;
+    let active = true;
+    // Unknown engines just get no controls; the flags text still works.
+    request({ action: "engine", id: game.id }).then(
+      (found) => active && setEngine(found),
+      () => {},
+    );
+    return () => {
+      active = false;
+    };
+  }, [game.id, nwjs]);
 
   useEffect(() => {
     setPluginSearch("");
@@ -602,16 +621,79 @@ export function GamePage({
                 </Field>
               )}
 
+              {launchOptions(game, engine).map((option) => {
+                const choice = chosenOption(option, flags);
+                const id = `game-option-${option.id}`;
+                return (
+                  <Field
+                    key={option.id}
+                    label={option.label}
+                    htmlFor={id}
+                    hint={
+                      choice === null
+                        ? `Set to a custom value in the ${nwjs ? "flags" : "arguments"} below.`
+                        : option.hint
+                    }
+                  >
+                    {option.control === "switch" ? (
+                      <div className="flex min-h-8 items-center">
+                        <Switch
+                          id={id}
+                          checked={choice !== 0}
+                          onCheckedChange={(on) =>
+                            setFlags(chooseOption(option, flags, on ? 1 : 0))
+                          }
+                        />
+                      </div>
+                    ) : (
+                      <Select
+                        value={choice === null ? "custom" : String(choice)}
+                        onValueChange={(value) =>
+                          setFlags(chooseOption(option, flags, Number(value)))
+                        }
+                        items={[
+                          ...option.choices.map((item, index) => ({
+                            value: String(index),
+                            label: item.label,
+                          })),
+                          { value: "custom", label: "Custom" },
+                        ]}
+                      >
+                        <SelectTrigger id={id} className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {option.choices.map((item, index) => (
+                            <SelectItem key={item.label} value={String(index)}>
+                              {item.label}
+                            </SelectItem>
+                          ))}
+                          {choice === null && (
+                            <SelectItem value="custom" disabled>
+                              Custom
+                            </SelectItem>
+                          )}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  </Field>
+                );
+              })}
+
               <Field
                 label={nwjs ? "Launch flags" : "Launch arguments"}
                 htmlFor="game-flags"
-                hint="Optional. One per line."
+                hint={
+                  nwjs
+                    ? "Optional. One per line."
+                    : "Optional. One per line; a value goes on the line after its switch."
+                }
               >
                 <Textarea
                   id="game-flags"
                   spellCheck={false}
                   rows={3}
-                  placeholder={nwjs ? "--disable-gpu" : "-screen-fullscreen 0"}
+                  placeholder={nwjs ? "--force-device-scale-factor=1" : "-screen-width\n1920"}
                   className="min-h-20 font-mono text-xs"
                   value={flags}
                   onChange={(event) => setFlags(event.target.value)}

@@ -153,6 +153,8 @@ export const CommandSchema = Schema.Union([
   Schema.Struct({ action: Schema.Literal("folderToTrash"), ...id }),
   Schema.Struct({ action: Schema.Literal("relink"), ...id }),
   Schema.Struct({ action: Schema.Literal("plugins"), ...id }),
+  /** The engine of a Windows or Mac game, for its known launch switches. */
+  Schema.Struct({ action: Schema.Literal("engine"), ...id }),
   Schema.Struct({
     action: Schema.Literal("togglePlugin"),
     ...id,
@@ -180,7 +182,9 @@ export type ResultFor<C extends Command> = C["action"] extends "plugins"
       ? Release[]
       : C["action"] extends "folderToTrash"
         ? string
-        : Snapshot;
+        : C["action"] extends "engine"
+          ? Engine | null
+          : Snapshot;
 export interface DesktopApi {
   request<C extends Command>(command: C): Promise<ResultFor<C>>;
   onChange(listener: () => void): () => void;
@@ -341,6 +345,112 @@ export function parseArguments(input: string): string[] {
   if (values.some((value) => value.includes("\0") || value.length > 1000))
     throw new Error("Each argument must be one line of at most 1000 characters.");
   return values;
+}
+
+/** Engines with launch switches Aperto offers as controls. NW.js games are known by their kind. */
+export type Engine = "unity";
+
+/**
+ * A launch setting backed by lines of the flags text, so the control and the text always agree.
+ * The first choice adds no lines and leaves the setting to the game.
+ */
+export type LaunchOption = {
+  id: string;
+  label: string;
+  hint: string;
+  control: "select" | "switch";
+  /** Switches the option owns. With `takesValue`, each is followed by its value on the next line. */
+  switches: readonly string[];
+  takesValue?: boolean;
+  choices: readonly { label: string; lines: readonly string[] }[];
+};
+
+const unityDisplay: LaunchOption = {
+  id: "unity-display",
+  label: "Display",
+  hint: "Unity games remember the last mode they ran in. This overrides it at launch.",
+  control: "select",
+  switches: ["-screen-fullscreen"],
+  takesValue: true,
+  choices: [
+    { label: "Game's setting", lines: [] },
+    { label: "Fullscreen", lines: ["-screen-fullscreen", "1"] },
+    { label: "Windowed", lines: ["-screen-fullscreen", "0"] },
+  ],
+};
+
+const unityGraphics: LaunchOption = {
+  id: "unity-graphics",
+  label: "Graphics API",
+  hint: "Try another one if the game crashes at start or shows a black screen.",
+  control: "select",
+  switches: ["-force-d3d11", "-force-d3d12", "-force-vulkan", "-force-glcore"],
+  choices: [
+    { label: "Game's default", lines: [] },
+    { label: "Direct3D 11", lines: ["-force-d3d11"] },
+    { label: "Direct3D 12", lines: ["-force-d3d12"] },
+    { label: "Vulkan", lines: ["-force-vulkan"] },
+    { label: "OpenGL", lines: ["-force-glcore"] },
+  ],
+};
+
+const nwjsSoftware: LaunchOption = {
+  id: "nwjs-software",
+  label: "Software rendering",
+  hint: "Draws without the GPU. Slower, but can fix a black or flickering screen.",
+  control: "switch",
+  switches: ["--disable-gpu"],
+  choices: [
+    { label: "Off", lines: [] },
+    { label: "On", lines: ["--disable-gpu"] },
+  ],
+};
+
+/** The launch settings Aperto knows for a game, given its engine. */
+export function launchOptions(game: Pick<Game, "kind">, engine: Engine | null): LaunchOption[] {
+  const kind = gameKind(game);
+  if (kind === "nwjs") return [nwjsSoftware];
+  if (engine !== "unity") return [];
+  // The graphics switches name Windows APIs; Mac builds only take the display one.
+  return kind === "windows" ? [unityDisplay, unityGraphics] : [unityDisplay];
+}
+
+/** Indexes of the lines that belong to `option`, including malformed ones like "-switch value". */
+function ownedLines(option: LaunchOption, lines: readonly string[]) {
+  const owned = new Set<number>();
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index]!.trim();
+    if (option.switches.includes(line)) {
+      owned.add(index);
+      const value = lines[index + 1]?.trim();
+      if (option.takesValue && value && !value.startsWith("-")) owned.add(++index);
+    } else if (
+      option.switches.some((name) => line.startsWith(`${name} `) || line.startsWith(`${name}=`))
+    ) {
+      owned.add(index);
+    }
+  }
+  return owned;
+}
+
+/** The choice the flags text makes for `option`, or null when its lines match none of them. */
+export function chosenOption(option: LaunchOption, text: string): number | null {
+  const lines = text.split("\n");
+  const owned = [...ownedLines(option, lines)].map((index) => lines[index]!.trim());
+  const index = option.choices.findIndex(
+    (choice) =>
+      choice.lines.length === owned.length && choice.lines.every((line, at) => line === owned[at]),
+  );
+  return index === -1 ? null : index;
+}
+
+/** The flags text with `option` set to `choice`: its old lines go, the new ones are appended. */
+export function chooseOption(option: LaunchOption, text: string, choice: number): string {
+  const lines = text.split("\n");
+  const owned = ownedLines(option, lines);
+  const kept = lines.filter((_, index) => !owned.has(index));
+  while (kept.length && !kept.at(-1)!.trim()) kept.pop();
+  return [...kept, ...option.choices[choice]!.lines].join("\n");
 }
 
 export function parseFlags(input: string): string[] {

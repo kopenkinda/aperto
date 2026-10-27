@@ -28,10 +28,6 @@ async function unityProduct(data: string): Promise<string | null> {
   return meaningfulName(info.split(/\r?\n/)[1]);
 }
 
-/**
- * Finds a Windows game in one folder, to be run through CrossOver. A Unity build is recognized by
- * `<Game>.exe` beside `<Game>_Data`; otherwise the folder needs one plausible game executable.
- */
 /** Turns `Peeping.Dorm.Manager.Build.14407700` or `Rinas_Train-1.18c` into a plain title. */
 export function readableName(folder: string): string {
   // Versions go first, while their dots still mark them as versions.
@@ -49,6 +45,10 @@ const releaseTags =
 const versionWords =
   /(?:^|[\s\-(])(?:v|ver|version|build|rev)?[ .]?(?:\d+(?:\.\d+)+[a-z]?|\d{4}-\d{2}-\d{2})(?=$|[\s\-)])|(?:^|[\s\-(])(?:v|ver|version|build|rev)[ .]?\d+[a-z]?(?=$|[\s\-)])/gi;
 
+/**
+ * Finds a Windows game in one folder, to be run through CrossOver. A Unity build is recognized by
+ * `<Game>.exe` beside `<Game>_Data`; otherwise the folder needs one plausible game executable.
+ */
 export async function inspectWindows(selected: string): Promise<Candidate | null> {
   const folder = await realpath(selected);
   // An .exe inside a Mac app bundle belongs to that app's own Wine wrapper.

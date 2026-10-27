@@ -13,6 +13,7 @@ import {
   type Command,
   type Game,
   type ScanReport,
+  type Engine,
   type Snapshot,
 } from "../src/model";
 import { downloadImage, readableImage } from "./artwork";
@@ -307,6 +308,8 @@ export class DesktopLibrary {
           }));
           break;
         }
+        case "engine":
+          return await detectEngine(this.game(command.id));
         case "plugins":
           return await listPlugins(this.store, this.game(command.id));
         case "togglePlugin":
@@ -839,4 +842,23 @@ function artworkCopy(game: Game, slot: "icon" | "banner") {
     directory: path.join(mac ? path.dirname(game.folder) : game.folder, ".aperto"),
     name: mac ? `${path.basename(game.folder, path.extname(game.folder))}-${slot}` : slot,
   };
+}
+
+/** The engine of a Windows or Mac game, recognized by the files its player ships with. */
+async function detectEngine(game: Game): Promise<Engine | null> {
+  const kind = gameKind(game);
+  if (kind === "windows" && game.executable) {
+    const data = `${path.basename(game.executable, path.extname(game.executable))}_Data`;
+    if (
+      (await exists(path.join(game.root, "UnityPlayer.dll"))) ||
+      (await exists(path.join(game.root, data)))
+    )
+      return "unity";
+  }
+  if (
+    kind === "mac" &&
+    (await exists(path.join(game.root, "Contents", "Frameworks", "UnityPlayer.dylib")))
+  )
+    return "unity";
+  return null;
 }
