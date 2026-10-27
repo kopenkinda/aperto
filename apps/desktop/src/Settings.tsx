@@ -19,6 +19,7 @@ import {
 import { Spinner } from "@/components/ui/spinner";
 import { compareVersions, type Component, type Release, type Snapshot } from "./model";
 import { request, useTask } from "./desktop";
+import { TagManager } from "@/components/TagManager";
 
 /** One setting: its label on the left, the control and an optional hint on the right. */
 function Row({ label, hint, children }: { label: string; hint?: ReactNode; children: ReactNode }) {
@@ -255,6 +256,10 @@ export function Settings({
               </SelectContent>
             </Select>
           </Row>
+        </Section>
+
+        <Section title="Tags">
+          <TagManager snapshot={snapshot} busy={busy} run={(work) => void run(work)} />
         </Section>
 
         <Section title="NW.js">

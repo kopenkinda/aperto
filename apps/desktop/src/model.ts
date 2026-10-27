@@ -97,6 +97,8 @@ export const LibrarySchema = Schema.Struct({
   defaultBottle: Schema.optionalKey(Schema.NullOr(Schema.String)),
   /** Bundle ID of the terminal that opens game folders; unset picks one automatically. */
   terminal: Schema.optionalKey(Schema.NullOr(Schema.String)),
+  /** Tags removed from every game and never added again. Older libraries omit it. */
+  blockedTags: Schema.optionalKey(Schema.Array(Schema.String)),
   /** Colors chosen for tags, by tag. Older libraries omit it. */
   tagColors: Schema.optionalKey(Schema.Record(Schema.String, Schema.Literals(tagColorNames))),
 });
@@ -205,6 +207,8 @@ export const CommandSchema = Schema.Union([
   /** Renames a tag on every game; renaming to an existing tag merges the two. */
   Schema.Struct({ action: Schema.Literal("renameTag"), from: Schema.String, to: Schema.String }),
   Schema.Struct({ action: Schema.Literal("deleteTag"), tag: Schema.String }),
+  /** Replaces the blocked tags and removes them from every game. */
+  Schema.Struct({ action: Schema.Literal("setBlockedTags"), tags: Schema.Array(Schema.String) }),
   /** Searches F95zone and Steam for a game, by its name unless a query is given. */
   Schema.Struct({
     action: Schema.Literal("findMetadata"),
@@ -445,10 +449,16 @@ export type GameStatus = keyof typeof statusFilters;
  * Library filters. A game must carry every chosen tag and match every chosen status. Types
  * match any one, since a game has only one.
  */
-export type Filters = { tags: string[]; kinds: GameKind[]; statuses: GameStatus[] };
-export const noFilters: Filters = { tags: [], kinds: [], statuses: [] };
-export const filterCount = (filters: Filters) =>
-  filters.tags.length + filters.kinds.length + filters.statuses.length;
+export type Filters = {
+  tags: string[];
+  /** Games with any of these tags are hidden. */
+  excludedTags: string[];
+  kinds: GameKind[];
+  statuses: GameStatus[];
+};
+export const noFilters: Filters = { tags: [], excludedTags: [], kinds: [], statuses: [] };
+/** Type and status filters, which the filter button counts; tags have their own button. */
+export const filterCount = (filters: Filters) => filters.kinds.length + filters.statuses.length;
 
 const tagSearch = /(?:^|\s)tag:(?:"([^"]*)"?|(\S*))/gi;
 /** Splits search text into `tag:name` or `tag:"two words"` terms and the words left for the name. */
@@ -473,6 +483,7 @@ export function matchesGame(
   // Search terms may be partial while typing, so they match the start of a tag.
   if (!query.tags.every((term) => game.tags.some((tag) => tag.startsWith(term)))) return false;
   if (!filters.tags.every((tag) => game.tags.includes(tag))) return false;
+  if (filters.excludedTags.some((tag) => game.tags.includes(tag))) return false;
   if (filters.kinds.length && !filters.kinds.includes(gameKind(game))) return false;
   return filters.statuses.every((status) => {
     switch (status) {

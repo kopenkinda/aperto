@@ -18,7 +18,7 @@ import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
-import { TagSidebar } from "@/components/TagSidebar";
+import { TagFilter } from "@/components/TagFilter";
 import { tagDot } from "@/components/tag-colors";
 import { GamePage, playable } from "./GamePage";
 import { Settings } from "./Settings";
@@ -94,12 +94,12 @@ export function App() {
   const games = sortGames(snapshot?.games ?? [], sort, snapshot?.launches ?? []);
   const libraryTags = tagCounts(games);
   // A chosen tag stays listed after its last game loses it, so it can still be turned off.
-  for (const tag of filters.tags)
+  for (const tag of [...filters.tags, ...filters.excludedTags])
     if (!libraryTags.some(([name]) => name === tag)) libraryTags.push([tag, 0]);
   const visible = snapshot
     ? games.filter((game) => matchesGame(game, filters, search, snapshot))
     : [];
-  const filtering = filterCount(filters) > 0;
+  const filtering = filterCount(filters) + filters.tags.length + filters.excludedTags.length > 0;
   // Like Steam, something is always open: the chosen game, else the first in the list.
   const game = games.find((item) => item.id === selected) ?? visible[0] ?? games[0];
   const scan = snapshot?.lastScan;
@@ -125,6 +125,12 @@ export function App() {
                 onChange={(event) => setSearch(event.target.value)}
               />
             </div>
+            <TagFilter
+              tags={libraryTags}
+              colors={snapshot?.tagColors ?? {}}
+              filters={filters}
+              onChange={setFilters}
+            />
             <LibraryFilters
               filters={filters}
               onChange={setFilters}
@@ -157,35 +163,12 @@ export function App() {
           )}
         </div>
         <nav aria-label="Games" className="flex-1 overflow-y-auto px-2 pb-2">
-          <TagSidebar
-            tags={libraryTags}
-            unlinked={games.filter((item) => !item.source).length}
-            colors={snapshot?.tagColors ?? {}}
-            selected={filters.tags}
-            onToggle={(tag) => setFilters({ ...filters, tags: toggled(filters.tags, tag) })}
-            onRename={(from, to) => {
-              act({ action: "renameTag", from, to });
-              if (filters.tags.includes(from))
-                setFilters({
-                  ...filters,
-                  tags: [...new Set(filters.tags.map((tag) => (tag === from ? to : tag)))],
-                });
-            }}
-            onColor={(tag, color) => act({ action: "setTagColor", tag, color })}
-            onDelete={(tag) => {
-              act({ action: "deleteTag", tag });
-              setFilters({ ...filters, tags: without(filters.tags, tag) });
-            }}
-          />
-          {visible.length > 0 && !visible[0]!.favorite && (
-            <h2 className="px-2 pt-2 pb-1 text-xs font-medium text-muted-foreground">Games</h2>
-          )}
           {visible.map((item, index) => {
             const running = snapshot?.running.includes(item.id);
             const missing = snapshot?.missing.includes(item.id);
             // Headings appear only when favorites and other games are both listed.
             const heading =
-              item.favorite && index === 0
+              item.favorite && index === 0 && visible.some((other) => !other.favorite)
                 ? "Favorites"
                 : !item.favorite && visible[index - 1]?.favorite
                   ? "Games"
@@ -440,6 +423,12 @@ function activeFilters(filters: Filters) {
       label: tag,
       tag,
       without: { ...filters, tags: without(filters.tags, tag) },
+    })),
+    ...filters.excludedTags.map((tag) => ({
+      key: `not:${tag}`,
+      label: `not ${tag}`,
+      tag,
+      without: { ...filters, excludedTags: without(filters.excludedTags, tag) },
     })),
     ...filters.kinds.map((kind) => ({
       key: `kind:${kind}`,

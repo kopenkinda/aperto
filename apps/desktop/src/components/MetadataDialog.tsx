@@ -22,10 +22,13 @@ import { metadataSites, searchName, titleMatches, type Game, type MetadataMatch 
  */
 export function MetadataDialog({
   game,
+  blocked,
   open,
   onOpenChange,
 }: {
   game: Game;
+  /** Tags that never go on a game, left out of the list. */
+  blocked: readonly string[];
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
@@ -43,7 +46,8 @@ export function MetadataDialog({
     setTags(undefined);
     setError(null);
     void request({ action: "metadataTags", site: next.site, matchId: next.id }).then(
-      (found) => {
+      (all) => {
+        const found = all.filter((tag) => !blocked.includes(tag));
         setTags(found);
         setChosen(new Set(found.filter((tag) => !game.tags.includes(tag))));
       },

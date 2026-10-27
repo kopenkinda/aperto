@@ -96,6 +96,12 @@ export class DesktopLibrary {
     };
   }
 
+  /** Normalized tags without the blocked ones, which never go on a game. */
+  private allowedTags(tags: readonly string[]) {
+    const blocked = new Set(this.store.value.blockedTags ?? []);
+    return normalizeTags(tags).filter((tag) => !blocked.has(tag));
+  }
+
   private game(id: string) {
     const game = this.store.value.games.find((item) => item.id === id && !item.removed);
     if (!game) throw new Error("This game is no longer in the library.");
@@ -155,7 +161,7 @@ export class DesktopLibrary {
       const { site, matchId, title } = command;
       await this.changeGame(this.game(command.id).id, (current) => ({
         ...current,
-        tags: normalizeTags([...current.tags, ...command.tags]),
+        tags: this.allowedTags([...current.tags, ...command.tags]),
         source: { site, id: matchId, title },
       }));
       return this.snapshot();
@@ -171,7 +177,10 @@ export class DesktopLibrary {
           ...state,
           games: state.games.map((game) =>
             game.tags.includes(from)
-              ? { ...game, tags: normalizeTags(game.tags.map((tag) => (tag === from ? to : tag))) }
+              ? {
+                  ...game,
+                  tags: this.allowedTags(game.tags.map((tag) => (tag === from ? to : tag))),
+                }
               : game,
           ),
           // A merged tag keeps the color it already had.
@@ -194,6 +203,22 @@ export class DesktopLibrary {
           tagColors: colors,
         };
       });
+      return this.snapshot();
+    }
+    if (command.action === "setBlockedTags") {
+      const blocked = normalizeTags(command.tags);
+      await this.store.update((state) => ({
+        ...state,
+        blockedTags: blocked,
+        games: state.games.map((game) =>
+          game.tags.some((tag) => blocked.includes(tag))
+            ? { ...game, tags: game.tags.filter((tag) => !blocked.includes(tag)) }
+            : game,
+        ),
+        tagColors: Object.fromEntries(
+          Object.entries(state.tagColors ?? {}).filter(([tag]) => !blocked.includes(tag)),
+        ),
+      }));
       return this.snapshot();
     }
     if (command.action === "setTagColor") {
@@ -320,7 +345,7 @@ export class DesktopLibrary {
         case "setTags":
           await this.changeGame(this.game(command.id).id, (current) => ({
             ...current,
-            tags: normalizeTags(command.tags),
+            tags: this.allowedTags(command.tags),
           }));
           break;
         case "setFavorite":
@@ -574,7 +599,7 @@ export class DesktopLibrary {
         }
         await this.changeGame(game.id, (current) => ({
           ...current,
-          tags: normalizeTags([...current.tags, ...tags]),
+          tags: this.allowedTags([...current.tags, ...tags]),
           source: { site: match.site, id: match.id, title: match.title },
         }));
         report.tagged.push(game.name);

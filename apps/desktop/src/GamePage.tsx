@@ -592,7 +592,12 @@ export function GamePage({
                   onChange={changeTags}
                 />
               </Field>
-              <MetadataDialog game={game} open={finding} onOpenChange={setFinding} />
+              <MetadataDialog
+                game={game}
+                blocked={snapshot.blockedTags ?? []}
+                open={finding}
+                onOpenChange={setFinding}
+              />
 
               {windows ? (
                 <>

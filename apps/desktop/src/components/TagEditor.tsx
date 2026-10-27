@@ -14,6 +14,7 @@ export function TagEditor({
   tags,
   known,
   colors = {},
+  placeholder = "Add a tag",
   disabled,
   onChange,
 }: {
@@ -22,6 +23,7 @@ export function TagEditor({
   /** Library tags, most used first. */
   known: readonly string[];
   colors?: Readonly<Record<string, TagColor>>;
+  placeholder?: string;
   disabled?: boolean;
   onChange: (tags: string[]) => void;
 }) {
@@ -134,7 +136,7 @@ export function TagEditor({
           aria-autocomplete="list"
           aria-activedescendant={showList && active >= 0 ? `${listId}-${active}` : undefined}
           className="h-6 min-w-24 flex-1 bg-transparent px-1 outline-none placeholder:text-muted-foreground"
-          placeholder={tags.length ? "" : "Add a tag"}
+          placeholder={tags.length ? "" : placeholder}
           maxLength={40}
           value={draft}
           disabled={disabled}

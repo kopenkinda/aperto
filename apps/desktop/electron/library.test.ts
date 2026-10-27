@@ -369,6 +369,26 @@ describe("tag management", () => {
     expect(store.value.tagColors).toEqual({});
   });
 
+  it("removes blocked tags from every game and never adds them again", async () => {
+    const game = await importGame();
+    await library.handle({ action: "setTags", id: game.id, tags: ["2dcg", "nice", "voiced"] });
+    await library.handle({ action: "setTagColor", tag: "voiced", color: "blue" });
+    await library.handle({ action: "setBlockedTags", tags: ["Voiced", "2dcg"] });
+    expect(store.value.games[0]?.tags).toEqual(["nice"]);
+    expect(store.value.blockedTags).toEqual(["voiced", "2dcg"]);
+    expect(store.value.tagColors).toEqual({});
+    await library.handle({ action: "setTags", id: game.id, tags: ["nice", "voiced"] });
+    await library.handle({
+      action: "applyMetadata",
+      id: game.id,
+      site: "steam",
+      matchId: "1",
+      title: "Game",
+      tags: ["2dcg", "rpg"],
+    });
+    expect(store.value.games[0]?.tags).toEqual(["nice", "rpg"]);
+  });
+
   it("adds tags from a chosen match and remembers it", async () => {
     const game = await importGame();
     await library.handle({ action: "setTags", id: game.id, tags: ["nice"] });

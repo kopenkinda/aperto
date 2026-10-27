@@ -88,6 +88,11 @@ describe("library filters", () => {
     expect(names({ ...noFilters, statuses: ["favorite"] })).toEqual(["Grpg Quest"]);
     expect(names({ ...noFilters, tags: ["rpg"], statuses: ["running"] })).toEqual(["Ember"]);
   });
+  it("hides games with any excluded tag", () => {
+    const included = names({ ...noFilters, tags: ["rpg"] });
+    const excluded = names({ ...noFilters, tags: ["rpg"], excludedTags: ["horror"] });
+    expect(excluded).toEqual(included.filter((name) => name !== "Moon Road"));
+  });
   it("sorts favorites first, then by the chosen order with the name breaking ties", () => {
     const sorted = (order: SortOrder, launches = [] as { gameId: string }[], reversed = false) =>
       sortGames(
