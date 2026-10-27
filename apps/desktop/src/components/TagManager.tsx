@@ -27,6 +27,8 @@ export function TagManager({
   const colors = snapshot.tagColors ?? {};
   const blocked = snapshot.blockedTags ?? [];
   const unlinked = snapshot.games.filter((game) => !game.source).length;
+  // Linked games without a banner get the one from the page they are linked to.
+  const bannerless = snapshot.games.filter((game) => game.source && !game.banner).length;
   const single = tags.filter(([, count]) => count === 1).map(([tag]) => tag);
   const [query, setQuery] = useState("");
   const [tagging, setTagging] = useState(false);
@@ -40,14 +42,17 @@ export function TagManager({
     setReport(null);
     request({ action: "autoTag" })
       .then(
-        ({ tagged, unmatched }) =>
+        ({ tagged, unmatched, banners }) =>
           setReport(
             [
               tagged.length
                 ? `Tagged ${tagged.length} ${tagged.length === 1 ? "game" : "games"}.`
                 : "No new games were tagged.",
+              banners.length
+                ? `Added ${banners.length} ${banners.length === 1 ? "banner" : "banners"}.`
+                : "",
               unmatched.length
-                ? `No clear match for ${unmatched.join(", ")}. Use Find tags online on their pages.`
+                ? `No clear match for ${unmatched.join(", ")}. Use Find online on their pages.`
                 : "",
             ].join(" "),
           ),
@@ -64,19 +69,21 @@ export function TagManager({
           tagging
             ? "Looking up games on F95zone and Steam…"
             : (report ??
-              "Looks up games not yet linked on F95zone and Steam, and adds their tags where the title matches exactly. Games without a clear match can be matched on their pages.")
+              "Looks up games not yet linked on F95zone and Steam and adds their tags where the title matches exactly, and gives games without a banner the store's. Games without a clear match can be matched on their pages.")
         }
       >
         <Button
           variant="outline"
           className="self-start"
-          disabled={tagging || !unlinked}
+          disabled={tagging || (!unlinked && !bannerless)}
           onClick={autoTag}
         >
           {tagging ? <Spinner /> : <SparklesIcon />}
           {unlinked
             ? `Find tags for ${unlinked} ${unlinked === 1 ? "game" : "games"}`
-            : "Every game is linked"}
+            : bannerless
+              ? `Find banners for ${bannerless} ${bannerless === 1 ? "game" : "games"}`
+              : "Every game is linked"}
         </Button>
       </Row>
 

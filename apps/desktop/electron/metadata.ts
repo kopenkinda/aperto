@@ -1,4 +1,10 @@
-import { mainTitle, normalizeTags, type MetadataMatch, type MetadataSite } from "../src/model";
+import {
+  mainTitle,
+  normalizeTags,
+  type MetadataDetails,
+  type MetadataMatch,
+  type MetadataSite,
+} from "../src/model";
 
 // F95zone answers searches and shows threads without an account; a browser-like user agent avoids
 // its bot page. Steam's store APIs are public too.
@@ -70,6 +76,11 @@ async function searchF95(query: string): Promise<MetadataMatch[]> {
       .map((item) => decode(item!))
       .join(" · "),
     cover: thread.cover || null,
+    // Search results link a 400-pixel preview; the same path on the attachments host is the
+    // full image, often AVIF, which Aperto converts like other artwork.
+    banner: thread.cover?.startsWith("https://preview.f95zone.to/")
+      ? thread.cover.replace("https://preview.f95zone.to/", "https://attachments.f95zone.to/")
+      : null,
     url: `https://f95zone.to/threads/${thread.thread_id}/`,
   }));
 }
@@ -89,6 +100,7 @@ async function searchSteam(query: string): Promise<MetadataMatch[]> {
       title: item.name,
       detail: "Steam",
       cover: item.tiny_image ?? null,
+      banner: null,
       url: `https://store.steampowered.com/app/${item.id}/`,
     }));
 }
@@ -121,8 +133,11 @@ function steamTags() {
   return steamTagNames;
 }
 
-/** A game's tags on F95zone or Steam, most relevant first, normalized like library tags. */
-export async function metadataTags(site: MetadataSite, id: string): Promise<string[]> {
+/**
+ * A game's tags on F95zone or Steam, most relevant first and normalized like library tags, and
+ * Steam's wide library banner. F95zone's banner comes with its search result.
+ */
+export async function metadataDetails(site: MetadataSite, id: string): Promise<MetadataDetails> {
   if (!/^\d+$/.test(id)) throw new Error("Invalid game reference.");
   if (site === "f95") {
     const response = await fetch(`https://f95zone.to/threads/${id}/`, {
@@ -136,7 +151,7 @@ export async function metadataTags(site: MetadataSite, id: string): Promise<stri
         /<a href="\/tags\/[^"]+"[^>]*class="tagItem[^"]*"[^>]*>\s*([^<]+?)\s*<\/a>/g,
       ),
     ];
-    return normalizeTags(tags.map((match) => decode(match[1]!)));
+    return { tags: normalizeTags(tags.map((match) => decode(match[1]!))), banner: null };
   }
   const url = new URL("https://api.steampowered.com/IStoreBrowseService/GetItems/v1/");
   url.searchParams.set(
@@ -144,19 +159,32 @@ export async function metadataTags(site: MetadataSite, id: string): Promise<stri
     JSON.stringify({
       ids: [{ appid: Number(id) }],
       context: { language: "english", country_code: "US" },
-      data_request: { include_tag_count: 20 },
+      data_request: { include_tag_count: 20, include_assets: true },
     }),
   );
   const body = (await json(url.href)) as {
-    response?: { store_items?: { tags?: { tagid: number; weight: number }[] }[] };
+    response?: {
+      store_items?: {
+        tags?: { tagid: number; weight: number }[];
+        assets?: Record<string, string>;
+      }[];
+    };
   } | null;
   const item = body?.response?.store_items?.[0];
   if (!item) throw new Error("Steam could not be reached. Try again.");
   const names = await steamTags();
-  return normalizeTags(
-    [...(item.tags ?? [])]
-      .sort((a, b) => b.weight - a.weight)
-      .map((tag) => names.get(tag.tagid))
-      .filter((name): name is string => !!name),
-  );
+  const assets = item.assets ?? {};
+  const hero = assets.library_hero_2x ?? assets.library_hero ?? assets.header;
+  return {
+    tags: normalizeTags(
+      [...(item.tags ?? [])]
+        .sort((a, b) => b.weight - a.weight)
+        .map((tag) => names.get(tag.tagid))
+        .filter((name): name is string => !!name),
+    ),
+    banner:
+      hero && assets.asset_url_format
+        ? `https://shared.akamai.steamstatic.com/store_item_assets/${assets.asset_url_format.replace("${FILENAME}", hero)}`
+        : null,
+  };
 }

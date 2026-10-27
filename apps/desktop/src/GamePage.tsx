@@ -579,7 +579,7 @@ export function GamePage({
                       onClick={() => setFinding(true)}
                     >
                       <SparklesIcon className="size-3.5" />
-                      Find tags online
+                      Find online
                     </button>
                   </span>
                 }

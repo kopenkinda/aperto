@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { CheckIcon, SearchIcon } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -38,16 +39,22 @@ export function MetadataDialog({
   const [match, setMatch] = useState<MetadataMatch | null>(null);
   const [tags, setTags] = useState<string[] | undefined>();
   const [chosen, setChosen] = useState<Set<string>>(new Set());
+  const [banner, setBanner] = useState<string | null>(null);
+  // Starts ticked only for games without a banner, so a chosen banner is not replaced by accident.
+  const [useBanner, setUseBanner] = useState(false);
   const { run, busy, error, setError } = useTask();
   const added = [...chosen].filter((tag) => !game.tags.includes(tag));
 
   const choose = (next: MetadataMatch) => {
     setMatch(next);
     setTags(undefined);
+    setBanner(null);
     setError(null);
-    void request({ action: "metadataTags", site: next.site, matchId: next.id }).then(
-      (all) => {
-        const found = all.filter((tag) => !blocked.includes(tag));
+    void request({ action: "metadataDetails", site: next.site, matchId: next.id }).then(
+      (details) => {
+        const found = details.tags.filter((tag) => !blocked.includes(tag));
+        setBanner(details.banner ?? next.banner);
+        setUseBanner(!game.banner);
         setTags(found);
         setChosen(new Set(found.filter((tag) => !game.tags.includes(tag))));
       },
@@ -86,9 +93,10 @@ export function MetadataDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[85vh] gap-4 overflow-y-auto sm:max-w-xl">
         <DialogHeader>
-          <DialogTitle>Find tags for {game.name}</DialogTitle>
+          <DialogTitle>Find {game.name} online</DialogTitle>
           <DialogDescription>
-            Pick the game on F95zone or Steam, then choose which of its tags to add.
+            Pick the game on F95zone or Steam, then choose which of its tags to add and whether to
+            use its banner.
           </DialogDescription>
         </DialogHeader>
         {error && (
@@ -212,6 +220,23 @@ export function MetadataDialog({
           </section>
         )}
 
+        {match && banner && (
+          <section className="flex flex-col gap-2">
+            <label className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+              <Checkbox checked={useBanner} onCheckedChange={(on) => setUseBanner(!!on)} />
+              {game.banner ? "Replace the banner with this one" : "Use as banner"}
+            </label>
+            <img
+              src={banner}
+              alt=""
+              className={cn(
+                "aspect-[3/1] w-full rounded-lg object-cover ring-1 ring-foreground/10",
+                !useBanner && "opacity-40",
+              )}
+            />
+          </section>
+        )}
+
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
             Cancel
@@ -228,6 +253,7 @@ export function MetadataDialog({
                   matchId: match.id,
                   title: match.title,
                   tags: added,
+                  ...(banner && useBanner ? { banner } : {}),
                 });
                 onOpenChange(false);
               })
@@ -235,7 +261,9 @@ export function MetadataDialog({
           >
             {added.length
               ? `Add ${added.length} ${added.length === 1 ? "tag" : "tags"}`
-              : "Link without tags"}
+              : banner && useBanner
+                ? "Use banner"
+                : "Link without tags"}
           </Button>
         </DialogFooter>
       </DialogContent>

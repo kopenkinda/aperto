@@ -26,7 +26,7 @@ import { inspectRoot, readObject } from "./detection";
 import { detectGame, findGames, fingerprint, versionedName, within } from "./discovery";
 import { iconToPng } from "./mac";
 import { listComponents, removeComponent } from "./components";
-import { metadataTags, searchMetadata } from "./metadata";
+import { metadataDetails, searchMetadata } from "./metadata";
 import { mkxpLaunch } from "./mkxp";
 import { renpyLaunch } from "./renpy";
 import { sandboxed, type SandboxAccess } from "./sandbox";
@@ -155,11 +155,13 @@ export class DesktopLibrary {
     }
     if (command.action === "findMetadata")
       return searchMetadata(command.query ?? searchName(this.game(command.id).name));
-    if (command.action === "metadataTags") return metadataTags(command.site, command.matchId);
+    if (command.action === "metadataDetails") return metadataDetails(command.site, command.matchId);
     if (command.action === "autoTag") return this.autoTag();
     if (command.action === "applyMetadata") {
       const { site, matchId, title } = command;
-      await this.changeGame(this.game(command.id).id, (current) => ({
+      const game = this.game(command.id);
+      if (command.banner) await this.setArtwork(game, "banner", null, command.banner);
+      await this.changeGame(game.id, (current) => ({
         ...current,
         tags: this.allowedTags([...current.tags, ...command.tags]),
         source: { site, id: matchId, title },
@@ -315,31 +317,7 @@ export class DesktopLibrary {
           const game = this.game(command.id);
           const chosen = command.url === undefined ? await this.native.chooseArtwork() : null;
           if (command.url === undefined && !chosen) break;
-          const download = chosen ? null : await downloadImage(command.url!);
-          const readable = await readableImage(chosen ?? download!);
-          try {
-            if (!readable)
-              throw new Error(
-                chosen
-                  ? "This file could not be read as an image."
-                  : "The address does not point to an image.",
-              );
-            // Banners span the whole header, so they keep more resolution than icons.
-            const image = await this.native.image(
-              readable.file,
-              command.slot === "banner" ? 2400 : 900,
-            );
-            if (!image) throw new Error("This file could not be read as an image.");
-            await this.saveArtwork(game, command.slot, readable.file);
-            await this.changeGame(game.id, (current) =>
-              command.slot === "banner"
-                ? { ...current, banner: image }
-                : { ...current, artwork: image, customIcon: true },
-            );
-          } finally {
-            if (download) await rm(download, { force: true });
-            if (readable?.temporary) await rm(readable.file, { force: true });
-          }
+          await this.setArtwork(game, command.slot, chosen, command.url ?? null);
           break;
         }
         case "setTags":
@@ -582,24 +560,55 @@ export class DesktopLibrary {
 
   /**
    * Tags each game that has no source yet from F95zone, or else Steam, when a title there names it
-   * exactly. Games without such a match are left for the user to match on their page. Requests go
-   * one at a time, so the sites are not flooded.
+   * exactly, and gives games without a banner the store's. Games without such a match are left for
+   * the user to match on their page. Requests go one at a time, so the sites are not flooded.
    */
   autoTag(): Promise<AutoTagReport> {
     this.autoTagging ??= (async () => {
-      const report: AutoTagReport = { tagged: [], unmatched: [] };
+      const report: AutoTagReport = { tagged: [], unmatched: [], banners: [] };
       for (const game of this.store.value.games) {
-        if (game.removed || game.source) continue;
+        if (game.removed) continue;
+        // A linked game only needs a banner, from the page it is linked to.
+        if (game.source) {
+          if (game.banner) continue;
+          const { site, id, title } = game.source;
+          const details = await metadataDetails(site, id).catch(() => null);
+          const banner =
+            details?.banner ??
+            (site === "f95"
+              ? (await searchMetadata(title).catch(() => [])).find(
+                  (item) => item.site === site && item.id === id,
+                )?.banner
+              : null);
+          if (
+            banner &&
+            (await this.setArtwork(game, "banner", null, banner).then(
+              () => true,
+              () => false,
+            ))
+          )
+            report.banners.push(game.name);
+          continue;
+        }
         const matches = await searchMetadata(searchName(game.name)).catch(() => []);
         const match = matches.find((item) => titleMatches(game.name, item.title));
-        const tags = match ? await metadataTags(match.site, match.id).catch(() => null) : null;
-        if (!match || !tags) {
+        const details = match
+          ? await metadataDetails(match.site, match.id).catch(() => null)
+          : null;
+        if (!match || !details) {
           report.unmatched.push(game.name);
           continue;
         }
+        // A banner the user chose stays; games without one get the store's.
+        const banner = details.banner ?? match.banner;
+        if (!game.banner && banner)
+          await this.setArtwork(game, "banner", null, banner).then(
+            () => report.banners.push(game.name),
+            () => {},
+          );
         await this.changeGame(game.id, (current) => ({
           ...current,
-          tags: this.allowedTags([...current.tags, ...tags]),
+          tags: this.allowedTags([...current.tags, ...details.tags]),
           source: { site: match.site, id: match.id, title: match.title },
         }));
         report.tagged.push(game.name);
@@ -730,6 +739,37 @@ export class DesktopLibrary {
   private requireMac() {
     if (process.platform !== "darwin" || process.arch !== "arm64")
       throw new Error("Game launching and runtime installation require an Apple Silicon Mac.");
+  }
+
+  /** Sets a game's icon or banner from a chosen file or, failing that, an image address. */
+  private async setArtwork(
+    game: Game,
+    slot: "icon" | "banner",
+    chosen: string | null,
+    url: string | null,
+  ) {
+    const download = chosen ? null : await downloadImage(url!);
+    const readable = await readableImage(chosen ?? download!);
+    try {
+      if (!readable)
+        throw new Error(
+          chosen
+            ? "This file could not be read as an image."
+            : "The address does not point to an image.",
+        );
+      // Banners span the whole header, so they keep more resolution than icons.
+      const image = await this.native.image(readable.file, slot === "banner" ? 2400 : 900);
+      if (!image) throw new Error("This file could not be read as an image.");
+      await this.saveArtwork(game, slot, readable.file);
+      await this.changeGame(game.id, (current) =>
+        slot === "banner"
+          ? { ...current, banner: image }
+          : { ...current, artwork: image, customIcon: true },
+      );
+    } finally {
+      if (download) await rm(download, { force: true });
+      if (readable?.temporary) await rm(readable.file, { force: true });
+    }
   }
 
   /** Keeps a copy of custom artwork beside the game. Passing no source only removes the copy. */

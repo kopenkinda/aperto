@@ -157,9 +157,15 @@ export type MetadataMatch = {
   /** Developer and version on F95zone. */
   detail: string;
   cover: string | null;
+  /**
+   * A wide image for the page header: F95zone's cover at full size. Steam's banner comes with the
+   * game's details instead.
+   */
+  banner: string | null;
   url: string;
 };
-export type AutoTagReport = { tagged: string[]; unmatched: string[] };
+export type MetadataDetails = { tags: string[]; banner: string | null };
+export type AutoTagReport = { tagged: string[]; unmatched: string[]; banners: string[] };
 /** A download Aperto keeps besides NW.js runtimes, needed by games of one kind. */
 export type Component = {
   id: string;
@@ -216,7 +222,7 @@ export const CommandSchema = Schema.Union([
     query: Schema.optionalKey(Schema.String),
   }),
   Schema.Struct({
-    action: Schema.Literal("metadataTags"),
+    action: Schema.Literal("metadataDetails"),
     site: Schema.Literals(["f95", "steam"]),
     matchId: Schema.String,
   }),
@@ -228,6 +234,8 @@ export const CommandSchema = Schema.Union([
     matchId: Schema.String,
     title: Schema.String,
     tags: Schema.Array(Schema.String),
+    /** Replaces the game's banner with this image. */
+    banner: Schema.optionalKey(Schema.String),
   }),
   /** Tags every game without a source whose title clearly matches one on F95zone or Steam. */
   Schema.Struct({ action: Schema.Literal("autoTag") }),
@@ -300,8 +308,8 @@ export type ResultFor<C extends Command> = C["action"] extends "plugins"
               ? Component[]
               : C["action"] extends "findMetadata"
                 ? MetadataMatch[]
-                : C["action"] extends "metadataTags"
-                  ? string[]
+                : C["action"] extends "metadataDetails"
+                  ? MetadataDetails
                   : C["action"] extends "autoTag"
                     ? AutoTagReport
                     : Snapshot;
