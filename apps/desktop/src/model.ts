@@ -22,7 +22,7 @@ export const GameSchema = Schema.Struct({
   plays: Schema.optionalKey(Schema.Int),
   removed: Schema.Boolean,
   // Windows games run through CrossOver; Mac games are app bundles. Older libraries omit these.
-  kind: Schema.optionalKey(Schema.Literals(["nwjs", "windows", "mac", "renpy"])),
+  kind: Schema.optionalKey(Schema.Literals(["nwjs", "windows", "mac", "renpy", "rgss"])),
   executable: Schema.optionalKey(Schema.NullOr(Schema.String)),
   /** CrossOver bottle for this game; unset uses the library's default bottle. */
   bottle: Schema.optionalKey(Schema.NullOr(Schema.String)),
@@ -37,7 +37,7 @@ export type Game = typeof GameSchema.Type;
 export const gameKind = (game: Pick<Game, "kind">) => game.kind ?? "nwjs";
 /** Games Aperto starts itself can run in its sandbox; Mac apps open through macOS, Windows games through CrossOver. */
 export const sandboxable = (game: Pick<Game, "kind">) =>
-  gameKind(game) === "nwjs" || gameKind(game) === "renpy";
+  ["nwjs", "renpy", "rgss"].includes(gameKind(game));
 export const RuntimeSchema = Schema.Struct({
   version: Schema.String,
   installedAt: Schema.String,
@@ -89,10 +89,10 @@ export type Snapshot = Library & {
   terminals: { id: string; name: string }[];
 };
 export type Candidate = {
-  kind: "nwjs" | "windows" | "mac" | "renpy";
+  kind: "nwjs" | "windows" | "mac" | "renpy" | "rgss";
   /**
-   * The Windows .exe, the Mac .app, or a Ren'Py game's launcher script; null for NW.js games,
-   * which launch their root.
+   * The Windows .exe, the Mac .app, a Ren'Py game's launcher script, or an RPG Maker XP–VX Ace
+   * game's .ini; null for NW.js games, which launch their root.
    */
   executable: string | null;
   folder: string;
@@ -296,6 +296,7 @@ export function sortGames(
 
 export const kindFilters = {
   nwjs: "NW.js",
+  rgss: "RPG Maker XP–VX Ace",
   renpy: "Ren'Py",
   windows: "Windows",
   mac: "Mac",

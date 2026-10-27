@@ -3,6 +3,7 @@ import path from "node:path";
 import type { Candidate } from "../src/model";
 import { applicationRoots, inspectFolder } from "./detection";
 import { inspectMacApp } from "./mac";
+import { inspectRgss } from "./mkxp";
 import { inspectRenpy } from "./renpy";
 import { inspectWindows } from "./windows";
 import { digest, exists, message } from "./storage";
@@ -121,9 +122,11 @@ export async function findGames(
     // NW.js games run with Aperto's runtime, so a bundle is only a Mac game without one. Nothing
     // inside an app bundle is a separate game.
     // A Ren'Py build also holds a Windows .exe and sometimes a Mac app, all for the same game.
-    const renpy = await inspectRenpy(real).catch(() => null);
-    if (renpy) {
-      games.push(renpy);
+    // So does an RPG Maker XP–VX Ace game, which mkxp-z runs natively.
+    const native =
+      (await inspectRenpy(real).catch(() => null)) ?? (await inspectRgss(real).catch(() => null));
+    if (native) {
+      games.push(native);
       continue;
     }
     if (/\.app$/i.test(real)) {
@@ -153,6 +156,7 @@ export async function detectGame(folder: string): Promise<Candidate | null> {
   return (
     (await inspectFolder(folder).catch(() => null))?.game ??
     (await inspectRenpy(folder).catch(() => null)) ??
+    (await inspectRgss(folder).catch(() => null)) ??
     (await inspectMacApp(folder).catch(() => null)) ??
     inspectWindows(folder).catch(() => null)
   );

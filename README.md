@@ -109,12 +109,53 @@ is not proof that the game loaded correctly; Activity records process outcomes a
 The Plugins tab reads the standard generated `js/plugins.js` data declaration without executing
 it. Enable/disable changes preserve plugin names, order, parameters, and unrelated fields.
 They update the game's original configuration and therefore affect launches outside Aperto too.
-No plugins are added or installed. Custom executable plugin-list formats are not edited.
+Custom executable plugin-list formats are not edited. Windows exports keep the RPG Maker files in
+`www`, next to `package.json`; Aperto looks there too.
+
+Two switches above the list add plugins Aperto manages and hides from it:
+
+- **Cheat menu** adds emerladCoder's RPG Maker Cheat Menu (press 1 in game). Its repository has no
+  license, so Aperto downloads `Cheat_Menu.js` and `.css` from a pinned commit and checks their
+  SHA-256 instead of shipping them. Turning it off removes the entry and the files, unless the
+  game shipped them itself.
+- **getPixel fix**, on by default, adds `Aperto_PixelFix.js` first in the list. Newer Chromium throws
+  when a game reads a pixel at a non-finite position; the fix returns black instead. It is added
+  when the game launches and removed when switched off.
 
 The original configuration is backed up before the first change. Restore original uses the
 exact saved bytes. External edits block changes and restoration rather than overwriting a game
 update. The UI links to the retained backup for manual reconciliation. Editing is disabled while
 Aperto tracks the game as running. Independently launched copies are not detected.
+
+## Protection
+
+NW.js, Ren'Py, and RPG Maker XP–VX Ace games run inside a macOS sandbox profile (`sandbox-exec`)
+unless Protection is turned off for the game. The game gets no internet besides this Mac, may only
+start its own runtime's programs, cannot send Apple Events, cannot read files in the home folder
+outside its own folders and fonts, and writes only to its folder, its Aperto data, and temporary
+folders. It also cannot create files Finder would run when opened, such as `.app` or `.command`,
+since asking macOS to open one would run it outside the sandbox. Games that need to go online or
+save elsewhere need Protection off. Mac apps and CrossOver games are not sandboxed.
+
+## Ren'Py games
+
+A folder with `renpy`, `game`, and a launcher script named like the game's `.exe` or `.sh` is a
+Ren'Py game, checked before Windows games. A build with its own Apple Silicon libraries runs with
+them. Otherwise Aperto runs the game folder with the Ren'Py release it was made with, read from
+Ren'Py 8's `vc_version`, or else the newest release of its Python generation (7.8.7 for Python 2,
+8.6.0 for Python 3). Only the engine and Apple Silicon Python are read out of renpy.org's SDK
+archive with HTTP range requests, about 30 MB, into `renpy/<version>`. Saves go to
+`~/Library/RenPy`, as with native Mac builds.
+
+## RPG Maker XP, VX, and VX Ace
+
+A folder with `Game.ini` beside `Game.exe` and RGSS scripts or an `.rgssad`/`.rgss2a`/`.rgss3a`
+archive runs natively with mkxp-z instead of CrossOver. WOLF RPG games, which also have
+`Game.ini`, stay Windows games. The first launch downloads m5kro's universal mkxp-z build and a
+MIDI soundfont, checked against the SHA-256 GitHub records for them; Kawariki's GPL-3.0 preload
+scripts, which stand in for Windows-only calls, from a pinned commit with pinned hashes; and the
+RTP named in `Game.ini`, read out of m5kro's RTP archive without its DLLs. mkxp-z reads settings
+only from inside its app bundle, so Aperto writes `mkxp.json` there before each launch.
 
 ## Local data and ownership
 
@@ -123,7 +164,8 @@ writes and a `.previous` recovery copy. A corrupt library produces an error inst
 it. The main process serializes updates and validates IPC and stored records with Effect Schema.
 
 Game files remain in their original location. The only game-content writes Aperto performs are
-explicit plugin toggles/restoration. It does not change ownership, broadly change permissions,
+plugin toggles and restoration, the cheat menu and getPixel fix, and copies of custom artwork in
+the game's `.aperto` folder. It does not change ownership, broadly change permissions,
 strip quarantine attributes, install game dependencies, or remove original game-folder saves.
 
 Each game has its own `browser-data/<game-id>` directory. Library removal retains it unless

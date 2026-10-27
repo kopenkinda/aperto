@@ -117,7 +117,7 @@ export function bottleOf(game: Game, snapshot: Snapshot) {
 export function playable(game: Game, snapshot: Snapshot) {
   if (snapshot.missing.includes(game.id)) return false;
   const kind = gameKind(game);
-  if (kind === "mac" || kind === "renpy") return true;
+  if (kind === "mac" || kind === "renpy" || kind === "rgss") return true;
   return kind === "windows"
     ? snapshot.bottles !== null && bottleOf(game, snapshot) !== null
     : game.runtime !== null;
@@ -387,14 +387,16 @@ export function GamePage({
           <Fact label="Runs with">
             {kind === "mac"
               ? "macOS"
-              : kind === "renpy"
-                ? (launches.find((launch) => launch.runtime.startsWith("Ren'Py"))?.runtime ??
-                  "Ren'Py")
-                : windows
-                  ? `CrossOver${activeBottle ? ` · ${activeBottle}` : ""}`
-                  : game.runtime
-                    ? `NW.js ${game.runtime}`
-                    : "No runtime"}
+              : kind === "rgss"
+                ? "mkxp-z"
+                : kind === "renpy"
+                  ? (launches.find((launch) => launch.runtime.startsWith("Ren'Py"))?.runtime ??
+                    "Ren'Py")
+                  : windows
+                    ? `CrossOver${activeBottle ? ` · ${activeBottle}` : ""}`
+                    : game.runtime
+                      ? `NW.js ${game.runtime}`
+                      : "No runtime"}
           </Fact>
         </dl>
         <div className="ml-auto flex gap-2">
@@ -646,6 +648,13 @@ export function GamePage({
                       ))}
                     </SelectContent>
                   </Select>
+                </Field>
+              ) : kind === "rgss" ? (
+                <Field label="Runs with">
+                  <p className="flex min-h-8 items-center text-muted-foreground">
+                    mkxp-z, natively on this Mac, with the RPG Maker RTP when the game needs it.
+                    Both are downloaded the first time.
+                  </p>
                 </Field>
               ) : kind === "renpy" ? (
                 <Field label="Runs with">

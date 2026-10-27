@@ -22,6 +22,7 @@ import { extractExeIcon } from "./exe-icon";
 import { inspectRoot, readObject } from "./detection";
 import { detectGame, findGames, fingerprint, versionedName, within } from "./discovery";
 import { iconToPng } from "./mac";
+import { mkxpLaunch } from "./mkxp";
 import { renpyLaunch } from "./renpy";
 import { sandboxed, type SandboxAccess } from "./sandbox";
 import { installedTerminals, openInTerminal, terminalFor } from "./terminals";
@@ -300,7 +301,7 @@ export class DesktopLibrary {
           const candidate = await detectGame(folder);
           if (!candidate || candidate.kind !== gameKind(game))
             throw new Error(
-              `No ${{ nwjs: "NW.js game", windows: "Windows game", mac: "Mac app", renpy: "Ren'Py game" }[gameKind(game)]} was found there.`,
+              `No ${{ nwjs: "NW.js game", windows: "Windows game", mac: "Mac app", renpy: "Ren'Py game", rgss: "RPG Maker XP–VX Ace game" }[gameKind(game)]} was found there.`,
             );
           if (
             this.store.value.games.some(
@@ -739,6 +740,27 @@ export class DesktopLibrary {
         game.executable,
         ...(game.flags.length ? ["--args", ...game.flags] : []),
       ]);
+    }
+    if (gameKind(game) === "rgss") {
+      const mkxp = await mkxpLaunch(
+        this.store.directory,
+        game.id,
+        game.root,
+        AbortSignal.timeout(20 * 60_000),
+      );
+      try {
+        return await this.start(
+          game,
+          "mkxp-z",
+          mkxp.executable,
+          [...game.flags],
+          game.sandbox === false
+            ? null
+            : { run: [mkxp.app], read: mkxp.read, write: [game.folder, mkxp.data] },
+        );
+      } finally {
+        mkxp.started();
+      }
     }
     if (gameKind(game) === "renpy") {
       if (!game.executable || !(await exists(game.executable)))
