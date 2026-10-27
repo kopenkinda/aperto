@@ -33,6 +33,7 @@ import {
   sortGames,
   sortOrders,
   statusFilters,
+  formatSize,
   tagCounts,
   updateAvailable,
   type Command,
@@ -94,6 +95,23 @@ export function App() {
   // Favorites lead the list, so the first game shown is also the first one opened.
   const games = sortGames(snapshot?.games ?? [], sort, snapshot?.launches ?? []);
   const libraryTags = tagCounts(games);
+  const [librarySize, setLibrarySize] = useState<number | null>(null);
+  // Measured again whenever a game's folder changes, which adding or removing one does too.
+  const folders = games
+    .map((game) => game.folder)
+    .sort()
+    .join("\n");
+  useEffect(() => {
+    if (!folders) return setLibrarySize(null);
+    let active = true;
+    request({ action: "librarySize" }).then(
+      (bytes) => active && setLibrarySize(bytes),
+      () => active && setLibrarySize(null),
+    );
+    return () => {
+      active = false;
+    };
+  }, [folders]);
   // A chosen tag stays listed after its last game loses it, so it can still be turned off.
   for (const tag of [...filters.tags, ...filters.excludedTags])
     if (!libraryTags.some(([name]) => name === tag)) libraryTags.push([tag, 0]);
@@ -170,8 +188,11 @@ export function App() {
             return (
               <Fragment key={item.id}>
                 {heading && (
-                  <h2 className="px-2 pt-2 pb-1 text-xs font-medium text-muted-foreground first:pt-0">
+                  <h2 className="flex justify-between px-2 pt-2 pb-1 text-xs font-medium text-muted-foreground first:pt-0">
                     {heading}
+                    <span className="font-normal tabular-nums">
+                      {visible.filter((other) => !other.favorite === !item.favorite).length}
+                    </span>
                   </h2>
                 )}
                 <button
@@ -230,7 +251,17 @@ export function App() {
         <footer className="flex items-center gap-1 border-t px-2 py-2">
           <span className="flex items-center gap-2 px-1 text-xs text-muted-foreground">
             <ApertoMark className="size-4" />
-            {games.length} {games.length === 1 ? "game" : "games"}
+            <span className="flex flex-col">
+              {games.length} {games.length === 1 ? "game" : "games"}
+              {librarySize !== null && (
+                <span
+                  className="text-muted-foreground/70 tabular-nums"
+                  title="Space the games' folders take on disk"
+                >
+                  {formatSize(librarySize)}
+                </span>
+              )}
+            </span>
           </span>
           <div className="ml-auto flex">
             {snapshot?.gamesFolder && (

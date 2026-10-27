@@ -29,7 +29,7 @@ import { extractExeIcon } from "./exe-icon";
 import { inspectRoot, nameManifest, readObject } from "./detection";
 import { detectGame, findGames, fingerprint, versionedName, versionsIn, within } from "./discovery";
 import { applicationFolders, iconToPng } from "./mac";
-import { findComponents, listComponents, removeComponent } from "./components";
+import { diskUsage, findComponents, listComponents, removeComponent } from "./components";
 import { findF95Thread, metadataDetails, searchF95, searchMetadata } from "./metadata";
 import { mkxpLaunch } from "./mkxp";
 import { renpyLaunch } from "./renpy";
@@ -142,6 +142,8 @@ export class DesktopLibrary {
     if (command.action === "snapshot") return this.snapshot();
     if (command.action === "releases") return getReleases();
     if (command.action === "components") return listComponents(this.store.directory);
+    if (command.action === "librarySize")
+      return diskUsage(this.store.value.games.map((game) => game.folder));
     if (command.action === "removeComponent") {
       const id = command.id;
       const kind = (await findComponents(this.store.directory)).find(

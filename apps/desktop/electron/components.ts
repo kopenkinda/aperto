@@ -1,3 +1,4 @@
+import { execFile } from "node:child_process";
 import { lstat, readdir, readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import type { Component } from "../src/model";
@@ -17,6 +18,26 @@ async function size(target: string): Promise<number> {
   let total = 0;
   for (const entry of entries) total += await size(path.join(target, entry));
   return total;
+}
+
+/**
+ * Disk space the folders take, measured by `du`, which is far faster than walking them here.
+ * Folders inside another listed folder are counted once, and missing ones are skipped.
+ */
+export async function diskUsage(folders: readonly string[]): Promise<number> {
+  const distinct = [...new Set(folders)].filter(
+    (folder) => !folders.some((other) => other !== folder && folder.startsWith(`${other}/`)),
+  );
+  if (!distinct.length) return 0;
+  // `du` exits with an error for an unreadable or missing folder but still lists the rest.
+  const output = await new Promise<string>((resolve) =>
+    execFile("/usr/bin/du", ["-sk", "--", ...distinct], { maxBuffer: 1 << 22 }, (_, stdout) =>
+      resolve(String(stdout ?? "")),
+    ),
+  );
+  return output
+    .split("\n")
+    .reduce((total, line) => total + (Number.parseInt(line, 10) || 0) * 1024, 0);
 }
 
 const subfolders = (folder: string) =>

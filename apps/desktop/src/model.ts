@@ -316,6 +316,8 @@ export const CommandSchema = Schema.Union([
   Schema.Struct({ action: Schema.Literal("setPixelFix"), ...id, enabled: Schema.Boolean }),
   Schema.Struct({ action: Schema.Literal("releases") }),
   Schema.Struct({ action: Schema.Literal("components") }),
+  /** Disk space taken by the games' folders, in bytes. */
+  Schema.Struct({ action: Schema.Literal("librarySize") }),
   Schema.Struct({ action: Schema.Literal("removeComponent"), id: Schema.String }),
   Schema.Struct({ action: Schema.Literal("installRuntime"), version: Schema.String }),
   Schema.Struct({ action: Schema.Literal("cancelDownload"), version: Schema.String }),
@@ -344,6 +346,7 @@ type Results = {
   folderToTrash: string;
   engine: Engine | null;
   components: Component[];
+  librarySize: number;
   removeComponent: Component[];
   findMetadata: MetadataMatch[];
   metadataDetails: MetadataDetails;
@@ -356,6 +359,10 @@ export interface DesktopApi {
   request<C extends Command>(command: C): Promise<ResultFor<C>>;
   onChange(listener: () => void): () => void;
 }
+
+/** A size in bytes as megabytes, or gigabytes from 1 GB. */
+export const formatSize = (bytes: number) =>
+  bytes >= 1e9 ? `${(bytes / 1e9).toFixed(1)} GB` : `${Math.max(1, Math.round(bytes / 1e6))} MB`;
 
 /** Lowercased, distinct tags. Text with commas counts as several tags. */
 export function normalizeTags(input: string | readonly string[]): string[] {

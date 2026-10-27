@@ -19,6 +19,7 @@ import {
 import { Spinner } from "@/components/ui/spinner";
 import {
   compareVersions,
+  formatSize,
   updateAvailable,
   type Component,
   type Release,
@@ -36,9 +37,6 @@ const ago = (time: string) => {
   if (minutes > -24 * 60) return relative.format(Math.round(minutes / 60), "hour");
   return relative.format(Math.round(minutes / (24 * 60)), "day");
 };
-
-const megabytes = (bytes: number) =>
-  bytes >= 1e9 ? `${(bytes / 1e9).toFixed(1)} GB` : `${Math.max(1, Math.round(bytes / 1e6))} MB`;
 
 /**
  * Downloads Aperto keeps for one kind of game, each removable. They are fetched again the next
@@ -62,7 +60,7 @@ function Downloads({
         <div key={item.id} className="flex items-center gap-3 py-1.5 pr-2 pl-4">
           <span className="flex-1">
             {item.name}
-            <span className="ml-2 text-muted-foreground">{megabytes(item.size)}</span>
+            <span className="ml-2 text-muted-foreground">{formatSize(item.size)}</span>
           </span>
           <Button
             variant="ghost"
