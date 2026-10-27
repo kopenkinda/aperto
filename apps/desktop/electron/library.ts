@@ -22,6 +22,7 @@ import { extractExeIcon } from "./exe-icon";
 import { inspectRoot, readObject } from "./detection";
 import { detectGame, findGames, fingerprint, versionedName, within } from "./discovery";
 import { iconToPng } from "./mac";
+import { listComponents, removeComponent } from "./components";
 import { mkxpLaunch } from "./mkxp";
 import { renpyLaunch } from "./renpy";
 import { sandboxed, type SandboxAccess } from "./sandbox";
@@ -112,6 +113,20 @@ export class DesktopLibrary {
   async handle(command: Command): Promise<unknown> {
     if (command.action === "snapshot") return this.snapshot();
     if (command.action === "releases") return getReleases();
+    if (command.action === "components") return listComponents(this.store.directory);
+    if (command.action === "removeComponent") {
+      const id = command.id;
+      const kind = (await listComponents(this.store.directory)).find(
+        (item) => item.id === id,
+      )?.kind;
+      if (
+        kind &&
+        this.store.value.games.some((game) => this.running.has(game.id) && gameKind(game) === kind)
+      )
+        throw new Error("Close the games that use this download before removing it.");
+      await removeComponent(this.store.directory, id);
+      return listComponents(this.store.directory);
+    }
     if (command.action === "addGames") {
       const folder = await this.native.chooseFolder();
       if (folder) await this.scan(folder, { restoreRemoved: true, requested: true });

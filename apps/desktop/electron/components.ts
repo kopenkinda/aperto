@@ -1,0 +1,71 @@
+import { lstat, readdir, readFile, rm } from "node:fs/promises";
+import path from "node:path";
+import type { Component } from "../src/model";
+
+const rtpNames: Record<string, string> = {
+  Standard: "RPG Maker XP RTP",
+  RPGVX: "RPG Maker VX RTP",
+  RPGVXAce: "RPG Maker VX Ace RTP",
+};
+
+/** Total size of a folder's files, without following symlinks. */
+async function size(target: string): Promise<number> {
+  const info = await lstat(target).catch(() => null);
+  if (!info) return 0;
+  if (!info.isDirectory()) return info.size;
+  const entries = await readdir(target).catch(() => [] as string[]);
+  let total = 0;
+  for (const entry of entries) total += await size(path.join(target, entry));
+  return total;
+}
+
+const subfolders = (folder: string) =>
+  readdir(folder, { withFileTypes: true })
+    .then((entries) =>
+      entries
+        .filter((entry) => entry.isDirectory() && !entry.name.includes(".partial"))
+        .map((entry) => entry.name),
+    )
+    .catch(() => [] as string[]);
+
+/**
+ * What Aperto downloaded besides NW.js: Ren'Py releases, mkxp-z with its scripts and RTPs, and
+ * the cheat menu. Each is fetched again the next time a game needs it, so all can be removed.
+ */
+export async function listComponents(directory: string): Promise<Component[]> {
+  const found: Omit<Component, "size">[] = [];
+  for (const version of await subfolders(path.join(directory, "renpy"))) {
+    // An empty marker records a release without an Apple Silicon build; nothing else is kept.
+    const marker = await readFile(
+      path.join(directory, "renpy", version, ".installed"),
+      "utf8",
+    ).catch(() => null);
+    if (marker) found.push({ id: `renpy/${version}`, name: `Ren'Py ${version}`, kind: "renpy" });
+  }
+  const mkxp = path.join(directory, "mkxp-z");
+  for (const folder of await subfolders(mkxp)) {
+    if (folder === "app") found.push({ id: "mkxp-z/app", name: "mkxp-z", kind: "rgss" });
+    if (folder === "kawariki")
+      for (const commit of await subfolders(path.join(mkxp, "kawariki")))
+        found.push({ id: `mkxp-z/kawariki/${commit}`, name: "Kawariki scripts", kind: "rgss" });
+    if (folder === "rtp")
+      for (const name of await subfolders(path.join(mkxp, "rtp")))
+        found.push({
+          id: `mkxp-z/rtp/${name}`,
+          name: rtpNames[name] ?? `${name} RTP`,
+          kind: "rgss",
+        });
+  }
+  for (const commit of await subfolders(path.join(directory, "cheat-menu")))
+    found.push({ id: `cheat-menu/${commit}`, name: "Cheat menu", kind: "nwjs" });
+  return Promise.all(
+    found.map(async (item) => ({ ...item, size: await size(path.join(directory, item.id)) })),
+  );
+}
+
+/** Removes one listed component. Only ids `listComponents` can return are accepted. */
+export async function removeComponent(directory: string, id: string) {
+  if (!(await listComponents(directory)).some((item) => item.id === id))
+    throw new Error("That download is no longer there.");
+  await rm(path.join(directory, id), { recursive: true, force: true });
+}

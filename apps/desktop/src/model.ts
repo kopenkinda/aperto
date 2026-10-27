@@ -123,6 +123,14 @@ export type PluginList = {
 };
 /** Plugins Aperto adds for its own switches; the plugin list leaves them out. */
 export const managedPlugins = ["Aperto_PixelFix", "Cheat_Menu"];
+/** A download Aperto keeps besides NW.js runtimes, needed by games of one kind. */
+export type Component = {
+  id: string;
+  name: string;
+  kind: NonNullable<Game["kind"]>;
+  /** Bytes on disk. */
+  size: number;
+};
 export type Release = { version: string; chromium: string; node: string };
 
 const id = { id: Schema.String };
@@ -189,6 +197,8 @@ export const CommandSchema = Schema.Union([
   }),
   Schema.Struct({ action: Schema.Literal("setPixelFix"), ...id, enabled: Schema.Boolean }),
   Schema.Struct({ action: Schema.Literal("releases") }),
+  Schema.Struct({ action: Schema.Literal("components") }),
+  Schema.Struct({ action: Schema.Literal("removeComponent"), id: Schema.String }),
   Schema.Struct({ action: Schema.Literal("installRuntime"), version: Schema.String }),
   Schema.Struct({ action: Schema.Literal("cancelDownload"), version: Schema.String }),
   Schema.Struct({ action: Schema.Literal("removeRuntime"), version: Schema.String }),
@@ -211,7 +221,9 @@ export type ResultFor<C extends Command> = C["action"] extends "plugins"
           ? string
           : C["action"] extends "engine"
             ? Engine | null
-            : Snapshot;
+            : C["action"] extends "components" | "removeComponent"
+              ? Component[]
+              : Snapshot;
 export interface DesktopApi {
   request<C extends Command>(command: C): Promise<ResultFor<C>>;
   onChange(listener: () => void): () => void;
