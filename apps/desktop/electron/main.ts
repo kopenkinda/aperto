@@ -105,10 +105,13 @@ else {
         },
         trash: (file) => shell.trashItem(file),
         openExternal: (url) => void shell.openExternal(url),
-        installedGames: async () => [
-          ...(await applicationGames()),
-          ...((await exists(crossoverWine)) ? await bottleSteamGames() : []),
-        ],
+        installedGames: async () =>
+          (
+            await Promise.all([
+              applicationGames(),
+              exists(crossoverWine).then((crossover) => (crossover ? bottleSteamGames() : [])),
+            ])
+          ).flat(),
       },
       changed,
     );
@@ -164,7 +167,7 @@ else {
         quitting = true;
         for (const session of library.running.values()) {
           session.stopped = true;
-          session.process.kill("SIGTERM");
+          session.stop();
         }
         for (const download of library.runtimes.downloads.values()) download.controller.abort();
         setTimeout(() => app.quit(), 1000);

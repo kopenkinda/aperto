@@ -41,7 +41,7 @@ const f95Query = (query: string) => {
   return words.slice(0, 5).join(" ");
 };
 
-async function searchF95(query: string): Promise<MetadataMatch[]> {
+async function queryF95(query: string): Promise<MetadataMatch[]> {
   if (!f95Query(query)) return [];
   const url = new URL("https://f95zone.to/sam/latest_alpha/latest_data.php");
   url.search = new URLSearchParams({
@@ -82,7 +82,6 @@ async function searchF95(query: string): Promise<MetadataMatch[]> {
     banner: thread.cover?.startsWith("https://preview.f95zone.to/")
       ? thread.cover.replace("https://preview.f95zone.to/", "https://attachments.f95zone.to/")
       : null,
-    url: `https://f95zone.to/threads/${thread.thread_id}/`,
   }));
 }
 
@@ -103,16 +102,25 @@ async function searchSteam(query: string): Promise<MetadataMatch[]> {
       version: null,
       cover: item.tiny_image ?? null,
       banner: null,
-      url: `https://store.steampowered.com/app/${item.id}/`,
     }));
+}
+
+/**
+ * F95zone threads matching a query. A word spelled differently there finds nothing, so the main
+ * title alone is tried when the whole query finds nothing.
+ */
+export async function searchF95(query: string): Promise<MetadataMatch[]> {
+  const found = await queryF95(query);
+  const short = mainTitle(query);
+  return found.length || short === query ? found : queryF95(short);
 }
 
 /** One F95zone thread, found again by searching its title; null when the search misses it. */
 export async function findF95Thread(id: string, title: string) {
-  const threads = await searchF95(title);
+  const threads = await queryF95(title);
   return (
     threads.find((thread) => thread.id === id) ??
-    (await searchF95(mainTitle(title))).find((thread) => thread.id === id) ??
+    (await queryF95(mainTitle(title))).find((thread) => thread.id === id) ??
     null
   );
 }
@@ -121,10 +129,7 @@ export async function findF95Thread(id: string, title: string) {
 export async function searchMetadata(query: string): Promise<MetadataMatch[]> {
   if (!query.trim()) return [];
   const [f95, steam] = await Promise.all([searchF95(query), searchSteam(query)]);
-  // A word spelled differently there finds nothing, so the main title alone is tried as well.
-  const short = mainTitle(query);
-  const more = !f95.length && short !== query ? await searchF95(short) : [];
-  return [...f95, ...more, ...steam];
+  return [...f95, ...steam];
 }
 
 let steamTagNames: Promise<Map<number, string>> | null = null;

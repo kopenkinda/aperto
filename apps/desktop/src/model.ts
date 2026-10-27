@@ -191,8 +191,12 @@ export type MetadataMatch = {
    * game's details instead.
    */
   banner: string | null;
-  url: string;
 };
+/** A game's page on F95zone or Steam. */
+export const sourceUrl = (site: MetadataSite, id: string) =>
+  site === "f95"
+    ? `https://f95zone.to/threads/${id}/`
+    : `https://store.steampowered.com/app/${id}/`;
 export type MetadataDetails = { tags: string[]; banner: string | null };
 export type AutoTagReport = { tagged: string[]; unmatched: string[]; banners: string[] };
 /** A download Aperto keeps besides NW.js runtimes, needed by games of one kind. */

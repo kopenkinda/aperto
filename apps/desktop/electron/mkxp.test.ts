@@ -28,7 +28,12 @@ describe("RPG Maker XP, VX and VX Ace games", () => {
       "Game.ini": "[Game]\r\nLibrary=System\\RGSS301.dll\r\nTitle=Ace\r\nRTP=RPGVXAce\r\n",
       "Game.rgss3a": "",
     });
-    expect(await rgssGame(ace)).toEqual({ version: 3, rtp: "RPGVXAce", execName: "Game" });
+    expect(await rgssGame(ace)).toEqual({
+      version: 3,
+      rtp: "RPGVXAce",
+      execName: "Game",
+      title: "Ace",
+    });
 
     const xp = path.join(directory, "xp");
     await writeFiles(xp, {
@@ -36,7 +41,7 @@ describe("RPG Maker XP, VX and VX Ace games", () => {
       "Game.ini": "[Game]\nLibrary=RGSS104E.dll\nScripts=Data\\Scripts.rxdata\nRTP1=\n",
       "Data/Scripts.rxdata": "",
     });
-    expect(await rgssGame(xp)).toEqual({ version: 1, rtp: null, execName: "Game" });
+    expect(await rgssGame(xp)).toEqual({ version: 1, rtp: null, execName: "Game", title: null });
   });
 
   it("adds RGSS games instead of Windows games and leaves WOLF RPG games to CrossOver", async () => {

@@ -159,6 +159,23 @@ export async function listBottles(): Promise<string[]> {
   return bottles.sort((a, b) => a.localeCompare(b));
 }
 
+/**
+ * Arguments for CrossOver's wine to run something in a bottle. `--no-update` because updating a
+ * bottle resyncs CrossOver's Mac launchers in ~/Applications/CrossOver, which macOS blocks as
+ * Aperto modifying other apps; CrossOver upgrades its bottles itself when opened. A game keeps
+ * winemenubuilder off so it cannot add shortcuts or file associations to the bottle and the Mac;
+ * a tool, such as `taskkill.exe`, runs from the bottle without CrossOver's interface.
+ */
+export function wineArgs(bottle: string, args: readonly string[], run: "game" | "tool") {
+  return [
+    "--bottle",
+    bottle,
+    "--no-update",
+    ...(run === "game" ? ["--dll", "winemenubuilder.exe=d"] : ["--no-gui", "--cx-app"]),
+    ...args,
+  ];
+}
+
 /** Whether a bottle's registry text turns on the Mac driver's high resolution (Retina) mode. */
 export function retinaModeIn(registry: string): boolean {
   const header = registry.indexOf("[Software\\\\Wine\\\\Mac Driver]");
@@ -183,23 +200,22 @@ export async function setRetinaMode(bottle: string, on: boolean) {
   if (retinaModeIn(registry) === on) return;
   await execute(
     crossoverWine,
-    [
-      "--bottle",
+    wineArgs(
       bottle,
-      "--no-update",
-      "--no-gui",
-      "--cx-app",
-      "reg.exe",
-      "add",
-      "HKCU\\Software\\Wine\\Mac Driver",
-      "/v",
-      "RetinaMode",
-      "/t",
-      "REG_SZ",
-      "/d",
-      on ? "y" : "n",
-      "/f",
-    ],
+      [
+        "reg.exe",
+        "add",
+        "HKCU\\Software\\Wine\\Mac Driver",
+        "/v",
+        "RetinaMode",
+        "/t",
+        "REG_SZ",
+        "/d",
+        on ? "y" : "n",
+        "/f",
+      ],
+      "tool",
+    ),
     { timeout: 60_000 },
   ).catch(() => {
     throw new Error("CrossOver could not change the bottle's high resolution mode.");

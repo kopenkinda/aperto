@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { execFile, spawn } from "node:child_process";
+import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { cp, mkdir, readdir, readFile, realpath, rename, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
@@ -10,6 +10,7 @@ import {
   normalizeTags,
   sandboxable,
   searchName,
+  sourceUrl,
   titleMatches,
   type AutoTagReport,
   playCount,
@@ -28,13 +29,13 @@ import { extractExeIcon } from "./exe-icon";
 import { inspectRoot, readObject } from "./detection";
 import { detectGame, findGames, fingerprint, versionedName, versionsIn, within } from "./discovery";
 import { applicationFolders, iconToPng } from "./mac";
-import { listComponents, removeComponent } from "./components";
-import { findF95Thread, metadataDetails, searchMetadata } from "./metadata";
+import { findComponents, listComponents, removeComponent } from "./components";
+import { findF95Thread, metadataDetails, searchF95, searchMetadata } from "./metadata";
 import { mkxpLaunch } from "./mkxp";
 import { renpyLaunch } from "./renpy";
 import { sandboxed, type SandboxAccess } from "./sandbox";
 import { installedTerminals, openInTerminal, terminalFor } from "./terminals";
-import { bottlesDirectory, crossoverWine, listBottles, setRetinaMode } from "./windows";
+import { bottlesDirectory, crossoverWine, listBottles, setRetinaMode, wineArgs } from "./windows";
 import {
   changePlugins,
   cheatMenuPlugin,
@@ -68,11 +69,8 @@ export type NativeActions = {
 
 export class DesktopLibrary {
   readonly runtimes: RuntimeManager;
-  /** Running games. A Steam game's process is its own, found by Aperto, rather than a child. */
-  readonly running = new Map<
-    string,
-    { process: { kill: (signal?: NodeJS.Signals) => unknown }; stopped: boolean }
-  >();
+  /** Running games, each with how to stop it. */
+  readonly running = new Map<string, { stop: () => void; stopped: boolean }>();
   private readonly busy = new Set<string>();
   private scanning: Promise<ScanReport> | null = null;
   private lastScan: ScanReport | null = null;
@@ -146,7 +144,7 @@ export class DesktopLibrary {
     if (command.action === "components") return listComponents(this.store.directory);
     if (command.action === "removeComponent") {
       const id = command.id;
-      const kind = (await listComponents(this.store.directory)).find(
+      const kind = (await findComponents(this.store.directory)).find(
         (item) => item.id === id,
       )?.kind;
       if (
@@ -188,11 +186,7 @@ export class DesktopLibrary {
           ? { site: "f95" as const, id: game.update.thread }
           : game.source;
       if (!source) throw new Error("This game is not linked to F95zone or Steam.");
-      this.native.openExternal(
-        source.site === "f95"
-          ? `https://f95zone.to/threads/${source.id}/`
-          : `https://store.steampowered.com/app/${source.id}/`,
-      );
+      this.native.openExternal(sourceUrl(source.site, source.id));
       return this.snapshot();
     }
     if (command.action === "applyMetadata") {
@@ -537,36 +531,7 @@ export class DesktopLibrary {
           const running = this.running.get(command.id);
           if (running) {
             running.stopped = true;
-            const game = this.game(command.id);
-            // A Steam game's session ends its own processes inside the bottle.
-            if (game.steam) running.process.kill("SIGTERM");
-            // CrossOver's launcher waits on the Windows process; end that process inside the bottle.
-            else if (gameKind(game) === "windows" && game.executable)
-              spawn(
-                crossoverWine,
-                [
-                  "--bottle",
-                  this.bottleFor(game),
-                  "--no-update",
-                  "--no-gui",
-                  "--cx-app",
-                  "taskkill.exe",
-                  "/F",
-                  "/IM",
-                  path.basename(game.executable),
-                ],
-                { stdio: "ignore" },
-              ).on("error", () => running.process.kill("SIGTERM"));
-            // `open -W` waits on the app, which LaunchServices started; end the app's own processes.
-            else if (gameKind(game) === "mac")
-              spawn(
-                "/usr/bin/pkill",
-                ["-TERM", "-f", path.join(game.root, "Contents", "MacOS") + "/"],
-                {
-                  stdio: "ignore",
-                },
-              ).on("close", () => running.process.kill("SIGTERM"));
-            else running.process.kill("SIGTERM");
+            running.stop();
           }
           break;
         }
@@ -616,22 +581,15 @@ export class DesktopLibrary {
             : null);
         const thread = known
           ? await findF95Thread(known.thread, known.title).catch(() => null)
-          : ((await searchMetadata(searchName(game.name)).catch(() => [])).find(
-              (item) => item.site === "f95" && titleMatches(game.name, item.title),
+          : ((await searchF95(searchName(game.name)).catch(() => [])).find((item) =>
+              titleMatches(game.name, item.title),
             ) ?? null);
-        if (!thread?.version) continue;
-        const { id, title, version } = thread;
+        const version = thread?.version;
+        if (!version) continue;
         await this.changeGame(game.id, (current) => ({
           ...current,
-          update: {
-            thread: id,
-            title,
-            installed: installedVersion(current),
-            latest: version,
-            checkedAt: new Date().toISOString(),
-          },
+          update: updateRecord(current, { ...thread, version }),
         }));
-        this.changed();
       }
       await this.store.update((state) => ({
         ...state,
@@ -647,9 +605,7 @@ export class DesktopLibrary {
   checkUpdatesIfStale() {
     const last = this.store.value.updatesCheckedAt;
     if (last && Date.now() - Date.parse(last) < 12 * 3_600_000) return;
-    void this.checkUpdates()
-      .then(() => this.changed())
-      .catch((error) => console.error("Update check failed:", error));
+    void this.checkUpdates().catch((error) => console.error("Update check failed:", error));
   }
 
   private autoTagging: Promise<AutoTagReport> | null = null;
@@ -668,14 +624,11 @@ export class DesktopLibrary {
         if (game.source) {
           if (game.banner) continue;
           const { site, id, title } = game.source;
-          const details = await metadataDetails(site, id).catch(() => null);
+          // F95zone's banner comes with its search result; Steam's with the game's details.
           const banner =
-            details?.banner ??
-            (site === "f95"
-              ? (await searchMetadata(title).catch(() => [])).find(
-                  (item) => item.site === site && item.id === id,
-                )?.banner
-              : null);
+            site === "f95"
+              ? (await findF95Thread(id, title).catch(() => null))?.banner
+              : (await metadataDetails(site, id).catch(() => null))?.banner;
           if (
             banner &&
             (await this.setArtwork(game, "banner", null, banner).then(
@@ -707,19 +660,10 @@ export class DesktopLibrary {
           tags: this.allowedTags([...current.tags, ...details.tags]),
           source: { site: match.site, id: match.id, title: match.title },
           ...(match.version
-            ? {
-                update: {
-                  thread: match.id,
-                  title: match.title,
-                  installed: installedVersion(current),
-                  latest: match.version,
-                  checkedAt: new Date().toISOString(),
-                },
-              }
+            ? { update: updateRecord(current, { ...match, version: match.version }) }
             : {}),
         }));
         report.tagged.push(game.name);
-        this.changed();
       }
       return report;
     })().finally(() => {
@@ -1059,12 +1003,21 @@ export class DesktopLibrary {
         throw new Error("The app is missing. Locate it again.");
       // `open` lets macOS show its usual first-launch checks; -W waits so the session is tracked,
       // and -n starts a new instance even if a copy of the app is already open.
-      return this.start(game, "macOS", "/usr/bin/open", [
-        "-W",
-        "-n",
-        game.executable,
-        ...(game.flags.length ? ["--args", ...game.flags] : []),
-      ]);
+      const contents = path.join(game.root, "Contents", "MacOS") + "/";
+      return this.start(
+        game,
+        "macOS",
+        "/usr/bin/open",
+        ["-W", "-n", game.executable, ...(game.flags.length ? ["--args", ...game.flags] : [])],
+        {
+          // `open -W` waits on the app, which LaunchServices started; end the app's own processes.
+          stop: (child) =>
+            spawn("/usr/bin/pkill", ["-TERM", "-f", contents], { stdio: "ignore" }).on(
+              "close",
+              () => child.kill("SIGTERM"),
+            ),
+        },
+      );
     }
     if (gameKind(game) === "rgss") {
       const mkxp = await mkxpLaunch(
@@ -1074,15 +1027,9 @@ export class DesktopLibrary {
         AbortSignal.timeout(20 * 60_000),
       );
       try {
-        return await this.start(
-          game,
-          "mkxp-z",
-          mkxp.executable,
-          [...game.flags],
-          game.sandbox === false
-            ? null
-            : { run: [mkxp.app], read: mkxp.read, write: [game.folder, mkxp.data] },
-        );
+        return await this.start(game, "mkxp-z", mkxp.executable, [...game.flags], {
+          sandbox: { run: [mkxp.app], read: mkxp.read, write: [game.folder, mkxp.data] },
+        });
       } finally {
         mkxp.started();
       }
@@ -1099,15 +1046,9 @@ export class DesktopLibrary {
         game.executable,
         AbortSignal.timeout(10 * 60_000),
       );
-      return this.start(
-        game,
-        renpy.runtime,
-        renpy.executable,
-        [...renpy.args, ...game.flags],
-        game.sandbox === false
-          ? null
-          : { run: [renpy.folder], read: [saves], write: [game.folder, saves] },
-      );
+      return this.start(game, renpy.runtime, renpy.executable, [...renpy.args, ...game.flags], {
+        sandbox: { run: [renpy.folder], read: [saves], write: [game.folder, saves] },
+      });
     }
     if (game.steam) {
       if (!(await exists(game.steam.client)))
@@ -1119,22 +1060,24 @@ export class DesktopLibrary {
       if (!game.executable || !(await exists(game.executable)))
         throw new Error("The game's executable is missing. Locate the game folder again.");
       await this.prepareBottle(game, bottle);
-      // Like dropping the .exe on CrossOver's Run Command: nothing is registered in the bottle.
-      return this.start(game, bottle, crossoverWine, [
-        "--bottle",
+      const executable = game.executable;
+      // Like dropping the .exe on CrossOver's Run Command: nothing is registered in the bottle. A
+      // path as the first argument runs that file; `--cx-app` would look it up in the bottle.
+      return this.start(
+        game,
         bottle,
-        // Updating the bottle resyncs CrossOver's Mac launchers in ~/Applications/CrossOver, which
-        // macOS blocks as Aperto modifying other apps. CrossOver itself upgrades bottles when opened.
-        "--no-update",
-        // Keep the game from adding shortcuts or file associations to the bottle and the Mac.
-        "--dll",
-        "winemenubuilder.exe=d",
-        "--workdir",
-        game.root,
-        // A path as the first argument runs that file; `--cx-app` would look it up in the bottle.
-        game.executable,
-        ...game.flags,
-      ]);
+        crossoverWine,
+        wineArgs(bottle, ["--workdir", game.root, executable, ...game.flags], "game"),
+        {
+          // CrossOver's launcher waits on the Windows process; end that process in the bottle.
+          stop: (child) =>
+            spawn(
+              crossoverWine,
+              wineArgs(bottle, ["taskkill.exe", "/F", "/IM", path.basename(executable)], "tool"),
+              { stdio: "ignore" },
+            ).on("error", () => child.kill("SIGTERM")),
+        },
+      );
     }
     await inspectRoot(game.folder, game.root);
     const manifest = await readObject(path.join(game.root, "package.json"));
@@ -1158,24 +1101,33 @@ export class DesktopLibrary {
       game.runtime,
       executable,
       [`--user-data-dir=${data}`, ...game.flags, game.root],
-      game.sandbox === false
-        ? null
-        : {
-            run: [path.resolve(executable, "..", "..", "..")],
-            read: [],
-            write: [game.folder, data],
-          },
+      {
+        sandbox: {
+          run: [path.resolve(executable, "..", "..", "..")],
+          read: [],
+          write: [game.folder, data],
+        },
+      },
     );
   }
 
-  /** Spawns a game process and records the session until it exits. */
+  /**
+   * Spawns a game process and records the session until it exits. The game runs in the sandbox
+   * with the given access unless its Protection is off. Stopping sends SIGTERM unless the launch
+   * says how else to end the game.
+   */
   private async start(
     game: Game,
     runtime: string,
     executable: string,
     args: string[],
-    sandbox: SandboxAccess | null = null,
+    options: {
+      sandbox?: SandboxAccess;
+      stop?: (child: ChildProcess) => void;
+    } = {},
   ) {
+    const sandbox =
+      options.sandbox && sandboxable(game) && game.sandbox !== false ? options.sandbox : null;
     // The history keeps the game's own arguments; the sandbox wrapper only adds its rules.
     const [command, commandArgs] = sandbox
       ? await sandboxed(executable, args, sandbox)
@@ -1190,7 +1142,10 @@ export class DesktopLibrary {
       env,
       stdio: ["ignore", "pipe", "pipe"],
     });
-    const session = { process: child, stopped: false };
+    const session = {
+      stopped: false,
+      stop: () => (options.stop ? options.stop(child) : child.kill("SIGTERM")),
+    };
     this.running.set(game.id, session);
     this.changed();
     let log = "";
@@ -1291,19 +1246,10 @@ export class DesktopLibrary {
   private async startSteam(game: Game, steam: SteamInstall) {
     await this.prepareBottle(game, steam.bottle);
     const args = ["-applaunch", steam.appId, ...game.flags];
-    const launcher = spawn(
-      crossoverWine,
-      [
-        "--bottle",
-        steam.bottle,
-        "--no-update",
-        "--dll",
-        "winemenubuilder.exe=d",
-        steam.client,
-        ...args,
-      ],
-      { stdio: "ignore", detached: true },
-    );
+    const launcher = spawn(crossoverWine, wineArgs(steam.bottle, [steam.client, ...args], "game"), {
+      stdio: "ignore",
+      detached: true,
+    });
     await new Promise<void>((resolve, reject) => {
       launcher.once("spawn", resolve);
       launcher.once("error", reject);
@@ -1319,25 +1265,14 @@ export class DesktopLibrary {
     const executables = new Set<string>();
     const session = {
       stopped: false,
-      process: {
-        kill: () => {
-          for (const name of executables)
-            spawn(
-              crossoverWine,
-              [
-                "--bottle",
-                steam.bottle,
-                "--no-update",
-                "--no-gui",
-                "--cx-app",
-                "taskkill.exe",
-                "/F",
-                "/IM",
-                name,
-              ],
-              { stdio: "ignore" },
-            ).on("error", () => {});
-        },
+      // Ends the game's own processes, which Steam started, inside the bottle.
+      stop: () => {
+        for (const name of executables)
+          spawn(
+            crossoverWine,
+            wineArgs(steam.bottle, ["taskkill.exe", "/F", "/IM", name], "tool"),
+            { stdio: "ignore" },
+          ).on("error", () => {});
       },
     };
     this.running.set(game.id, session);
@@ -1373,7 +1308,6 @@ export class DesktopLibrary {
             : `The game did not start within 3 minutes. Steam in the "${steam.bottle}" bottle may need you to sign in or finish an update.`,
         "",
       );
-      this.changed();
     })();
   }
 
@@ -1418,6 +1352,20 @@ function artworkCopy(game: Game, slot: "icon" | "banner", dataDirectory: string)
   return {
     directory: path.join(mac ? path.dirname(game.folder) : game.folder, ".aperto"),
     name: mac ? `${path.basename(game.folder, path.extname(game.folder))}-${slot}` : slot,
+  };
+}
+
+/** What an update check learned about a game from its F95zone thread. */
+function updateRecord(
+  game: Game,
+  thread: { id: string; title: string; version: string },
+): NonNullable<Game["update"]> {
+  return {
+    thread: thread.id,
+    title: thread.title,
+    installed: installedVersion(game),
+    latest: thread.version,
+    checkedAt: new Date().toISOString(),
   };
 }
 

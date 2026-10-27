@@ -110,7 +110,6 @@ export const cheatMenuPlugin = "Cheat_Menu";
  * which `changePlugins` stores together with the write.
  */
 async function firstBackup(
-  store: LibraryStore,
   game: Game,
   configuration: { hash: string; source: string },
   backupFile: string,
@@ -192,7 +191,7 @@ export async function changePlugins(
         ? [entry, ...others]
         : [...others, entry];
     next = configuration.prefix + JSON.stringify(plugins, null, 2) + configuration.suffix;
-    backup = await firstBackup(store, game, configuration, backupFile, backup);
+    backup = await firstBackup(game, configuration, backupFile, backup);
   } else {
     const selected = configuration.plugins[change.index];
     if (!selected) throw new Error("That plugin is no longer in the list.");
@@ -201,7 +200,7 @@ export async function changePlugins(
       index === change.index ? { ...plugin, status: change.enabled } : plugin,
     );
     next = configuration.prefix + JSON.stringify(plugins, null, 2) + configuration.suffix;
-    backup = await firstBackup(store, game, configuration, backupFile, backup);
+    backup = await firstBackup(game, configuration, backupFile, backup);
   }
   const pending = { ...backup, pending: digest(next) };
   await store.update((state) => ({

@@ -1,7 +1,7 @@
-import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { atomicWrite } from "./storage";
+import { fetchPinned } from "./downloads";
+import { atomicWrite, digest } from "./storage";
 
 // emerladCoder's RPG Maker MV Cheat Menu. Its repository has no license, so Aperto downloads it
 // when asked instead of shipping it, pinned to one commit and checked against these hashes.
@@ -12,21 +12,18 @@ const files = {
 };
 export const cheatMenuFiles = Object.keys(files);
 
-const sha256 = (data: Buffer) => createHash("sha256").update(data).digest("hex");
-
 /** The cheat menu's files, downloaded once into Aperto's data folder and verified each time. */
 export async function cheatMenu(directory: string): Promise<Map<string, Buffer>> {
   const cache = path.join(directory, "cheat-menu", commit);
   const result = new Map<string, Buffer>();
   for (const [name, hash] of Object.entries(files)) {
-    let data = await readFile(path.join(cache, name)).catch(() => null);
-    if (!data || sha256(data) !== hash) {
-      const url = `https://raw.githubusercontent.com/emerladCoder/RPG-Maker-MV-Cheat-Menu-Plugin/${commit}/Cheat_Menu/www/js/plugins/${name}`;
-      const response = await fetch(url, { signal: AbortSignal.timeout(30_000) }).catch(() => null);
-      if (!response?.ok) throw new Error("The cheat menu could not be downloaded. Try again.");
-      data = Buffer.from(await response.arrayBuffer());
-      if (sha256(data) !== hash)
-        throw new Error("The downloaded cheat menu did not match the expected file.");
+    let data: Buffer | null = await readFile(path.join(cache, name)).catch(() => null);
+    if (!data || digest(data) !== hash) {
+      data = await fetchPinned(
+        `https://raw.githubusercontent.com/emerladCoder/RPG-Maker-MV-Cheat-Menu-Plugin/${commit}/Cheat_Menu/www/js/plugins/${name}`,
+        hash,
+        "cheat menu",
+      );
       await atomicWrite(path.join(cache, name), data, 0o644);
     }
     result.set(name, data);

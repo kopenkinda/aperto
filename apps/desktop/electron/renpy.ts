@@ -1,8 +1,8 @@
-import { randomUUID } from "node:crypto";
-import { mkdir, readdir, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { readdir, readFile, realpath, rm } from "node:fs/promises";
 import path from "node:path";
 import { compareVersions, type Candidate } from "../src/model";
 import { meaningfulName } from "./detection";
+import { installOnce } from "./downloads";
 import { openRemoteZip } from "./remote-zip";
 import { extractZip } from "./runtimes";
 import { exists } from "./storage";
@@ -109,32 +109,16 @@ export async function renpyLaunch(
   throw new Error("No Ren'Py release for Apple Silicon could run this game.");
 }
 
-const installs = new Map<string, Promise<{ folder: string; python: string } | null>>();
-
 /**
  * A Ren'Py release's engine and Apple Silicon Python, downloaded once from renpy.org. Only those
  * parts of the SDK archive are fetched. Null when the release has no Apple Silicon build.
  */
-function renpyRelease(directory: string, version: string, signal: AbortSignal) {
-  let install = installs.get(version);
-  if (!install) {
-    install = installRelease(directory, version, signal).finally(() => installs.delete(version));
-    installs.set(version, install);
-  }
-  return install;
-}
-
-async function installRelease(directory: string, version: string, signal: AbortSignal) {
+async function renpyRelease(directory: string, version: string, signal: AbortSignal) {
   if (!/^\d+\.\d+\.\d+$/.test(version)) throw new Error("Invalid Ren'Py version.");
   const folder = path.join(directory, "renpy", version);
-  const done = path.join(folder, ".installed");
-  const installed = await readFile(done, "utf8").catch(() => null);
-  if (installed !== null)
-    return installed ? { folder, python: path.join(folder, "lib", installed, "python") } : null;
-
-  const partial = `${folder}.${randomUUID()}.partial`;
-  let lib = null as string | null;
-  try {
+  // The install records the Apple Silicon library folder; an empty record means there is none.
+  const lib = await installOnce(folder, async (partial) => {
+    let found = "";
     const zip = await openRemoteZip(
       `https://www.renpy.org/dl/${version}/renpy-${version}-sdk.zip`,
       signal,
@@ -145,21 +129,14 @@ async function installRelease(directory: string, version: string, signal: AbortS
       const platform = match[2];
       if (platform && !appleSilicon.test(platform) && !/^python(?:lib)?[\d.]+$/.test(platform))
         return null;
-      if (platform && appleSilicon.test(platform)) lib = platform;
+      if (platform && appleSilicon.test(platform)) found = platform;
       return match[1]!;
     });
-    if (lib && !(await exists(path.join(partial, "lib", lib, "python"))))
+    if (found && !(await exists(path.join(partial, "lib", found, "python"))))
       throw new Error(`Ren'Py ${version} is missing its Python.`);
-    if (!lib) {
-      await rm(partial, { recursive: true, force: true });
-      await mkdir(partial, { recursive: true });
-    }
-    await rm(folder, { recursive: true, force: true });
-    // An empty marker remembers that the release has no Apple Silicon build.
-    await writeFile(path.join(partial, ".installed"), lib ?? "");
-    await rename(partial, folder);
-  } finally {
-    await rm(partial, { recursive: true, force: true });
-  }
+    // Nothing is kept of a release that cannot run here.
+    if (!found) await rm(partial, { recursive: true, force: true });
+    return found;
+  });
   return lib ? { folder, python: path.join(folder, "lib", lib, "python") } : null;
 }

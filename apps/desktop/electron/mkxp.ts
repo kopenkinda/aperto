@@ -1,11 +1,12 @@
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import { createWriteStream } from "node:fs";
-import { readdir, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { Candidate } from "../src/model";
+import { fetchPinned, installOnce } from "./downloads";
 import { openRemoteZip } from "./remote-zip";
 import { extractRuntime, extractZip } from "./runtimes";
 import { atomicWrite, exists } from "./storage";
@@ -31,7 +32,7 @@ async function readIni(file: string) {
 
 /**
  * What an RGSS game needs: its RGSS version, the RTP it names in `Game.ini`, and the name of its
- * .exe and .ini, which mkxp-z reads settings by. Null for folders that are not RGSS games, such
+ * .exe and .ini, which mkxp-z reads settings by; and its title. Null for folders that are not RGSS games, such
  * as WOLF RPG games, which also have a `Game.ini`.
  */
 export async function rgssGame(root: string) {
@@ -56,6 +57,7 @@ export async function rgssGame(root: string) {
     version: version as Rgss,
     rtp: named ? rtpNames[version as Rgss] : null,
     execName: ini.slice(0, -4),
+    title: settings.get("title")?.trim() || null,
   };
 }
 
@@ -64,19 +66,16 @@ export async function inspectRgss(selected: string): Promise<Candidate | null> {
   const folder = await realpath(selected);
   const game = await rgssGame(folder);
   if (!game) return null;
-  const settings = await readIni(path.join(folder, `${game.execName}.ini`));
   return {
     kind: "rgss",
     executable: path.join(folder, `${game.execName}.ini`),
     folder,
     root: folder,
-    name: settings?.get("title")?.trim() || readableName(path.basename(folder)),
+    name: game.title ?? readableName(path.basename(folder)),
     confirmed: true,
     artwork: path.join(folder, `${game.execName}.exe`),
   };
 }
-
-const sha256 = (data: Buffer) => createHash("sha256").update(data).digest("hex");
 
 // m5kro's universal mkxp-z build, which Xenolauncher uses too; upstream only publishes CI
 // artifacts. GitHub records each release file's SHA-256, and downloads are checked against it.
@@ -142,34 +141,9 @@ const kawarikiFiles = {
   "ports/Zeus_Fullscreen++.rb": "f3c336b3d0cf4417ccc61f0bfbde486030c95b57b672752f7a49ca66ab1269c2",
 };
 
-/** Installs a download into `folder` once: built in a temporary folder, then moved into place. */
-async function installOnce(folder: string, build: (partial: string) => Promise<void>) {
-  if (await exists(path.join(folder, ".installed"))) return folder;
-  const partial = `${folder}.${randomUUID()}.partial`;
-  try {
-    await build(partial);
-    await writeFile(path.join(partial, ".installed"), "");
-    await rm(folder, { recursive: true, force: true });
-    await rename(partial, folder);
-  } finally {
-    await rm(partial, { recursive: true, force: true });
-  }
-  return folder;
-}
-
-const installs = new Map<string, Promise<string>>();
-/** Shares one installation between games that launch at the same time. */
-function shared(folder: string, build: (partial: string) => Promise<void>) {
-  let install = installs.get(folder);
-  if (!install) {
-    install = installOnce(folder, build).finally(() => installs.delete(folder));
-    installs.set(folder, install);
-  }
-  return install;
-}
-
-function mkxp(directory: string, signal: AbortSignal) {
-  return shared(path.join(directory, "mkxp-z", "app"), async (partial) => {
+async function mkxp(directory: string, signal: AbortSignal) {
+  const folder = path.join(directory, "mkxp-z", "app");
+  await installOnce(folder, async (partial) => {
     const archive = `${partial}.zip`;
     try {
       await downloadAsset("Z-universal.zip", archive, signal);
@@ -181,27 +155,31 @@ function mkxp(directory: string, signal: AbortSignal) {
     if (!(await exists(path.join(partial, "Z-universal.app", "Contents", "MacOS", "Z-universal"))))
       throw new Error("The mkxp-z download is missing its app.");
   });
+  return folder;
 }
 
-function kawariki(directory: string, signal: AbortSignal) {
-  return shared(path.join(directory, "mkxp-z", "kawariki", kawarikiCommit), async (partial) => {
+async function kawariki(directory: string) {
+  const folder = path.join(directory, "mkxp-z", "kawariki", kawarikiCommit);
+  await installOnce(folder, async (partial) => {
     for (const [name, hash] of Object.entries(kawarikiFiles)) {
-      const url = `https://raw.githubusercontent.com/Orochimarufan/Kawariki/${kawarikiCommit}/mkxp/${name}`;
-      const response = await fetch(url, { signal }).catch(() => null);
-      if (!response?.ok) throw new Error("Kawariki's scripts could not be downloaded. Try again.");
-      const data = Buffer.from(await response.arrayBuffer());
-      if (sha256(data) !== hash) throw new Error("A downloaded Kawariki script did not match.");
+      const data = await fetchPinned(
+        `https://raw.githubusercontent.com/Orochimarufan/Kawariki/${kawarikiCommit}/mkxp/${name}`,
+        hash,
+        "Kawariki script",
+      );
       await atomicWrite(path.join(partial, name), data, 0o644);
     }
   });
+  return folder;
 }
 
 /**
  * One RPG Maker RTP, the shared graphics and audio games are made with. Only that RTP's files
  * are read out of m5kro's RTP archive, without the Windows DLLs beside them.
  */
-function rtp(directory: string, name: (typeof rtpNames)[Rgss], signal: AbortSignal) {
-  return shared(path.join(directory, "mkxp-z", "rtp", name), async (partial) => {
+async function rtp(directory: string, name: (typeof rtpNames)[Rgss], signal: AbortSignal) {
+  const folder = path.join(directory, "mkxp-z", "rtp", name);
+  await installOnce(folder, async (partial) => {
     const zip = await openRemoteZip(
       "https://github.com/m5kro/mkxp-z/releases/download/launcher/RTP.zip",
       signal,
@@ -211,6 +189,7 @@ function rtp(directory: string, name: (typeof rtpNames)[Rgss], signal: AbortSign
       return match?.[1] === name ? match[2]! : null;
     });
   });
+  return folder;
 }
 
 // mkxp-z reads its settings only from inside its app bundle, so launches take turns writing them
@@ -237,7 +216,7 @@ export async function mkxpLaunch(
   if (!game) throw new Error("This folder no longer holds an RPG Maker XP, VX or VX Ace game.");
   const [installed, scripts, assets] = await Promise.all([
     mkxp(directory, signal),
-    kawariki(directory, signal),
+    kawariki(directory),
     game.rtp ? rtp(directory, game.rtp, signal) : null,
   ]);
   const app = path.join(installed, "Z-universal.app");

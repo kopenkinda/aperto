@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { readdir, realpath } from "node:fs/promises";
+import { readdir, realpath, stat } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -33,10 +33,13 @@ export async function bundleInfo(app: string): Promise<Record<string, unknown> |
 }
 
 /** A native macOS game bundle. NW.js bundles are found earlier and run with Aperto's runtime. */
-export async function inspectMacApp(selected: string): Promise<Candidate | null> {
+export async function inspectMacApp(
+  selected: string,
+  known?: Record<string, unknown>,
+): Promise<Candidate | null> {
   if (!/\.app$/i.test(selected) || helpers.test(path.basename(selected, ".app"))) return null;
   const app = await realpath(selected);
-  const info = await bundleInfo(app);
+  const info = known ?? (await bundleInfo(app));
   const binary = info?.CFBundleExecutable;
   if (!isString(binary) || !(await exists(path.join(app, "Contents", "MacOS", binary))))
     return null;
@@ -106,11 +109,27 @@ export async function applicationGames(): Promise<Candidate[]> {
   const games: Candidate[] = [];
   for (const app of apps) {
     if (launchers.test(path.basename(app, ".app"))) continue;
-    const category = (await bundleInfo(app))?.LSApplicationCategoryType;
-    if (!isString(category) || !/^public\.app-category\.(?:[a-z-]+-)?games$/.test(category))
-      continue;
-    const game = await inspectMacApp(app).catch(() => null);
+    const info = await gameInfo(app);
+    const game = info && (await inspectMacApp(app, info).catch(() => null));
     if (game) games.push(game);
   }
   return games;
+}
+
+// Scans run often, so an app's Info.plist is read again only when it changes.
+const categories = new Map<string, { modified: number; info: Record<string, unknown> | null }>();
+
+/** An app's Info.plist when it files the app under games, else null. */
+async function gameInfo(app: string) {
+  const modified = (await stat(path.join(app, "Contents", "Info.plist")).catch(() => null))
+    ?.mtimeMs;
+  if (modified === undefined) return null;
+  const cached = categories.get(app);
+  if (cached?.modified === modified) return cached.info;
+  const info = await bundleInfo(app);
+  const category = info?.LSApplicationCategoryType;
+  const game =
+    isString(category) && /^public\.app-category\.(?:[a-z-]+-)?games$/.test(category) ? info : null;
+  categories.set(app, { modified, info: game });
+  return game;
 }

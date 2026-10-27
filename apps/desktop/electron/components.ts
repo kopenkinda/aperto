@@ -32,7 +32,7 @@ const subfolders = (folder: string) =>
  * What Aperto downloaded besides NW.js: Ren'Py releases, mkxp-z with its scripts and RTPs, and
  * the cheat menu. Each is fetched again the next time a game needs it, so all can be removed.
  */
-export async function listComponents(directory: string): Promise<Component[]> {
+export async function findComponents(directory: string): Promise<Omit<Component, "size">[]> {
   const found: Omit<Component, "size">[] = [];
   for (const version of await subfolders(path.join(directory, "renpy"))) {
     // An empty marker records a release without an Apple Silicon build; nothing else is kept.
@@ -58,14 +58,22 @@ export async function listComponents(directory: string): Promise<Component[]> {
   }
   for (const commit of await subfolders(path.join(directory, "cheat-menu")))
     found.push({ id: `cheat-menu/${commit}`, name: "Cheat menu", kind: "nwjs" });
+  return found;
+}
+
+/** The downloads with the space each takes. */
+export async function listComponents(directory: string): Promise<Component[]> {
   return Promise.all(
-    found.map(async (item) => ({ ...item, size: await size(path.join(directory, item.id)) })),
+    (await findComponents(directory)).map(async (item) => ({
+      ...item,
+      size: await size(path.join(directory, item.id)),
+    })),
   );
 }
 
 /** Removes one listed component. Only ids `listComponents` can return are accepted. */
 export async function removeComponent(directory: string, id: string) {
-  if (!(await listComponents(directory)).some((item) => item.id === id))
+  if (!(await findComponents(directory)).some((item) => item.id === id))
     throw new Error("That download is no longer there.");
   await rm(path.join(directory, id), { recursive: true, force: true });
 }
