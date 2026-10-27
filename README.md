@@ -1,6 +1,6 @@
 # Aperto
 
-![Aperto: point it at your games folder, press Play, and each game runs in a macOS sandbox.](Artwork/readme/banner.png)
+![Aperto: a game library with a sidebar of games, a game page with its banner, tags, Play button, settings, and activity.](Artwork/readme/banner.png)
 
 A game library and launcher for Apple silicon Macs. Point it at a folder and it finds NW.js and RPG Maker MV/MZ games, Ren'Py and RPG Maker XP–VX Ace games, Windows games for CrossOver, and Mac apps, then runs each with what it needs. Your files stay where they are. This is a source-only project: build and sign your own copy.
 
@@ -78,6 +78,10 @@ Signing is automatic. The first build creates your own self-signed development c
 The library lives in `~/Library/Application Support/Aperto`, with each NW.js game's browser data and backups beside it. Aperto writes into game folders only for plugin changes, the cheat menu, the getPixel fix, and custom artwork in a `.aperto` folder.
 
 Downloads are verified before use: NW.js against its signed checksums, mkxp-z against GitHub's recorded SHA-256, and the cheat menu and Kawariki scripts against pinned hashes. Neither of those two is shipped with Aperto; the cheat menu has no license, and Kawariki is GPL-3.0.
+
+## License
+
+[MIT](LICENSE).
 
 ## Why can't I just download the binary?
 
