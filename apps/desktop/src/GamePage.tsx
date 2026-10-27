@@ -640,7 +640,7 @@ export function GamePage({
                 <>
                   {game.steam ? (
                     <Field label="Runs through">
-                      <p className="flex min-h-8 items-center text-muted-foreground">
+                      <p className="flex min-h-8 items-center text-sm text-muted-foreground">
                         Steam in the &ldquo;{game.steam.bottle}&rdquo; CrossOver bottle, which keeps
                         the game&rsquo;s updates and DRM working.
                       </p>
@@ -743,21 +743,21 @@ export function GamePage({
                 </Field>
               ) : kind === "rgss" ? (
                 <Field label="Runs with">
-                  <p className="flex min-h-8 items-center text-muted-foreground">
+                  <p className="flex min-h-8 items-center text-sm text-muted-foreground">
                     mkxp-z, natively on this Mac, with the RPG Maker RTP when the game needs it.
                     Both are downloaded the first time.
                   </p>
                 </Field>
               ) : kind === "renpy" ? (
                 <Field label="Runs with">
-                  <p className="flex min-h-8 items-center text-muted-foreground">
+                  <p className="flex min-h-8 items-center text-sm text-muted-foreground">
                     The game's own Mac build if it has one, otherwise the Ren'Py release it was made
                     with, downloaded from renpy.org the first time.
                   </p>
                 </Field>
               ) : (
                 <Field label="Opens with">
-                  <p className="flex min-h-8 items-center text-muted-foreground">
+                  <p className="flex min-h-8 items-center text-sm text-muted-foreground">
                     macOS, like double-clicking the app in Finder.
                   </p>
                 </Field>
