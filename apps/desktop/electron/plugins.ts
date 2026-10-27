@@ -26,9 +26,11 @@ export function parsePlugins(source: string) {
     throw new Error(
       "This game uses a custom plugin configuration. Aperto only edits standard MV/MZ plugin lists.",
     );
-  const plugins = Schema.decodeUnknownSync(PluginsSchema, { onExcessProperty: "preserve" })(
-    JSON.parse(match[2]!),
-  );
+  // The schema only checks the fields Aperto uses. Decoding would drop the others, which the game
+  // may rely on, so the parsed entries themselves are kept and written back.
+  const raw: unknown = JSON.parse(match[2]!);
+  Schema.decodeUnknownSync(PluginsSchema)(raw);
+  const plugins = raw as typeof PluginsSchema.Type;
   if (plugins.length > 5000) throw new Error("This plugin list is too large.");
   return { prefix: match[1]!, suffix: match[3]!, plugins };
 }
