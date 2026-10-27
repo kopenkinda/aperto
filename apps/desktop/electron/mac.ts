@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { realpath } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { readdir, realpath } from "node:fs/promises";
+import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { Schema } from "effect";
@@ -77,4 +77,40 @@ export async function iconToPng(icns: string): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+// Apps that launch other games; their games are added on their own where Aperto can run them.
+const launchers =
+  /^(?:aperto|xenolauncher|steam|crossover|epic games launcher|gog galaxy|battle\.net|itch|heroic|playcover|whisky|porting kit|wineskin)/i;
+
+/** The folders apps are installed in, where games are found by their App Store category. */
+export const applicationFolders = ["/Applications", path.join(homedir(), "Applications")];
+
+/**
+ * Games installed as apps outside the games folder: apps in the Applications folders, or one
+ * folder down, whose Info.plist files them under games, such as Factorio. Game launchers are left
+ * out. CrossOver's own launchers in `~/Applications/CrossOver` are not games.
+ */
+export async function applicationGames(): Promise<Candidate[]> {
+  const apps: string[] = [];
+  for (const folder of applicationFolders) {
+    const entries = await readdir(folder, { withFileTypes: true }).catch(() => []);
+    for (const entry of entries) {
+      const location = path.join(folder, entry.name);
+      if (/\.app$/i.test(entry.name)) apps.push(location);
+      else if (entry.isDirectory() && !/^(?:crossover|utilities)$/i.test(entry.name))
+        for (const inner of await readdir(location).catch(() => [] as string[]))
+          if (/\.app$/i.test(inner)) apps.push(path.join(location, inner));
+    }
+  }
+  const games: Candidate[] = [];
+  for (const app of apps) {
+    if (launchers.test(path.basename(app, ".app"))) continue;
+    const category = (await bundleInfo(app))?.LSApplicationCategoryType;
+    if (!isString(category) || !/^public\.app-category\.(?:[a-z-]+-)?games$/.test(category))
+      continue;
+    const game = await inspectMacApp(app).catch(() => null);
+    if (game) games.push(game);
+  }
+  return games;
 }

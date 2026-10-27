@@ -47,7 +47,7 @@ beforeEach(async () => {
       reveal: () => {},
       trash: async () => {},
       openExternal: () => {},
-      bottleGames: async () => [],
+      installedGames: async () => [],
     },
     () => {},
   );
@@ -202,6 +202,38 @@ describe("games folder discovery", () => {
     expect(again.added).toEqual([]);
     expect(store.value.games).toHaveLength(4);
   });
+  it("adds games installed outside the games folder under their own names", async () => {
+    const shelf = path.join(directory, "shelf");
+    await mkdir(shelf);
+    const app = path.join(directory, "Applications", "factorio-1.1.app");
+    library = new DesktopLibrary(
+      store,
+      {
+        chooseFolder: async () => null,
+        chooseArtwork: async () => null,
+        image: async () => null,
+        reveal: () => {},
+        trash: async () => {},
+        openExternal: () => {},
+        installedGames: async () => [
+          {
+            kind: "mac",
+            folder: app,
+            root: app,
+            executable: app,
+            name: "Factorio: Space Age",
+            confirmed: true,
+            artwork: null,
+          },
+        ],
+      },
+      () => {},
+    );
+    await store.update((state) => ({ ...state, gamesFolder: shelf }));
+    await library.scanGamesFolder();
+    expect(store.value.games.map((game) => game.name)).toEqual(["Factorio: Space Age"]);
+  });
+
   it("does not bring back a removed game on a later scan", async () => {
     await store.update((state) => ({ ...state, gamesFolder: directory }));
     await library.scanGamesFolder();
@@ -279,7 +311,7 @@ describe("Windows games", () => {
         reveal: () => {},
         trash: async (file) => void trashed.push(file),
         openExternal: () => {},
-        bottleGames: async () => [],
+        installedGames: async () => [],
       },
       () => {},
     );
@@ -593,7 +625,7 @@ describe("custom artwork", () => {
         reveal: () => {},
         trash: async () => {},
         openExternal: () => {},
-        bottleGames: async () => [],
+        installedGames: async () => [],
       },
       () => {},
     );

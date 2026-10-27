@@ -27,7 +27,7 @@ import { downloadImage, readableImage } from "./artwork";
 import { extractExeIcon } from "./exe-icon";
 import { inspectRoot, readObject } from "./detection";
 import { detectGame, findGames, fingerprint, versionedName, versionsIn, within } from "./discovery";
-import { iconToPng } from "./mac";
+import { applicationFolders, iconToPng } from "./mac";
 import { listComponents, removeComponent } from "./components";
 import { findF95Thread, metadataDetails, searchMetadata } from "./metadata";
 import { mkxpLaunch } from "./mkxp";
@@ -59,8 +59,11 @@ export type NativeActions = {
   trash: (file: string) => Promise<void>;
   /** Opens a web page in the default browser. */
   openExternal: (url: string) => void;
-  /** Games installed with Steam inside CrossOver bottles. */
-  bottleGames: () => Promise<Candidate[]>;
+  /**
+   * Games installed outside the games folder: game apps in the Applications folders and games
+   * installed with Steam inside CrossOver bottles.
+   */
+  installedGames: () => Promise<Candidate[]>;
 };
 
 export class DesktopLibrary {
@@ -758,7 +761,9 @@ export class DesktopLibrary {
   ): Promise<ScanReport> {
     const { games: found, problems } = await findGames(folder);
     // Games installed with Steam inside CrossOver bottles, wherever the games folder is.
-    found.push(...(await this.native.bottleGames().catch(() => [])));
+    found.push(...(await this.native.installedGames().catch(() => [])));
+    // Candidates carry resolved paths, so the folder is compared resolved too.
+    const scanRoot = await realpath(folder).catch(() => folder);
     const library = this.store.value.games;
     const known = new Map<string, string>();
     for (const game of library) {
@@ -788,14 +793,16 @@ export class DesktopLibrary {
         duplicates.push({ folder: candidate.folder, of: original });
         continue;
       }
-      // Steam names its games itself; a bottle's folders carry no versions.
-      const name = candidate.steam
-        ? candidate.name
-        : versionedName(
-            candidate.name || path.basename(candidate.folder),
-            candidate.folder,
-            folder,
-          );
+      // Games installed outside the games folder, by Steam or as apps, have their own names; their
+      // folders carry no versions.
+      const name =
+        candidate.steam || !within(candidate.folder, scanRoot)
+          ? candidate.name
+          : versionedName(
+              candidate.name || path.basename(candidate.folder),
+              candidate.folder,
+              folder,
+            );
       known.set(key, name);
       added.push({
         id: randomUUID(),
@@ -890,7 +897,7 @@ export class DesktopLibrary {
 
   /** Keeps a copy of custom artwork beside the game. Passing no source only removes the copy. */
   private async saveArtwork(game: Game, slot: "icon" | "banner", source: string | null) {
-    const { directory, name } = artworkCopy(game, slot);
+    const { directory, name } = artworkCopy(game, slot, this.store.directory);
     const extension = source
       ? path.extname(source).slice(1).toLowerCase().replace("jpeg", "jpg")
       : null;
@@ -982,7 +989,7 @@ export class DesktopLibrary {
     const found = new Map<string, boolean>();
     for (const game of this.store.value.games) {
       if (game.customIcon !== undefined) continue;
-      const { directory, name } = artworkCopy(game, "icon");
+      const { directory, name } = artworkCopy(game, "icon", this.store.directory);
       let custom = false;
       for (const extension of ["png", "jpg", "webp"])
         if (await exists(path.join(directory, `${name}.${extension}`))) custom = true;
@@ -1401,8 +1408,13 @@ export class DesktopLibrary {
  * is its app bundle, and writing inside would break its signature, so its copy sits next to the
  * bundle instead.
  */
-function artworkCopy(game: Game, slot: "icon" | "banner") {
+function artworkCopy(game: Game, slot: "icon" | "banner", dataDirectory: string) {
   const mac = gameKind(game) === "mac";
+  // Apps installed in an Applications folder, or a folder inside one, keep their copies in
+  // Aperto's data instead.
+  const parent = path.dirname(game.folder);
+  if (mac && [parent, path.dirname(parent)].some((folder) => applicationFolders.includes(folder)))
+    return { directory: ownedPath(dataDirectory, "artwork", game.id), name: slot };
   return {
     directory: path.join(mac ? path.dirname(game.folder) : game.folder, ".aperto"),
     name: mac ? `${path.basename(game.folder, path.extname(game.folder))}-${slot}` : slot,
