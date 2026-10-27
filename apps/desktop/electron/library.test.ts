@@ -47,6 +47,7 @@ beforeEach(async () => {
       reveal: () => {},
       trash: async () => {},
       openExternal: () => {},
+      bottleGames: async () => [],
     },
     () => {},
   );
@@ -278,6 +279,7 @@ describe("Windows games", () => {
         reveal: () => {},
         trash: async (file) => void trashed.push(file),
         openExternal: () => {},
+        bottleGames: async () => [],
       },
       () => {},
     );
@@ -591,6 +593,7 @@ describe("custom artwork", () => {
         reveal: () => {},
         trash: async () => {},
         openExternal: () => {},
+        bottleGames: async () => [],
       },
       () => {},
     );

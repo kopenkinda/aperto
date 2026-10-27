@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { spawn, type ChildProcess } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { cp, mkdir, readdir, readFile, realpath, rename, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 import {
   compareVersions,
   gameKind,
@@ -14,10 +15,12 @@ import {
   playCount,
   parseArguments,
   parseFlags,
+  type Candidate,
   type Command,
   type Game,
   type ScanReport,
   type Engine,
+  type SteamInstall,
   type Snapshot,
 } from "../src/model";
 import { downloadImage, readableImage } from "./artwork";
@@ -44,6 +47,8 @@ import { cheatMenu, cheatMenuFiles, pixelFixSource } from "./cheat-menu";
 import { RuntimeManager, getReleases, runtimeExecutable, validVersion } from "./runtimes";
 import { atomicWrite, exists, LibraryStore, message, ownedPath } from "./storage";
 
+const execute = promisify(execFile);
+
 export type NativeActions = {
   chooseFolder: () => Promise<string | null>;
   chooseArtwork: () => Promise<string | null>;
@@ -54,11 +59,17 @@ export type NativeActions = {
   trash: (file: string) => Promise<void>;
   /** Opens a web page in the default browser. */
   openExternal: (url: string) => void;
+  /** Games installed with Steam inside CrossOver bottles. */
+  bottleGames: () => Promise<Candidate[]>;
 };
 
 export class DesktopLibrary {
   readonly runtimes: RuntimeManager;
-  readonly running = new Map<string, { process: ChildProcess; stopped: boolean }>();
+  /** Running games. A Steam game's process is its own, found by Aperto, rather than a child. */
+  readonly running = new Map<
+    string,
+    { process: { kill: (signal?: NodeJS.Signals) => unknown }; stopped: boolean }
+  >();
   private readonly busy = new Set<string>();
   private scanning: Promise<ScanReport> | null = null;
   private lastScan: ScanReport | null = null;
@@ -78,7 +89,11 @@ export class DesktopLibrary {
     const missing = (
       await Promise.all(
         games.map(async (game) =>
-          (await exists(game.executable ?? path.join(game.root, "package.json"))) ? null : game.id,
+          (await exists(
+            game.steam ? game.root : (game.executable ?? path.join(game.root, "package.json")),
+          ))
+            ? null
+            : game.id,
         ),
       )
     ).filter((id): id is string => id !== null);
@@ -300,6 +315,8 @@ export class DesktopLibrary {
           }
           if (command.bottle !== undefined || command.highResolution !== undefined) {
             if (kind !== "windows") throw new Error("Only Windows games run in a bottle.");
+            if (game.steam && command.bottle !== undefined && command.bottle !== game.steam.bottle)
+              throw new Error("A Steam game runs in the bottle Steam installed it in.");
             if (command.bottle !== undefined) change.bottle = command.bottle;
             if (command.highResolution !== undefined)
               change.highResolution = command.highResolution;
@@ -518,8 +535,10 @@ export class DesktopLibrary {
           if (running) {
             running.stopped = true;
             const game = this.game(command.id);
+            // A Steam game's session ends its own processes inside the bottle.
+            if (game.steam) running.process.kill("SIGTERM");
             // CrossOver's launcher waits on the Windows process; end that process inside the bottle.
-            if (gameKind(game) === "windows" && game.executable)
+            else if (gameKind(game) === "windows" && game.executable)
               spawn(
                 crossoverWine,
                 [
@@ -738,6 +757,8 @@ export class DesktopLibrary {
     { restoreRemoved, requested }: { restoreRemoved: boolean; requested: boolean },
   ): Promise<ScanReport> {
     const { games: found, problems } = await findGames(folder);
+    // Games installed with Steam inside CrossOver bottles, wherever the games folder is.
+    found.push(...(await this.native.bottleGames().catch(() => [])));
     const library = this.store.value.games;
     const known = new Map<string, string>();
     for (const game of library) {
@@ -767,11 +788,14 @@ export class DesktopLibrary {
         duplicates.push({ folder: candidate.folder, of: original });
         continue;
       }
-      const name = versionedName(
-        candidate.name || path.basename(candidate.folder),
-        candidate.folder,
-        folder,
-      );
+      // Steam names its games itself; a bottle's folders carry no versions.
+      const name = candidate.steam
+        ? candidate.name
+        : versionedName(
+            candidate.name || path.basename(candidate.folder),
+            candidate.folder,
+            folder,
+          );
       known.set(key, name);
       added.push({
         id: randomUUID(),
@@ -783,6 +807,13 @@ export class DesktopLibrary {
         runtime: candidate.kind === "nwjs" ? latest : null,
         kind: candidate.kind,
         executable: candidate.executable,
+        ...(candidate.steam
+          ? {
+              steam: candidate.steam,
+              bottle: candidate.steam.bottle,
+              source: { site: "steam" as const, id: candidate.steam.appId, title: candidate.name },
+            }
+          : {}),
         flags: [],
         addedAt: new Date().toISOString(),
         lastPlayed: null,
@@ -1071,28 +1102,16 @@ export class DesktopLibrary {
           : { run: [renpy.folder], read: [saves], write: [game.folder, saves] },
       );
     }
+    if (game.steam) {
+      if (!(await exists(game.steam.client)))
+        throw new Error(`Steam is no longer installed in the "${game.steam.bottle}" bottle.`);
+      return this.startSteam(game, game.steam);
+    }
     if (gameKind(game) === "windows") {
-      if (!(await exists(crossoverWine)))
-        throw new Error("CrossOver is not installed in /Applications.");
       const bottle = this.bottleFor(game);
-      if (!(await exists(path.join(bottlesDirectory, bottle, "cxbottle.conf"))))
-        throw new Error(`The CrossOver bottle "${bottle}" no longer exists. Choose another one.`);
       if (!game.executable || !(await exists(game.executable)))
         throw new Error("The game's executable is missing. Locate the game folder again.");
-      const highResolution = !!game.highResolution;
-      const sharing = this.store.value.games.find(
-        (other) =>
-          other.id !== game.id &&
-          this.running.has(other.id) &&
-          gameKind(other) === "windows" &&
-          this.bottleFor(other) === bottle &&
-          !!other.highResolution !== highResolution,
-      );
-      if (sharing)
-        throw new Error(
-          `Close ${sharing.name} first. High resolution mode applies to the whole "${bottle}" bottle.`,
-        );
-      await setRetinaMode(bottle, highResolution);
+      await this.prepareBottle(game, bottle);
       // Like dropping the .exe on CrossOver's Run Command: nothing is registered in the bottle.
       return this.start(game, bottle, crossoverWine, [
         "--bottle",
@@ -1154,26 +1173,7 @@ export class DesktopLibrary {
     const [command, commandArgs] = sandbox
       ? await sandboxed(executable, args, sandbox)
       : [executable, args];
-    const id = randomUUID();
-    const startedAt = new Date().toISOString();
-    await this.store.update((state) => ({
-      ...state,
-      launches: [
-        {
-          id,
-          gameId: game.id,
-          runtime,
-          startedAt,
-          flags: args,
-          sandboxed: sandbox !== null,
-          endedAt: null,
-          outcome: "running" as const,
-          detail: "",
-          log: "",
-        },
-        ...state.launches,
-      ].slice(0, 100),
-    }));
+    const { id, startedAt } = await this.recordLaunch(game, runtime, args, sandbox !== null);
     const env = { ...process.env };
     delete env.NW_PRE_ARGS;
     delete env.NODE_OPTIONS;
@@ -1208,24 +1208,63 @@ export class DesktopLibrary {
         (signal
           ? `Process ended with ${signal}.`
           : `Process exited with code ${code ?? "unknown"}.`);
-      void this.store
-        .update((state) => ({
-          ...state,
-          launches: state.launches.map((launch) =>
-            launch.id === id
-              ? { ...launch, endedAt: new Date().toISOString(), outcome, detail, log }
-              : launch,
-          ),
-        }))
-        .catch((error) => {
-          console.error("Could not save launch result:", error);
-          this.changed();
-        });
+      this.finishLaunch(id, outcome, detail, log);
     });
     await new Promise<void>((resolve, reject) => {
       child.once("spawn", resolve);
       child.once("error", reject);
     });
+    await this.countPlay(game, startedAt);
+  }
+
+  /** Adds a running launch to the history. */
+  private async recordLaunch(game: Game, runtime: string, flags: string[], sandboxed: boolean) {
+    const id = randomUUID();
+    const startedAt = new Date().toISOString();
+    await this.store.update((state) => ({
+      ...state,
+      launches: [
+        {
+          id,
+          gameId: game.id,
+          runtime,
+          startedAt,
+          flags,
+          sandboxed,
+          endedAt: null,
+          outcome: "running" as const,
+          detail: "",
+          log: "",
+        },
+        ...state.launches,
+      ].slice(0, 100),
+    }));
+    return { id, startedAt };
+  }
+
+  /** Records how a launch ended. */
+  private finishLaunch(
+    id: string,
+    outcome: "ended" | "failed" | "stopped",
+    detail: string,
+    log: string,
+  ) {
+    void this.store
+      .update((state) => ({
+        ...state,
+        launches: state.launches.map((launch) =>
+          launch.id === id
+            ? { ...launch, endedAt: new Date().toISOString(), outcome, detail, log }
+            : launch,
+        ),
+      }))
+      .catch((error) => {
+        console.error("Could not save launch result:", error);
+        this.changed();
+      });
+  }
+
+  private async countPlay(game: Game, startedAt: string) {
     // The new launch is already in the history, so a first count from it includes this one.
     await this.changeGame(game.id, (current) => ({
       ...current,
@@ -1235,6 +1274,125 @@ export class DesktopLibrary {
           ? playCount(current, this.store.value.launches)
           : current.plays + 1,
     }));
+  }
+
+  /**
+   * Starts a game through the Steam in its bottle, which keeps Steam's DRM and updates working,
+   * and follows the game's own processes, found by the folder they run from. Steam may first need
+   * to start, sign in, or update the game, so the game has three minutes to appear.
+   */
+  private async startSteam(game: Game, steam: SteamInstall) {
+    await this.prepareBottle(game, steam.bottle);
+    const args = ["-applaunch", steam.appId, ...game.flags];
+    const launcher = spawn(
+      crossoverWine,
+      [
+        "--bottle",
+        steam.bottle,
+        "--no-update",
+        "--dll",
+        "winemenubuilder.exe=d",
+        steam.client,
+        ...args,
+      ],
+      { stdio: "ignore", detached: true },
+    );
+    await new Promise<void>((resolve, reject) => {
+      launcher.once("spawn", resolve);
+      launcher.once("error", reject);
+    });
+    launcher.unref();
+    const { id, startedAt } = await this.recordLaunch(game, `Steam · ${steam.bottle}`, args, false);
+    // Windows processes show their Windows path, as in `C:\…\steamapps\common\Game\Game.exe`.
+    const marker = `\\steamapps\\common\\${steam.installdir}\\`.toLowerCase();
+    const processes = async () =>
+      (await execute("/bin/ps", ["-axo", "command="]).catch(() => ({ stdout: "" }))).stdout
+        .split("\n")
+        .filter((line) => line.toLowerCase().includes(marker));
+    const executables = new Set<string>();
+    const session = {
+      stopped: false,
+      process: {
+        kill: () => {
+          for (const name of executables)
+            spawn(
+              crossoverWine,
+              [
+                "--bottle",
+                steam.bottle,
+                "--no-update",
+                "--no-gui",
+                "--cx-app",
+                "taskkill.exe",
+                "/F",
+                "/IM",
+                name,
+              ],
+              { stdio: "ignore" },
+            ).on("error", () => {});
+        },
+      },
+    };
+    this.running.set(game.id, session);
+    this.changed();
+    await this.countPlay(game, startedAt);
+    const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+    void (async () => {
+      let seen = false;
+      let misses = 0;
+      for (let waited = 0; !session.stopped; waited += 2000) {
+        const found = await processes();
+        for (const line of found) {
+          const exe = /([^\\]+\.exe)/i.exec(line)?.[1];
+          if (exe) executables.add(exe);
+        }
+        if (found.length) {
+          seen = true;
+          misses = 0;
+        } else if (seen) {
+          // A launcher often hands over to the game; two empty checks in a row mean it closed.
+          if (++misses >= 2) break;
+        } else if (waited >= 180_000) break;
+        await pause(2000);
+      }
+      this.running.delete(game.id);
+      this.finishLaunch(
+        id,
+        session.stopped ? "stopped" : seen ? "ended" : "failed",
+        session.stopped
+          ? "Stopped from Aperto."
+          : seen
+            ? "The game closed."
+            : `The game did not start within 3 minutes. Steam in the "${steam.bottle}" bottle may need you to sign in or finish an update.`,
+        "",
+      );
+      this.changed();
+    })();
+  }
+
+  /**
+   * Checks that a Windows game's bottle exists and sets the bottle's high resolution mode to the
+   * game's, refusing when a game running in the same bottle needs the other mode.
+   */
+  private async prepareBottle(game: Game, bottle: string) {
+    if (!(await exists(crossoverWine)))
+      throw new Error("CrossOver is not installed in /Applications.");
+    if (!(await exists(path.join(bottlesDirectory, bottle, "cxbottle.conf"))))
+      throw new Error(`The CrossOver bottle "${bottle}" no longer exists. Choose another one.`);
+    const highResolution = !!game.highResolution;
+    const sharing = this.store.value.games.find(
+      (other) =>
+        other.id !== game.id &&
+        this.running.has(other.id) &&
+        gameKind(other) === "windows" &&
+        this.bottleFor(other) === bottle &&
+        !!other.highResolution !== highResolution,
+    );
+    if (sharing)
+      throw new Error(
+        `Close ${sharing.name} first. High resolution mode applies to the whole "${bottle}" bottle.`,
+      );
+    await setRetinaMode(bottle, highResolution);
   }
 }
 

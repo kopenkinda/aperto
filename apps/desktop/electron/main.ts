@@ -4,7 +4,8 @@ import { app, BrowserWindow, dialog, ipcMain, nativeImage, shell } from "electro
 import { Effect, Schema } from "effect";
 import { CommandSchema } from "../src/model";
 import { DesktopLibrary } from "./library";
-import { LibraryStore, message } from "./storage";
+import { exists, LibraryStore, message } from "./storage";
+import { bottleSteamGames, crossoverWine } from "./windows";
 
 app.setName("Aperto");
 app.setPath("userData", process.env.APERTO_DATA_DIR || path.join(app.getPath("appData"), "Aperto"));
@@ -103,6 +104,7 @@ else {
         },
         trash: (file) => shell.trashItem(file),
         openExternal: (url) => void shell.openExternal(url),
+        bottleGames: async () => ((await exists(crossoverWine)) ? bottleSteamGames() : []),
       },
       changed,
     );

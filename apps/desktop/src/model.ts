@@ -2,6 +2,15 @@ import { Schema } from "effect";
 
 export const metadataSites = { f95: "F95zone", steam: "Steam" } as const;
 export type MetadataSite = keyof typeof metadataSites;
+export const SteamInstallSchema = Schema.Struct({
+  appId: Schema.String,
+  bottle: Schema.String,
+  /** The game's folder name under `steamapps/common`, which its processes run from. */
+  installdir: Schema.String,
+  /** The bottle's `steam.exe`, as a Mac path. */
+  client: Schema.String,
+});
+export type SteamInstall = typeof SteamInstallSchema.Type;
 export const GameSchema = Schema.Struct({
   id: Schema.String,
   folder: Schema.String,
@@ -28,6 +37,8 @@ export const GameSchema = Schema.Struct({
   executable: Schema.optionalKey(Schema.NullOr(Schema.String)),
   /** CrossOver bottle for this game; unset uses the library's default bottle. */
   bottle: Schema.optionalKey(Schema.NullOr(Schema.String)),
+  /** A game installed with Steam inside a CrossOver bottle, which that bottle's Steam starts. */
+  steam: Schema.optionalKey(SteamInstallSchema),
   /** Runs a Windows game in CrossOver's high resolution (Retina) mode. */
   highResolution: Schema.optionalKey(Schema.Boolean),
   /** Adds Aperto's getPixel fix to an RPG Maker game at launch. Unset means on. */
@@ -142,6 +153,7 @@ export type Candidate = {
   /** NW.js or RPG Maker files corroborate the manifest, or the entry is an HTML page. */
   confirmed: boolean;
   artwork: string | null;
+  steam?: typeof SteamInstallSchema.Type;
 };
 export type ScanReport = {
   folder: string;

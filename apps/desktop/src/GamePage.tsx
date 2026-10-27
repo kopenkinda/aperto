@@ -408,11 +408,13 @@ export function GamePage({
                 : kind === "renpy"
                   ? (launches.find((launch) => launch.runtime.startsWith("Ren'Py"))?.runtime ??
                     "Ren'Py")
-                  : windows
-                    ? `CrossOver${activeBottle ? ` · ${activeBottle}` : ""}`
-                    : game.runtime
-                      ? `NW.js ${game.runtime}`
-                      : "No runtime"}
+                  : game.steam
+                    ? `Steam · ${game.steam.bottle}`
+                    : windows
+                      ? `CrossOver${activeBottle ? ` · ${activeBottle}` : ""}`
+                      : game.runtime
+                        ? `NW.js ${game.runtime}`
+                        : "No runtime"}
           </Fact>
         </dl>
         <div className="ml-auto flex gap-2">
@@ -636,47 +638,56 @@ export function GamePage({
 
               {windows ? (
                 <>
-                  <Field
-                    label="CrossOver bottle"
-                    hint="Runs like CrossOver's Run Command. Nothing is installed in the bottle."
-                  >
-                    <Select
-                      value={bottle}
-                      disabled={running || snapshot.bottles === null}
-                      onValueChange={(value) => {
-                        const next = value as string | null;
-                        setBottle(next);
-                        void save({ bottle: next }).then(
-                          (result) => result === undefined && setBottle(game.bottle ?? null),
-                        );
-                      }}
-                      items={[
-                        {
-                          value: null,
-                          label: snapshot.defaultBottle
-                            ? `Default (${snapshot.defaultBottle})`
-                            : "Default",
-                        },
-                        ...(snapshot.bottles ?? []).map((item) => ({ value: item, label: item })),
-                      ]}
+                  {game.steam ? (
+                    <Field label="Runs through">
+                      <p className="flex min-h-8 items-center text-muted-foreground">
+                        Steam in the &ldquo;{game.steam.bottle}&rdquo; CrossOver bottle, which keeps
+                        the game&rsquo;s updates and DRM working.
+                      </p>
+                    </Field>
+                  ) : (
+                    <Field
+                      label="CrossOver bottle"
+                      hint="Runs like CrossOver's Run Command. Nothing is installed in the bottle."
                     >
-                      <SelectTrigger className="w-full">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value={null}>
-                          {snapshot.defaultBottle
-                            ? `Default (${snapshot.defaultBottle})`
-                            : "Default"}
-                        </SelectItem>
-                        {(snapshot.bottles ?? []).map((item) => (
-                          <SelectItem key={item} value={item}>
-                            {item}
+                      <Select
+                        value={bottle}
+                        disabled={running || snapshot.bottles === null}
+                        onValueChange={(value) => {
+                          const next = value as string | null;
+                          setBottle(next);
+                          void save({ bottle: next }).then(
+                            (result) => result === undefined && setBottle(game.bottle ?? null),
+                          );
+                        }}
+                        items={[
+                          {
+                            value: null,
+                            label: snapshot.defaultBottle
+                              ? `Default (${snapshot.defaultBottle})`
+                              : "Default",
+                          },
+                          ...(snapshot.bottles ?? []).map((item) => ({ value: item, label: item })),
+                        ]}
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={null}>
+                            {snapshot.defaultBottle
+                              ? `Default (${snapshot.defaultBottle})`
+                              : "Default"}
                           </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </Field>
+                          {(snapshot.bottles ?? []).map((item) => (
+                            <SelectItem key={item} value={item}>
+                              {item}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </Field>
+                  )}
                   <Field
                     label="High resolution"
                     htmlFor="game-high-resolution"
