@@ -91,7 +91,7 @@ export function MetadataDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[85vh] gap-4 overflow-y-auto sm:max-w-xl">
+      <DialogContent className="max-h-[85vh] grid-cols-[minmax(0,1fr)] gap-4 overflow-y-auto sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>Find {game.name} online</DialogTitle>
           <DialogDescription>
