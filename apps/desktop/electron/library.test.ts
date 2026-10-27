@@ -4,7 +4,7 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { inspectFolder } from "./detection";
+import { inspectFolder, nameManifest } from "./detection";
 import { versionsIn } from "./discovery";
 import { DesktopLibrary } from "./library";
 import { runtimeExecutable } from "./runtimes";
@@ -91,6 +91,24 @@ describe("import and persistence", () => {
       }),
     );
     expect((await inspectFolder(gameFolder)).game?.name).toBe("The Game of Seasons");
+  });
+  it("accepts a manifest without a name and names it for NW.js", async () => {
+    const manifest = path.join(gameFolder, "package.json");
+    const original =
+      '{\n    "name": "",\n    "main": "www/index.html",\n    "window": { "name": "" }\n}\n';
+    await writeFile(manifest, original);
+    const { game } = await inspectFolder(gameFolder);
+    expect(game?.root).toBe(await realpath(gameFolder));
+    await nameManifest(game!.root, "The Quiet Valley: Part 2");
+    expect(await readFile(manifest, "utf8")).toBe(
+      original.replace('"name": ""', '"name": "the-quiet-valley-part-2"'),
+    );
+    await writeFile(manifest, JSON.stringify({ main: "www/index.html" }));
+    await nameManifest(game!.root, "!!!");
+    expect(JSON.parse(await readFile(manifest, "utf8"))).toEqual({
+      main: "www/index.html",
+      name: "game",
+    });
   });
   it("prefers the outer manifest of a deployed game and rejects escaping entries", async () => {
     await writeFile(

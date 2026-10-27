@@ -3,7 +3,7 @@ import path from "node:path";
 import { homedir } from "node:os";
 import { Schema } from "effect";
 import type { Candidate } from "../src/model";
-import { exists, message } from "./storage";
+import { atomicWrite, exists, message } from "./storage";
 
 const RecordSchema = Schema.Record(Schema.String, Schema.Unknown);
 const isRecord = Schema.is(RecordSchema);
@@ -42,13 +42,9 @@ export async function localFile(root: string, relative: string): Promise<string>
 export async function inspectRoot(folder: string, candidateRoot: string): Promise<Candidate> {
   const root = await realpath(candidateRoot);
   const manifest = await readObject(path.join(root, "package.json"));
-  if (
-    !isString(manifest.main) ||
-    !manifest.main.trim() ||
-    !isString(manifest.name) ||
-    !manifest.name.trim()
-  ) {
-    throw new Error("package.json needs a name and a local main entry.");
+  // NW.js also needs a name, but games often ship without one; `nameManifest` adds it at launch.
+  if (!isString(manifest.main) || !manifest.main.trim()) {
+    throw new Error("package.json needs a local main entry.");
   }
   const mainPath = decodeURIComponent(manifest.main.split(/[?#]/)[0]!);
   await localFile(root, mainPath);
@@ -81,6 +77,32 @@ export async function inspectRoot(folder: string, candidateRoot: string): Promis
     ? await localFile(root, window.icon).catch(() => null)
     : null;
   return { kind: "nwjs", executable: null, folder, root, name: name ?? "", confirmed, artwork };
+}
+
+/**
+ * NW.js refuses a package.json without a name, which RPG Maker exports often leave empty. This
+ * gives it one from the game's name, changing only that value in the file.
+ */
+export async function nameManifest(root: string, gameName: string): Promise<void> {
+  const file = path.join(root, "package.json");
+  const manifest = await readObject(file);
+  if (isString(manifest.name) && manifest.name.trim()) return;
+  const name =
+    gameName
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "") || "game";
+  // Filling in the empty value keeps the file as it was; a nested "name" could match first, so
+  // the result is checked and the whole file rewritten otherwise.
+  const edited = (await readFile(file, "utf8")).replace(
+    /("name"\s*:\s*)""/,
+    `$1${JSON.stringify(name)}`,
+  );
+  const next =
+    (JSON.parse(edited) as Record<string, unknown>).name === name
+      ? edited
+      : JSON.stringify({ ...manifest, name }, null, 2);
+  await atomicWrite(file, next, (await stat(file)).mode & 0o777);
 }
 
 export const applicationRoots = (folder: string) => [

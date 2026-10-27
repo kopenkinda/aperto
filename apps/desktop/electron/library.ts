@@ -26,7 +26,7 @@ import {
 } from "../src/model";
 import { downloadImage, readableImage } from "./artwork";
 import { extractExeIcon } from "./exe-icon";
-import { inspectRoot, readObject } from "./detection";
+import { inspectRoot, nameManifest, readObject } from "./detection";
 import { detectGame, findGames, fingerprint, versionedName, versionsIn, within } from "./discovery";
 import { applicationFolders, iconToPng } from "./mac";
 import { findComponents, listComponents, removeComponent } from "./components";
@@ -1080,6 +1080,7 @@ export class DesktopLibrary {
       );
     }
     await inspectRoot(game.folder, game.root);
+    await nameManifest(game.root, game.name);
     const manifest = await readObject(path.join(game.root, "package.json"));
     if (/--(?:user-data-dir|nwapp|url)(?:=|\s|$)/.test(String(manifest["chromium-args"] ?? ""))) {
       throw new Error(
