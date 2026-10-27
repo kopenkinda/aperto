@@ -353,6 +353,23 @@ describe("Mac games", () => {
   );
 });
 
+describe("runtime updates", () => {
+  it("moves a runtime's games to a newer installed runtime and refuses older ones", async () => {
+    const game = await importGame();
+    const installedAt = new Date().toISOString();
+    await store.update((state) => ({
+      ...state,
+      runtimes: ["0.117.0", "0.119.2"].map((version) => ({ version, installedAt, sha256: "x" })),
+      games: state.games.map((entry) => ({ ...entry, runtime: "0.117.0" })),
+    }));
+    await expect(
+      library.handle({ action: "updateRuntime", from: "0.119.2", to: "0.117.0" }),
+    ).rejects.toThrow("newer runtime");
+    await library.handle({ action: "updateRuntime", from: "0.117.0", to: "0.119.2" });
+    expect(store.value.games.find((entry) => entry.id === game.id)?.runtime).toBe("0.119.2");
+  });
+});
+
 describe("plugin editing", () => {
   it("finds plugins in the www folder of a Windows deployment", async () => {
     // Windows deployments keep package.json beside the executable and point it into www.

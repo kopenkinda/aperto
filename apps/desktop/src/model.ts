@@ -202,6 +202,12 @@ export const CommandSchema = Schema.Union([
   Schema.Struct({ action: Schema.Literal("installRuntime"), version: Schema.String }),
   Schema.Struct({ action: Schema.Literal("cancelDownload"), version: Schema.String }),
   Schema.Struct({ action: Schema.Literal("removeRuntime"), version: Schema.String }),
+  /** Moves every game on runtime `from` to the newer installed runtime `to`. */
+  Schema.Struct({
+    action: Schema.Literal("updateRuntime"),
+    from: Schema.String,
+    to: Schema.String,
+  }),
   Schema.Struct({ action: Schema.Literal("launch"), ...id }),
   Schema.Struct({ action: Schema.Literal("stop"), ...id }),
   Schema.Struct({ action: Schema.Literal("reveal"), ...id }),

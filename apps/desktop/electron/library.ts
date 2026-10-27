@@ -369,6 +369,33 @@ export class DesktopLibrary {
           await this.changeGame(game.id, (current) => ({ ...current, pixelFix: command.enabled }));
           return await this.applyPixelFix(this.game(game.id));
         }
+        case "updateRuntime": {
+          const from = validVersion(command.from);
+          const to = validVersion(command.to);
+          if (compareVersions(to, from) <= 0)
+            throw new Error("Choose a newer runtime to update to.");
+          if (!this.store.value.runtimes.some((runtime) => runtime.version === to))
+            throw new Error("Install this runtime before updating games to it.");
+          const games = this.store.value.games.filter(
+            (game) => !game.removed && game.runtime === from,
+          );
+          const running = games.find((game) => this.running.has(game.id));
+          if (running) throw new Error(`Close ${running.name} before updating its runtime.`);
+          // Newer runtimes read older browser data, so unlike a downgrade nothing is backed up.
+          await this.store.update((state) => {
+            if (!state.runtimes.some((runtime) => runtime.version === to))
+              throw new Error("The selected runtime was removed. Choose another version.");
+            return {
+              ...state,
+              games: state.games.map((game) =>
+                !game.removed && game.runtime === from && !this.running.has(game.id)
+                  ? { ...game, runtime: to }
+                  : game,
+              ),
+            };
+          });
+          break;
+        }
         case "removeRuntime": {
           const version = validVersion(command.version);
           if (this.runtimes.downloads.has(version))

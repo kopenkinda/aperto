@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { DownloadIcon, FolderOpenIcon, RefreshCwIcon, XIcon } from "lucide-react";
+import { ArrowUpIcon, DownloadIcon, FolderOpenIcon, RefreshCwIcon, XIcon } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -212,6 +212,8 @@ export function Settings({
         <Section title="NW.js runtimes">
           {installed.map((runtime) => {
             const users = snapshot.games.filter((game) => game.runtime === runtime.version).length;
+            const newest = installed[0]!.version;
+            const outdated = users > 0 && compareVersions(newest, runtime.version) > 0;
             return (
               <div key={runtime.version} className="flex items-center gap-3 py-1.5 pr-2 pl-4">
                 <span className="flex-1">
@@ -220,6 +222,22 @@ export function Settings({
                     {users ? `${users} ${users === 1 ? "game" : "games"}` : "unused"}
                   </span>
                 </span>
+                {outdated && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={busy}
+                    title={`Switch ${users === 1 ? "its game" : `its ${users} games`} to NW.js ${newest}. This version stays installed, so a game can go back to it.`}
+                    onClick={() =>
+                      void run(() =>
+                        request({ action: "updateRuntime", from: runtime.version, to: newest }),
+                      )
+                    }
+                  >
+                    <ArrowUpIcon />
+                    Update {users === 1 ? "game" : "games"} to {newest}
+                  </Button>
+                )}
                 <Button
                   variant="ghost"
                   size="sm"
