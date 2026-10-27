@@ -1,7 +1,8 @@
 import { useId, useState, type KeyboardEvent } from "react";
 import { PlusIcon, XIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { normalizeTags } from "../model";
+import { normalizeTags, type TagColor } from "../model";
+import { tagChip, tagDot } from "./tag-colors";
 
 /**
  * Tags as removable chips with an inline field. Enter adds the highlighted suggestion, which is an
@@ -12,6 +13,7 @@ export function TagEditor({
   id,
   tags,
   known,
+  colors = {},
   disabled,
   onChange,
 }: {
@@ -19,6 +21,7 @@ export function TagEditor({
   tags: readonly string[];
   /** Library tags, most used first. */
   known: readonly string[];
+  colors?: Readonly<Record<string, TagColor>>;
   disabled?: boolean;
   onChange: (tags: string[]) => void;
 }) {
@@ -106,7 +109,10 @@ export function TagEditor({
         {tags.map((tag) => (
           <span
             key={tag}
-            className="inline-flex h-6 items-center gap-0.5 rounded-md bg-secondary pr-0.5 pl-2 text-xs text-secondary-foreground"
+            className={cn(
+              "inline-flex h-6 items-center gap-0.5 rounded-md pr-0.5 pl-2 text-xs",
+              tagChip(colors[tag]),
+            )}
           >
             {tag}
             <button
@@ -168,7 +174,10 @@ export function TagEditor({
                     Add &ldquo;{tag}&rdquo;
                   </>
                 ) : (
-                  tag
+                  <>
+                    <span className={cn("size-2 rounded-full", tagDot(colors[tag]))} />
+                    {tag}
+                  </>
                 )}
               </li>
             );

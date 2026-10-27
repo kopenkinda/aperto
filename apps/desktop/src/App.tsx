@@ -18,6 +18,8 @@ import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
+import { TagSidebar } from "@/components/TagSidebar";
+import { tagDot } from "@/components/tag-colors";
 import { GamePage, playable } from "./GamePage";
 import { Settings } from "./Settings";
 import { request, useTask } from "./desktop";
@@ -90,6 +92,10 @@ export function App() {
   };
   // Favorites lead the list, so the first game shown is also the first one opened.
   const games = sortGames(snapshot?.games ?? [], sort, snapshot?.launches ?? []);
+  const libraryTags = tagCounts(games);
+  // A chosen tag stays listed after its last game loses it, so it can still be turned off.
+  for (const tag of filters.tags)
+    if (!libraryTags.some(([name]) => name === tag)) libraryTags.push([tag, 0]);
   const visible = snapshot
     ? games.filter((game) => matchesGame(game, filters, search, snapshot))
     : [];
@@ -120,7 +126,6 @@ export function App() {
               />
             </div>
             <LibraryFilters
-              games={games}
               filters={filters}
               onChange={setFilters}
               sort={sort}
@@ -129,7 +134,7 @@ export function App() {
           </div>
           {filtering && (
             <ul aria-label="Active filters" className="mt-2 flex flex-wrap gap-1">
-              {activeFilters(filters).map(({ key, label, without }) => (
+              {activeFilters(filters).map(({ key, label, tag, without }) => (
                 <li key={key}>
                   <button
                     type="button"
@@ -138,6 +143,11 @@ export function App() {
                     className="inline-flex h-6 items-center gap-1 rounded-md bg-secondary pr-1 pl-2 text-xs text-secondary-foreground outline-none hover:bg-secondary/70 focus-visible:ring-2 focus-visible:ring-ring/50"
                     onClick={() => setFilters(without)}
                   >
+                    {tag && (
+                      <span
+                        className={cn("size-2 rounded-full", tagDot(snapshot?.tagColors?.[tag]))}
+                      />
+                    )}
                     {label}
                     <XIcon className="size-3 text-muted-foreground" />
                   </button>
@@ -147,12 +157,36 @@ export function App() {
           )}
         </div>
         <nav aria-label="Games" className="flex-1 overflow-y-auto px-2 pb-2">
+          <TagSidebar
+            tags={libraryTags}
+            colors={snapshot?.tagColors ?? {}}
+            selected={filters.tags}
+            onToggle={(tag) => setFilters({ ...filters, tags: toggled(filters.tags, tag) })}
+            onRename={(from, to) => {
+              act({ action: "renameTag", from, to });
+              if (filters.tags.includes(from))
+                setFilters({
+                  ...filters,
+                  tags: [...new Set(filters.tags.map((tag) => (tag === from ? to : tag)))],
+                });
+            }}
+            onColor={(tag, color) => act({ action: "setTagColor", tag, color })}
+            onDelete={(tag) => {
+              act({ action: "deleteTag", tag });
+              setFilters({ ...filters, tags: without(filters.tags, tag) });
+            }}
+          />
+          {libraryTags.length > 0 && visible.length > 0 && !visible[0]!.favorite && (
+            <h2 className="px-2 pt-2 pb-1 text-xs font-medium text-muted-foreground">Games</h2>
+          )}
           {visible.map((item, index) => {
             const running = snapshot?.running.includes(item.id);
             const missing = snapshot?.missing.includes(item.id);
             // Headings appear only when favorites and other games are both listed.
             const heading =
-              item.favorite && index === 0 && visible.some((other) => !other.favorite)
+              item.favorite &&
+              index === 0 &&
+              (libraryTags.length > 0 || visible.some((other) => !other.favorite))
                 ? "Favorites"
                 : !item.favorite && visible[index - 1]?.favorite
                   ? "Games"
@@ -405,38 +439,36 @@ function activeFilters(filters: Filters) {
     ...filters.tags.map((tag) => ({
       key: `tag:${tag}`,
       label: tag,
+      tag,
       without: { ...filters, tags: without(filters.tags, tag) },
     })),
     ...filters.kinds.map((kind) => ({
       key: `kind:${kind}`,
       label: kindFilters[kind],
+      tag: null,
       without: { ...filters, kinds: without(filters.kinds, kind) },
     })),
     ...filters.statuses.map((status) => ({
       key: `status:${status}`,
       label: statusFilters[status],
+      tag: null,
       without: { ...filters, statuses: without(filters.statuses, status) },
     })),
   ];
 }
 
 function LibraryFilters({
-  games,
   filters,
   onChange,
   sort,
   onSort,
 }: {
-  games: Game[];
   filters: Filters;
   onChange: (filters: Filters) => void;
   sort: Sort;
   onSort: (sort: Sort) => void;
 }) {
   const count = filterCount(filters);
-  const tags = tagCounts(games);
-  // A chosen tag stays listed after its last game loses it, so it can still be turned off.
-  for (const tag of filters.tags) if (!tags.some(([name]) => name === tag)) tags.push([tag, 0]);
   return (
     <Popover>
       <PopoverTrigger
@@ -484,25 +516,6 @@ function LibraryFilters({
               </button>
             ))}
           </div>
-        </FilterSection>
-        <FilterSection title="Tags">
-          {tags.length ? (
-            <div className="-mx-1 max-h-64 overflow-y-auto">
-              {tags.map(([tag, uses]) => (
-                <FilterOption
-                  key={tag}
-                  label={tag}
-                  count={uses}
-                  checked={filters.tags.includes(tag)}
-                  onToggle={() => onChange({ ...filters, tags: toggled(filters.tags, tag) })}
-                />
-              ))}
-            </div>
-          ) : (
-            <p className="text-xs text-muted-foreground">
-              No tags yet. Add them on a game&rsquo;s page.
-            </p>
-          )}
         </FilterSection>
         <FilterSection title="Type">
           <div className="-mx-1">

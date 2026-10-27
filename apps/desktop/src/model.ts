@@ -64,6 +64,18 @@ export const BackupSchema = Schema.Struct({
   lastWritten: Schema.String,
   pending: Schema.NullOr(Schema.String),
 });
+/** Colors a tag can have; tags without one are gray. */
+export const tagColorNames = [
+  "red",
+  "orange",
+  "amber",
+  "green",
+  "teal",
+  "blue",
+  "violet",
+  "pink",
+] as const;
+export type TagColor = (typeof tagColorNames)[number];
 export const LibrarySchema = Schema.Struct({
   version: Schema.Literal(1),
   games: Schema.Array(GameSchema),
@@ -75,6 +87,8 @@ export const LibrarySchema = Schema.Struct({
   defaultBottle: Schema.optionalKey(Schema.NullOr(Schema.String)),
   /** Bundle ID of the terminal that opens game folders; unset picks one automatically. */
   terminal: Schema.optionalKey(Schema.NullOr(Schema.String)),
+  /** Colors chosen for tags, by tag. Older libraries omit it. */
+  tagColors: Schema.optionalKey(Schema.Record(Schema.String, Schema.Literals(tagColorNames))),
 });
 export type Library = typeof LibrarySchema.Type;
 export type Snapshot = Library & {
@@ -167,6 +181,14 @@ export const CommandSchema = Schema.Union([
   /** Removes a chosen icon and goes back to the one found in the game. */
   Schema.Struct({ action: Schema.Literal("resetIcon"), ...id }),
   Schema.Struct({ action: Schema.Literal("setTags"), ...id, tags: Schema.Array(Schema.String) }),
+  /** Renames a tag on every game; renaming to an existing tag merges the two. */
+  Schema.Struct({ action: Schema.Literal("renameTag"), from: Schema.String, to: Schema.String }),
+  Schema.Struct({ action: Schema.Literal("deleteTag"), tag: Schema.String }),
+  Schema.Struct({
+    action: Schema.Literal("setTagColor"),
+    tag: Schema.String,
+    color: Schema.NullOr(Schema.Literals(tagColorNames)),
+  }),
   Schema.Struct({ action: Schema.Literal("setFavorite"), ...id, favorite: Schema.Boolean }),
   Schema.Struct({
     action: Schema.Literal("remove"),

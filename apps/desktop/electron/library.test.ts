@@ -353,6 +353,23 @@ describe("Mac games", () => {
   );
 });
 
+describe("tag management", () => {
+  it("renames, merges, colors, and deletes tags across the library", async () => {
+    const game = await importGame();
+    await library.handle({ action: "setTags", id: game.id, tags: ["horror", "rpg", "spooky"] });
+    await library.handle({ action: "setTagColor", tag: "spooky", color: "violet" });
+    // Merging into an existing tag leaves one copy and carries the color over.
+    await library.handle({ action: "renameTag", from: "spooky", to: " Horror " });
+    expect(store.value.games[0]?.tags).toEqual(["horror", "rpg"]);
+    expect(store.value.tagColors).toEqual({ horror: "violet" });
+    await library.handle({ action: "renameTag", from: "rpg", to: "RPG Maker" });
+    expect(store.value.games[0]?.tags).toEqual(["horror", "rpg maker"]);
+    await library.handle({ action: "deleteTag", tag: "horror" });
+    expect(store.value.games[0]?.tags).toEqual(["rpg maker"]);
+    expect(store.value.tagColors).toEqual({});
+  });
+});
+
 describe("runtime updates", () => {
   it("moves a runtime's games to a newer installed runtime and refuses older ones", async () => {
     const game = await importGame();

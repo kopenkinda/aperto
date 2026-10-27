@@ -143,6 +143,50 @@ export class DesktopLibrary {
       await this.store.update((state) => ({ ...state, gamesFolder: null }));
       return this.snapshot();
     }
+    if (command.action === "renameTag") {
+      const [to] = normalizeTags(command.to);
+      if (!to || to.length > 40) throw new Error("Enter a tag name of at most 40 characters.");
+      const from = command.from;
+      if (from === to) return this.snapshot();
+      await this.store.update((state) => {
+        const { [from]: color, ...colors } = state.tagColors ?? {};
+        return {
+          ...state,
+          games: state.games.map((game) =>
+            game.tags.includes(from)
+              ? { ...game, tags: normalizeTags(game.tags.map((tag) => (tag === from ? to : tag))) }
+              : game,
+          ),
+          // A merged tag keeps the color it already had.
+          tagColors: color && !colors[to] ? { ...colors, [to]: color } : colors,
+        };
+      });
+      return this.snapshot();
+    }
+    if (command.action === "deleteTag") {
+      const tag = command.tag;
+      await this.store.update((state) => {
+        const { [tag]: _removed, ...colors } = state.tagColors ?? {};
+        return {
+          ...state,
+          games: state.games.map((game) =>
+            game.tags.includes(tag)
+              ? { ...game, tags: game.tags.filter((item) => item !== tag) }
+              : game,
+          ),
+          tagColors: colors,
+        };
+      });
+      return this.snapshot();
+    }
+    if (command.action === "setTagColor") {
+      const { tag, color } = command;
+      await this.store.update((state) => {
+        const { [tag]: _previous, ...colors } = state.tagColors ?? {};
+        return { ...state, tagColors: color ? { ...colors, [tag]: color } : colors };
+      });
+      return this.snapshot();
+    }
     if (command.action === "setTerminal") {
       await this.store.update((state) => ({ ...state, terminal: command.terminal }));
       return this.snapshot();

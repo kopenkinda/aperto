@@ -15,6 +15,8 @@ import {
 } from "lucide-react";
 import { Artwork } from "@/components/Artwork";
 import { TagEditor } from "@/components/TagEditor";
+import { cn } from "@/lib/utils";
+import { tagDot } from "@/components/tag-colors";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -349,9 +351,14 @@ export function GamePage({
                     <button
                       type="button"
                       title={`Show games tagged ${tag}`}
-                      className="h-6 rounded-md bg-background/50 px-2 text-xs text-foreground/80 ring-1 ring-foreground/10 backdrop-blur outline-none hover:bg-background/80 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
+                      className="inline-flex h-6 items-center gap-1.5 rounded-md bg-background/50 px-2 text-xs text-foreground/80 ring-1 ring-foreground/10 backdrop-blur outline-none hover:bg-background/80 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
                       onClick={() => onTag(tag)}
                     >
+                      {snapshot.tagColors?.[tag] && (
+                        <span
+                          className={cn("size-2 rounded-full", tagDot(snapshot.tagColors[tag]))}
+                        />
+                      )}
                       {tag}
                     </button>
                   </li>
@@ -550,7 +557,13 @@ export function GamePage({
                 </form>
               </Field>
               <Field label="Tags" htmlFor="game-tags" hint="Saved as you edit them.">
-                <TagEditor id="game-tags" tags={tags} known={knownTags} onChange={changeTags} />
+                <TagEditor
+                  id="game-tags"
+                  tags={tags}
+                  known={knownTags}
+                  colors={snapshot.tagColors ?? {}}
+                  onChange={changeTags}
+                />
               </Field>
 
               {windows ? (
