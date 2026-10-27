@@ -159,6 +159,7 @@ export function App() {
         <nav aria-label="Games" className="flex-1 overflow-y-auto px-2 pb-2">
           <TagSidebar
             tags={libraryTags}
+            unlinked={games.filter((item) => !item.source).length}
             colors={snapshot?.tagColors ?? {}}
             selected={filters.tags}
             onToggle={(tag) => setFilters({ ...filters, tags: toggled(filters.tags, tag) })}
@@ -176,7 +177,7 @@ export function App() {
               setFilters({ ...filters, tags: without(filters.tags, tag) });
             }}
           />
-          {libraryTags.length > 0 && visible.length > 0 && !visible[0]!.favorite && (
+          {visible.length > 0 && !visible[0]!.favorite && (
             <h2 className="px-2 pt-2 pb-1 text-xs font-medium text-muted-foreground">Games</h2>
           )}
           {visible.map((item, index) => {
@@ -184,9 +185,7 @@ export function App() {
             const missing = snapshot?.missing.includes(item.id);
             // Headings appear only when favorites and other games are both listed.
             const heading =
-              item.favorite &&
-              index === 0 &&
-              (libraryTags.length > 0 || visible.some((other) => !other.favorite))
+              item.favorite && index === 0
                 ? "Favorites"
                 : !item.favorite && visible[index - 1]?.favorite
                   ? "Games"

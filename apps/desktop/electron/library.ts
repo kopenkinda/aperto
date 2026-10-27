@@ -8,6 +8,9 @@ import {
   gameKind,
   normalizeTags,
   sandboxable,
+  searchName,
+  titleMatches,
+  type AutoTagReport,
   playCount,
   parseArguments,
   parseFlags,
@@ -23,6 +26,7 @@ import { inspectRoot, readObject } from "./detection";
 import { detectGame, findGames, fingerprint, versionedName, within } from "./discovery";
 import { iconToPng } from "./mac";
 import { listComponents, removeComponent } from "./components";
+import { metadataTags, searchMetadata } from "./metadata";
 import { mkxpLaunch } from "./mkxp";
 import { renpyLaunch } from "./renpy";
 import { sandboxed, type SandboxAccess } from "./sandbox";
@@ -141,6 +145,19 @@ export class DesktopLibrary {
     }
     if (command.action === "clearGamesFolder") {
       await this.store.update((state) => ({ ...state, gamesFolder: null }));
+      return this.snapshot();
+    }
+    if (command.action === "findMetadata")
+      return searchMetadata(command.query ?? searchName(this.game(command.id).name));
+    if (command.action === "metadataTags") return metadataTags(command.site, command.matchId);
+    if (command.action === "autoTag") return this.autoTag();
+    if (command.action === "applyMetadata") {
+      const { site, matchId, title } = command;
+      await this.changeGame(this.game(command.id).id, (current) => ({
+        ...current,
+        tags: normalizeTags([...current.tags, ...command.tags]),
+        source: { site, id: matchId, title },
+      }));
       return this.snapshot();
     }
     if (command.action === "renameTag") {
@@ -534,6 +551,40 @@ export class DesktopLibrary {
     } finally {
       this.busy.delete(lock);
     }
+  }
+
+  private autoTagging: Promise<AutoTagReport> | null = null;
+
+  /**
+   * Tags each game that has no source yet from F95zone, or else Steam, when a title there names it
+   * exactly. Games without such a match are left for the user to match on their page. Requests go
+   * one at a time, so the sites are not flooded.
+   */
+  autoTag(): Promise<AutoTagReport> {
+    this.autoTagging ??= (async () => {
+      const report: AutoTagReport = { tagged: [], unmatched: [] };
+      for (const game of this.store.value.games) {
+        if (game.removed || game.source) continue;
+        const matches = await searchMetadata(searchName(game.name)).catch(() => []);
+        const match = matches.find((item) => titleMatches(game.name, item.title));
+        const tags = match ? await metadataTags(match.site, match.id).catch(() => null) : null;
+        if (!match || !tags) {
+          report.unmatched.push(game.name);
+          continue;
+        }
+        await this.changeGame(game.id, (current) => ({
+          ...current,
+          tags: normalizeTags([...current.tags, ...tags]),
+          source: { site: match.site, id: match.id, title: match.title },
+        }));
+        report.tagged.push(game.name);
+        this.changed();
+      }
+      return report;
+    })().finally(() => {
+      this.autoTagging = null;
+    });
+    return this.autoTagging;
   }
 
   /** Scans the configured games folder. Overlapping requests share one scan. */

@@ -1,5 +1,7 @@
 import { useState } from "react";
-import { ChevronRightIcon, EllipsisIcon, Trash2Icon } from "lucide-react";
+import { ChevronRightIcon, EllipsisIcon, SparklesIcon, Trash2Icon, XIcon } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
+import { request } from "../desktop";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -14,6 +16,7 @@ import { tagDot } from "./tag-colors";
  */
 export function TagSidebar({
   tags,
+  unlinked,
   colors,
   selected,
   onToggle,
@@ -23,6 +26,8 @@ export function TagSidebar({
 }: {
   /** Tags with how many games carry them, most used first. */
   tags: [tag: string, count: number][];
+  /** Games not yet linked to F95zone or Steam, which automatic tagging looks up. */
+  unlinked: number;
   colors: Readonly<Record<string, TagColor>>;
   selected: readonly string[];
   onToggle: (tag: string) => void;
@@ -31,28 +36,94 @@ export function TagSidebar({
   onDelete: (tag: string) => void;
 }) {
   const [open, setOpen] = useState(() => localStorage.getItem("tagsOpen") !== "false");
-  if (!tags.length) return null;
+  const [tagging, setTagging] = useState(false);
+  // Long lists show the most used tags, and every tag being filtered by.
+  const [all, setAll] = useState(false);
+  const shown = all ? tags : tags.filter(([tag], index) => index < 12 || selected.includes(tag));
+  const [report, setReport] = useState<string | null>(null);
   const toggleOpen = () => {
     localStorage.setItem("tagsOpen", String(!open));
     setOpen(!open);
   };
+  const autoTag = () => {
+    setTagging(true);
+    setReport(null);
+    request({ action: "autoTag" })
+      .then(
+        ({ tagged, unmatched }) =>
+          setReport(
+            [
+              tagged.length
+                ? `Tagged ${tagged.length} ${tagged.length === 1 ? "game" : "games"}.`
+                : "No new games were tagged.",
+              unmatched.length
+                ? `${unmatched.length} had no clear match: ${unmatched.join(", ")}. Use Find tags online on their pages.`
+                : "",
+            ].join(" "),
+          ),
+        (cause: unknown) => setReport(cause instanceof Error ? cause.message : String(cause)),
+      )
+      .finally(() => setTagging(false));
+  };
   return (
     <section aria-label="Tags" className="mb-2">
-      <button
-        type="button"
-        aria-expanded={open}
-        className="flex w-full items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
-        onClick={toggleOpen}
-      >
-        <ChevronRightIcon className={cn("size-3.5 transition-transform", open && "rotate-90")} />
-        Tags
-        {!open && selected.length > 0 && (
-          <span className="ml-auto font-normal">{selected.length} on</span>
+      <div className="group/tags flex items-center">
+        <button
+          type="button"
+          aria-expanded={open}
+          className="flex flex-1 items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
+          onClick={toggleOpen}
+        >
+          <ChevronRightIcon className={cn("size-3.5 transition-transform", open && "rotate-90")} />
+          Tags
+          {!open && selected.length > 0 && (
+            <span className="ml-auto font-normal">{selected.length} on</span>
+          )}
+        </button>
+        {unlinked > 0 && (
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            aria-label="Find tags for all games"
+            title={`Find tags for all games\nLooks up the ${unlinked} ${unlinked === 1 ? "game" : "games"} not yet linked on F95zone and Steam, and adds tags where the title matches exactly.`}
+            className={cn(
+              "text-muted-foreground",
+              !tagging &&
+                tags.length > 0 &&
+                "opacity-0 group-hover/tags:opacity-100 focus-visible:opacity-100",
+            )}
+            disabled={tagging}
+            onClick={autoTag}
+          >
+            {tagging ? <Spinner /> : <SparklesIcon />}
+          </Button>
         )}
-      </button>
+      </div>
+      {(tagging || report) && (
+        <p className="flex items-start gap-1 px-2 py-1 text-xs text-muted-foreground">
+          <span className="flex-1">
+            {tagging ? "Looking up games on F95zone and Steam…" : report}
+          </span>
+          {report && (
+            <button
+              type="button"
+              aria-label="Dismiss"
+              className="shrink-0 rounded hover:text-foreground"
+              onClick={() => setReport(null)}
+            >
+              <XIcon className="size-3.5" />
+            </button>
+          )}
+        </p>
+      )}
+      {open && !tags.length && !tagging && !report && (
+        <p className="px-2 py-1 text-xs text-muted-foreground">
+          No tags yet. Add them on a game&rsquo;s page, or find them online with the sparkle button.
+        </p>
+      )}
       {open && (
         <ul className="mt-0.5">
-          {tags.map(([tag, count]) => (
+          {shown.map(([tag, count]) => (
             <TagRow
               key={tag}
               tag={tag}
@@ -66,6 +137,17 @@ export function TagSidebar({
               onDelete={() => onDelete(tag)}
             />
           ))}
+          {tags.length > 12 && (
+            <li>
+              <button
+                type="button"
+                className="w-full rounded-md px-2 py-1 pl-10 text-left text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
+                onClick={() => setAll(!all)}
+              >
+                {all ? "Show fewer" : `Show all ${tags.length} tags`}
+              </button>
+            </li>
+          )}
         </ul>
       )}
     </section>

@@ -1,5 +1,7 @@
 import { Schema } from "effect";
 
+export const metadataSites = { f95: "F95zone", steam: "Steam" } as const;
+export type MetadataSite = keyof typeof metadataSites;
 export const GameSchema = Schema.Struct({
   id: Schema.String,
   folder: Schema.String,
@@ -30,6 +32,14 @@ export const GameSchema = Schema.Struct({
   highResolution: Schema.optionalKey(Schema.Boolean),
   /** Adds Aperto's getPixel fix to an RPG Maker game at launch. Unset means on. */
   pixelFix: Schema.optionalKey(Schema.Boolean),
+  /** The F95zone thread or Steam app the game's tags came from. */
+  source: Schema.optionalKey(
+    Schema.Struct({
+      site: Schema.Literals(["f95", "steam"]),
+      id: Schema.String,
+      title: Schema.String,
+    }),
+  ),
   /** Runs the game in Aperto's macOS sandbox. Unset means on; only `false` turns it off. */
   sandbox: Schema.optionalKey(Schema.Boolean),
 });
@@ -137,6 +147,17 @@ export type PluginList = {
 };
 /** Plugins Aperto adds for its own switches; the plugin list leaves them out. */
 export const managedPlugins = ["Aperto_PixelFix", "Cheat_Menu"];
+/** A game on F95zone or Steam that may be the library game being tagged. */
+export type MetadataMatch = {
+  site: MetadataSite;
+  id: string;
+  title: string;
+  /** Developer and version on F95zone. */
+  detail: string;
+  cover: string | null;
+  url: string;
+};
+export type AutoTagReport = { tagged: string[]; unmatched: string[] };
 /** A download Aperto keeps besides NW.js runtimes, needed by games of one kind. */
 export type Component = {
   id: string;
@@ -184,6 +205,28 @@ export const CommandSchema = Schema.Union([
   /** Renames a tag on every game; renaming to an existing tag merges the two. */
   Schema.Struct({ action: Schema.Literal("renameTag"), from: Schema.String, to: Schema.String }),
   Schema.Struct({ action: Schema.Literal("deleteTag"), tag: Schema.String }),
+  /** Searches F95zone and Steam for a game, by its name unless a query is given. */
+  Schema.Struct({
+    action: Schema.Literal("findMetadata"),
+    ...id,
+    query: Schema.optionalKey(Schema.String),
+  }),
+  Schema.Struct({
+    action: Schema.Literal("metadataTags"),
+    site: Schema.Literals(["f95", "steam"]),
+    matchId: Schema.String,
+  }),
+  /** Adds tags from a chosen match to a game and remembers the match. */
+  Schema.Struct({
+    action: Schema.Literal("applyMetadata"),
+    ...id,
+    site: Schema.Literals(["f95", "steam"]),
+    matchId: Schema.String,
+    title: Schema.String,
+    tags: Schema.Array(Schema.String),
+  }),
+  /** Tags every game without a source whose title clearly matches one on F95zone or Steam. */
+  Schema.Struct({ action: Schema.Literal("autoTag") }),
   Schema.Struct({
     action: Schema.Literal("setTagColor"),
     tag: Schema.String,
@@ -251,7 +294,13 @@ export type ResultFor<C extends Command> = C["action"] extends "plugins"
             ? Engine | null
             : C["action"] extends "components" | "removeComponent"
               ? Component[]
-              : Snapshot;
+              : C["action"] extends "findMetadata"
+                ? MetadataMatch[]
+                : C["action"] extends "metadataTags"
+                  ? string[]
+                  : C["action"] extends "autoTag"
+                    ? AutoTagReport
+                    : Snapshot;
 export interface DesktopApi {
   request<C extends Command>(command: C): Promise<ResultFor<C>>;
   onChange(listener: () => void): () => void;
@@ -267,6 +316,48 @@ export function normalizeTags(input: string | readonly string[]): string[] {
         .filter(Boolean),
     ),
   ];
+}
+
+/**
+ * A library name as a search query: without versions, bracketed notes, and release words such as
+ * "Steam", "Uncensored", or "Full Version" that store titles leave out.
+ */
+export function searchName(name: string): string {
+  return name
+    .replace(/\([^)]*\)|\[[^\]]*\]/g, " ")
+    .replace(/(?<![\p{L}\p{N}])v?\d{4}-\d{2}-\d{2}(?![\p{L}\p{N}])/giu, " ")
+    .replace(/(?<![\p{L}\p{N}])(?:v|ver|version|build)\s?\.?\d[\w.]*/giu, " ")
+    .replace(/(?<![\p{L}\p{N}])dlc\s?\d*(?![\p{L}\p{N}])/giu, " ")
+    .replace(/(?<![\p{L}\p{N}])\d+(?:\.\d+)+[a-z]?(?![\p{L}\p{N}])/giu, " ")
+    .replace(
+      /(?<![\p{L}\p{N}])(?:steam|r18|en|eng|english|uncensored|decensored|censored|full version|patched|pc|final|compressed)(?![\p{L}\p{N}])/giu,
+      " ",
+    )
+    .replace(/[\s\-–~:]+$/u, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+const comparable = (title: string) =>
+  searchName(title)
+    .toLocaleLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, "");
+
+// The part before a subtitle, as in "Nightmare Knight ~Sacred Maiden~" or "Academy Love Saga: …".
+export const mainTitle = (title: string) => title.split(/\s*[~:–—]\s*|\s+-\s+/)[0]!;
+
+/**
+ * Whether a store title clearly names the same game, as automatic tagging requires: the same
+ * words, or a store title with a subtitle the library name leaves out. A store title without the
+ * library name's subtitle may be another game in the series, so it does not count.
+ */
+export function titleMatches(name: string, title: string): boolean {
+  const a = comparable(name);
+  const b = comparable(title);
+  if (a.length < 3 || b.length < 3) return false;
+  if (a === b) return true;
+  const short = comparable(mainTitle(searchName(title)));
+  return short === a && short.length >= 6;
 }
 
 /** Every tag in the library with how many games carry it, most used first. */

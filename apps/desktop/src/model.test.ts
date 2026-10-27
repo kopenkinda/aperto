@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  searchName,
+  titleMatches,
   chooseOption,
   chosenOption,
   compareVersions,
@@ -144,5 +146,28 @@ describe("launch options", () => {
     expect(chosenOption(display!, "-screen-fullscreen 0")).toBeNull();
     expect(chosenOption(graphics!, "-force-d3d11\n-force-vulkan")).toBeNull();
     expect(chooseOption(display!, "-screen-fullscreen 0\n-x", 1)).toBe("-x\n-screen-fullscreen\n1");
+  });
+});
+
+describe("metadata matching", () => {
+  it("drops versions, notes, and release words from search names", () => {
+    expect(searchName("Winter Memories v1.08")).toBe("Winter Memories");
+    expect(searchName("Breakthru (Steam - R18)")).toBe("Breakthru");
+    expect(searchName("Five Nights with Maids ver1.03 - EN")).toBe("Five Nights with Maids");
+    expect(searchName("That Time I Got Reincarnated as a Demon Hand v2026-01-31")).toBe(
+      "That Time I Got Reincarnated as a Demon Hand",
+    );
+    expect(searchName("Elf Girl Pinball DLC1")).toBe("Elf Girl Pinball");
+  });
+
+  it("matches the same title, or a store title with a subtitle the name leaves out", () => {
+    expect(titleMatches("SummerClover v1.11", "Summer Clover")).toBe(true);
+    expect(titleMatches("Take Me To The Dungeon v1.7.6", "Take Me To The Dungeon!!")).toBe(true);
+    expect(
+      titleMatches("Nightmare Knight", "Nightmare Knight ~Sacred Maiden & Fallen Magic~"),
+    ).toBe(true);
+    // The library title's subtitle may name a different game in a series.
+    expect(titleMatches("Lunar Mirror - The Pavilion of Desire", "Lunar Mirror")).toBe(false);
+    expect(titleMatches("Ark Mobius", "Ark")).toBe(false);
   });
 });

@@ -7,6 +7,7 @@ import {
   PlayIcon,
   RotateCcwIcon,
   SearchIcon,
+  SparklesIcon,
   SquareIcon,
   SquareTerminalIcon,
   StarIcon,
@@ -14,6 +15,7 @@ import {
   XIcon,
 } from "lucide-react";
 import { Artwork } from "@/components/Artwork";
+import { MetadataDialog } from "@/components/MetadataDialog";
 import { TagEditor } from "@/components/TagEditor";
 import { cn } from "@/lib/utils";
 import { tagDot } from "@/components/tag-colors";
@@ -57,6 +59,7 @@ import {
   gameKind,
   launchOptions,
   managedPlugins,
+  metadataSites,
   sandboxable,
   playCount,
   tagCounts,
@@ -184,6 +187,10 @@ export function GamePage({
   const save = (settings: Omit<Extract<Command, { action: "update" }>, "action" | "id">) =>
     queue(() => request({ action: "update", id: game.id, ...settings }));
   const [tags, setTags] = useState(game.tags);
+  // Tags also change outside this field: renamed or deleted in the sidebar, or found online.
+  const savedTags = game.tags.join("\n");
+  useEffect(() => setTags(game.tags), [savedTags]);
+  const [finding, setFinding] = useState(false);
   const changeTags = (next: string[]) => {
     setTags(next);
     void queue(() => request({ action: "setTags", id: game.id, tags: next }));
@@ -556,7 +563,27 @@ export function GamePage({
                   )}
                 </form>
               </Field>
-              <Field label="Tags" htmlFor="game-tags" hint="Saved as you edit them.">
+              <Field
+                label="Tags"
+                htmlFor="game-tags"
+                hint={
+                  <span className="flex items-center gap-2">
+                    <span className="flex-1">
+                      {game.source
+                        ? `Linked to “${game.source.title}” on ${metadataSites[game.source.site]}.`
+                        : "Saved as you edit them."}
+                    </span>
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-1 font-medium text-foreground/80 underline-offset-3 hover:text-foreground hover:underline"
+                      onClick={() => setFinding(true)}
+                    >
+                      <SparklesIcon className="size-3.5" />
+                      Find tags online
+                    </button>
+                  </span>
+                }
+              >
                 <TagEditor
                   id="game-tags"
                   tags={tags}
@@ -565,6 +592,7 @@ export function GamePage({
                   onChange={changeTags}
                 />
               </Field>
+              <MetadataDialog game={game} open={finding} onOpenChange={setFinding} />
 
               {windows ? (
                 <>

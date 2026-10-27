@@ -368,6 +368,23 @@ describe("tag management", () => {
     expect(store.value.games[0]?.tags).toEqual(["rpg maker"]);
     expect(store.value.tagColors).toEqual({});
   });
+
+  it("adds tags from a chosen match and remembers it", async () => {
+    const game = await importGame();
+    await library.handle({ action: "setTags", id: game.id, tags: ["nice"] });
+    await library.handle({
+      action: "applyMetadata",
+      id: game.id,
+      site: "f95",
+      matchId: "289735",
+      title: "Lifeguard Holic",
+      tags: ["2dcg", "Nice", "sandbox"],
+    });
+    expect(store.value.games[0]).toMatchObject({
+      tags: ["nice", "2dcg", "sandbox"],
+      source: { site: "f95", id: "289735", title: "Lifeguard Holic" },
+    });
+  });
 });
 
 describe("runtime updates", () => {
