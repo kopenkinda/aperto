@@ -45,6 +45,51 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 const megabytes = (bytes: number) =>
   bytes >= 1e9 ? `${(bytes / 1e9).toFixed(1)} GB` : `${Math.max(1, Math.round(bytes / 1e6))} MB`;
 
+/**
+ * Downloads Aperto keeps for one kind of game, each removable. They are fetched again the next
+ * time a game needs them.
+ */
+function Downloads({
+  items,
+  busy,
+  onRemove,
+  hint,
+}: {
+  /** Undefined while reading. */
+  items: Component[] | undefined;
+  busy: boolean;
+  onRemove: (id: string) => void;
+  hint?: string;
+}) {
+  return (
+    <>
+      {items?.map((item) => (
+        <div key={item.id} className="flex items-center gap-3 py-1.5 pr-2 pl-4">
+          <span className="flex-1">
+            {item.name}
+            <span className="ml-2 text-muted-foreground">{megabytes(item.size)}</span>
+          </span>
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={busy}
+            title="Downloaded again the next time a game needs it"
+            onClick={() => onRemove(item.id)}
+          >
+            Remove
+          </Button>
+        </div>
+      ))}
+      {hint && (
+        <p className="px-4 py-3 text-xs text-muted-foreground">
+          {items === undefined ? "Reading downloads…" : !items.length && "Nothing downloaded yet. "}
+          {items !== undefined && hint}
+        </p>
+      )}
+    </>
+  );
+}
+
 export function Settings({
   open,
   onOpenChange,
@@ -64,6 +109,9 @@ export function Settings({
     : "Automatic";
   const installed = [...snapshot.runtimes].sort((a, b) => compareVersions(b.version, a.version));
 
+  const removeComponent = (id: string) =>
+    void run(async () => setComponents(await request({ action: "removeComponent", id })));
+
   useEffect(() => {
     if (!open) return;
     let active = true;
@@ -82,7 +130,7 @@ export function Settings({
         <DialogHeader>
           <DialogTitle>Settings</DialogTitle>
           <DialogDescription className="sr-only">
-            Games folder, apps Aperto opens, NW.js runtimes, and downloads
+            Games folder, apps Aperto opens, and what each kind of game runs with
           </DialogDescription>
         </DialogHeader>
         {error && (
@@ -209,7 +257,7 @@ export function Settings({
           </Row>
         </Section>
 
-        <Section title="NW.js runtimes">
+        <Section title="NW.js">
           {installed.map((runtime) => {
             const users = snapshot.games.filter((game) => game.runtime === runtime.version).length;
             const newest = installed[0]!.version;
@@ -327,34 +375,31 @@ export function Settings({
               Official macOS ARM64 builds, verified before installing. New games use the newest one.
             </p>
           </div>
+          {components?.some((item) => item.kind === "nwjs") && (
+            <Downloads
+              items={components.filter((item) => item.kind === "nwjs")}
+              busy={busy}
+              onRemove={removeComponent}
+            />
+          )}
         </Section>
 
-        <Section title="Downloads">
-          {components?.map((component) => (
-            <div key={component.id} className="flex items-center gap-3 py-1.5 pr-2 pl-4">
-              <span className="flex-1">
-                {component.name}
-                <span className="ml-2 text-muted-foreground">{megabytes(component.size)}</span>
-              </span>
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={busy}
-                onClick={() =>
-                  void run(async () =>
-                    setComponents(await request({ action: "removeComponent", id: component.id })),
-                  )
-                }
-              >
-                Remove
-              </Button>
-            </div>
-          ))}
-          <p className="px-4 py-3 text-xs text-muted-foreground">
-            {components === null
-              ? "Reading downloads…"
-              : `${components.length ? "" : "Nothing downloaded yet. "}Ren'Py, mkxp-z, the RPG Maker RTPs, and the cheat menu are downloaded the first time a game needs them, and again after you remove them.`}
-          </p>
+        <Section title="Ren'Py">
+          <Downloads
+            items={components?.filter((item) => item.kind === "renpy")}
+            busy={busy}
+            onRemove={removeComponent}
+            hint="Games without their own Mac build run with the Ren'Py release they were made with. Each release is downloaded from renpy.org the first time a game needs it."
+          />
+        </Section>
+
+        <Section title="RPG Maker XP–VX Ace">
+          <Downloads
+            items={components?.filter((item) => item.kind === "rgss")}
+            busy={busy}
+            onRemove={removeComponent}
+            hint="These games run with mkxp-z and Kawariki's compatibility scripts, plus the RTP a game names. All are downloaded the first time a game needs them."
+          />
         </Section>
       </DialogContent>
     </Dialog>
