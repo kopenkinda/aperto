@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { execFile, spawn, type ChildProcess } from "node:child_process";
-import { cp, mkdir, readdir, readFile, realpath, rename, rm } from "node:fs/promises";
+import { cp, lstat, mkdir, readdir, readFile, realpath, rename, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -66,6 +66,19 @@ export type NativeActions = {
    */
   installedGames: () => Promise<Candidate[]>;
 };
+
+/**
+ * Whether a game's folder was deleted: it does not exist, rather than being unreadable, and the
+ * drive holding it, for a path under `/Volumes/<name>`, is connected.
+ */
+async function deleted(folder: string): Promise<boolean> {
+  const volume = /^\/Volumes\/[^/]+/.exec(folder)?.[0];
+  if (volume && !(await exists(volume))) return false;
+  return lstat(folder).then(
+    () => false,
+    (error: NodeJS.ErrnoException) => error.code === "ENOENT",
+  );
+}
 
 export class DesktopLibrary {
   readonly runtimes: RuntimeManager;
@@ -773,8 +786,20 @@ export class DesktopLibrary {
         removed: false,
       });
     }
+    // A deleted game leaves the list as if removed by hand, so its data returns if it comes back.
+    // One on a disconnected drive is kept until the drive is back.
+    const vanished: Game[] = [];
+    for (const game of library)
+      if (!game.removed && (await deleted(game.folder))) vanished.push(game);
     await this.markCustomIcons();
     await this.fillWindowsIcons();
+    if (vanished.length)
+      await this.store.update((state) => ({
+        ...state,
+        games: state.games.map((game) =>
+          vanished.some((item) => item.id === game.id) ? { ...game, removed: true } : game,
+        ),
+      }));
     if (added.length || restored.size)
       await this.store.update((state) => ({
         ...state,
@@ -800,6 +825,7 @@ export class DesktopLibrary {
         ...added.map((game) => game.name),
         ...library.filter((game) => restored.has(game.id)).map((game) => game.name),
       ],
+      removed: vanished.map((game) => game.name),
       duplicates,
       problems,
     };

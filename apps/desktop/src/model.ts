@@ -161,6 +161,8 @@ export type ScanReport = {
   /** Started by the user rather than on launch or focus. */
   requested: boolean;
   added: string[];
+  /** Games whose folders were deleted, taken out of the list. */
+  removed: string[];
   /** Copies of a game already in the library or found earlier in the same scan. */
   duplicates: { folder: string; of: string }[];
   problems: string[];

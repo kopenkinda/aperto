@@ -255,7 +255,7 @@ export function App() {
               {games.length} {games.length === 1 ? "game" : "games"}
               {librarySize !== null && (
                 <span
-                  className="text-muted-foreground/70 tabular-nums"
+                  className="text-[10px] leading-tight text-muted-foreground/70 tabular-nums"
                   title="Space the games' folders take on disk"
                 >
                   {formatSize(librarySize)}
@@ -390,7 +390,7 @@ function ScanSummary({ scan, onDismiss }: { scan: ScanReport; onDismiss: () => v
   const [expanded, setExpanded] = useState(false);
   const [hovered, setHovered] = useState(false);
   // Automatic scans repeat the same skipped copies, so only new games or a requested scan are shown.
-  const visible = scan.added.length > 0 || scan.requested;
+  const visible = scan.added.length > 0 || scan.removed.length > 0 || scan.requested;
   useEffect(() => {
     if (!visible || expanded || hovered) return;
     const timer = setTimeout(onDismiss, 6000);
@@ -399,6 +399,8 @@ function ScanSummary({ scan, onDismiss }: { scan: ScanReport; onDismiss: () => v
   if (!visible) return null;
   const parts = [
     scan.added.length && `Added ${scan.added.length} ${scan.added.length === 1 ? "game" : "games"}`,
+    scan.removed.length &&
+      `removed ${scan.removed.length} missing ${scan.removed.length === 1 ? "game" : "games"}`,
     scan.duplicates.length &&
       `ignored ${scan.duplicates.length} ${scan.duplicates.length === 1 ? "duplicate" : "duplicates"}`,
     scan.problems.length && `${scan.problems.length} unreadable`,
@@ -419,6 +421,9 @@ function ScanSummary({ scan, onDismiss }: { scan: ScanReport; onDismiss: () => v
             <ul className="mt-2 flex max-h-60 flex-col gap-1 overflow-y-auto text-xs">
               {scan.added.map((name, index) => (
                 <li key={`added-${index}`}>Added {name}</li>
+              ))}
+              {scan.removed.map((name, index) => (
+                <li key={`removed-${index}`}>Removed {name}, whose folder is gone</li>
               ))}
               {scan.duplicates.map((item) => (
                 <li key={item.folder} className="break-all">

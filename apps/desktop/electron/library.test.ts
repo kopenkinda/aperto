@@ -176,6 +176,19 @@ describe("import and persistence", () => {
 });
 
 describe("games folder discovery", () => {
+  it("takes games whose folders were deleted out of the list", async () => {
+    const shelf = path.join(directory, "shelf");
+    await writeGame(path.join(shelf, "Moon Road"), { gameTitle: "Moon Road" });
+    await writeGame(path.join(shelf, "Ember Hall"), { gameTitle: "Ember Hall" });
+    await store.update((state) => ({ ...state, gamesFolder: shelf }));
+    await library.scanGamesFolder();
+    await rm(path.join(shelf, "Moon Road"), { recursive: true });
+    const report = (await library.scanGamesFolder())!;
+    expect(report.removed).toEqual(["Moon Road"]);
+    const listed = (await library.snapshot()).games.map((game) => game.name);
+    expect(listed).toEqual(["Ember Hall"]);
+    expect((await library.scanGamesFolder())!.removed).toEqual([]);
+  });
   it("adds each game once, ignores copies, and keeps separate versions", async () => {
     const shelf = path.join(directory, "shelf");
     await writeGame(path.join(shelf, "Moon_Road_v1.0.2", "Moon Road"), {
