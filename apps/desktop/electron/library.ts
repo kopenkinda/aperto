@@ -7,6 +7,7 @@ import {
   compareVersions,
   gameKind,
   normalizeTags,
+  sandboxable,
   playCount,
   parseArguments,
   parseFlags,
@@ -21,9 +22,19 @@ import { extractExeIcon } from "./exe-icon";
 import { inspectRoot, readObject } from "./detection";
 import { detectGame, findGames, fingerprint, versionedName, within } from "./discovery";
 import { iconToPng } from "./mac";
+import { renpyLaunch } from "./renpy";
+import { sandboxed, type SandboxAccess } from "./sandbox";
 import { installedTerminals, openInTerminal, terminalFor } from "./terminals";
 import { bottlesDirectory, crossoverWine, listBottles, setRetinaMode } from "./windows";
-import { changePlugins, listPlugins } from "./plugins";
+import {
+  changePlugins,
+  cheatMenuPlugin,
+  listPlugins,
+  originallyHas,
+  pixelFixPlugin,
+  rpgMakerFolder,
+} from "./plugins";
+import { cheatMenu, cheatMenuFiles, pixelFixSource } from "./cheat-menu";
 import { RuntimeManager, getReleases, runtimeExecutable, validVersion } from "./runtimes";
 import { atomicWrite, exists, LibraryStore, message, ownedPath } from "./storage";
 
@@ -144,60 +155,57 @@ export class DesktopLibrary {
       switch (command.action) {
         case "update": {
           const game = this.game(command.id);
-          this.idle(game.id);
-          const name = command.name.trim();
-          if (!name || name.length > 160)
-            throw new Error("Enter a display name between 1 and 160 characters.");
           const kind = gameKind(game);
+          const change: { -readonly [K in keyof Game]?: Game[K] } = {};
+          if (command.name !== undefined) {
+            const name = command.name.trim();
+            if (!name || name.length > 160)
+              throw new Error("Enter a display name between 1 and 160 characters.");
+            change.name = name;
+          }
+          // A renamed game can keep running; launch settings wait until it closes.
+          if (Object.keys(command).some((key) => !["action", "id", "name"].includes(key)))
+            this.idle(game.id);
           // Mac and Windows games take plain arguments; only NW.js has runtimes and switch rules.
-          const native = kind !== "nwjs";
-          if (
-            !native &&
-            command.runtime &&
-            !this.store.value.runtimes.some((runtime) => runtime.version === command.runtime)
-          )
-            throw new Error("Install this runtime before assigning it.");
-          const flags = native ? parseArguments(command.flags) : parseFlags(command.flags);
-          if (
-            !native &&
-            game.runtime &&
-            command.runtime &&
-            compareVersions(command.runtime, game.runtime) < 0
-          ) {
-            const data = ownedPath(this.store.directory, "browser-data", game.id);
-            if (await exists(data)) {
-              const backup = path.join(
-                ownedPath(this.store.directory, "browser-data-backups", game.id),
-                randomUUID(),
-              );
-              await cp(data, backup, {
-                recursive: true,
-                dereference: false,
-                errorOnExist: true,
-                force: false,
-              });
+          if (command.flags !== undefined)
+            change.flags =
+              kind === "nwjs" ? parseFlags(command.flags) : parseArguments(command.flags);
+          if (command.sandbox !== undefined) {
+            if (!sandboxable(game)) throw new Error("Aperto cannot sandbox this kind of game.");
+            change.sandbox = command.sandbox;
+          }
+          if (command.bottle !== undefined || command.highResolution !== undefined) {
+            if (kind !== "windows") throw new Error("Only Windows games run in a bottle.");
+            if (command.bottle !== undefined) change.bottle = command.bottle;
+            if (command.highResolution !== undefined)
+              change.highResolution = command.highResolution;
+          }
+          const runtime = command.runtime;
+          if (runtime !== undefined) {
+            if (kind !== "nwjs") throw new Error("Only NW.js games use a runtime.");
+            if (runtime && !this.store.value.runtimes.some((item) => item.version === runtime))
+              throw new Error("Install this runtime before assigning it.");
+            if (game.runtime && runtime && compareVersions(runtime, game.runtime) < 0) {
+              const data = ownedPath(this.store.directory, "browser-data", game.id);
+              if (await exists(data)) {
+                const backup = path.join(
+                  ownedPath(this.store.directory, "browser-data-backups", game.id),
+                  randomUUID(),
+                );
+                await cp(data, backup, {
+                  recursive: true,
+                  dereference: false,
+                  errorOnExist: true,
+                  force: false,
+                });
+              }
             }
+            change.runtime = runtime;
           }
           await this.changeGame(game.id, (current) => {
-            if (native)
-              return {
-                ...current,
-                name,
-                bottle: kind === "windows" ? command.bottle : null,
-                highResolution: kind === "windows" && command.highResolution,
-                flags,
-              };
-            if (
-              command.runtime &&
-              !this.store.value.runtimes.some((runtime) => runtime.version === command.runtime)
-            )
+            if (runtime && !this.store.value.runtimes.some((item) => item.version === runtime))
               throw new Error("The selected runtime was removed. Choose another version.");
-            return {
-              ...current,
-              name,
-              runtime: command.runtime,
-              flags,
-            };
+            return { ...current, ...change };
           });
           break;
         }
@@ -292,7 +300,7 @@ export class DesktopLibrary {
           const candidate = await detectGame(folder);
           if (!candidate || candidate.kind !== gameKind(game))
             throw new Error(
-              `No ${{ nwjs: "NW.js game", windows: "Windows game", mac: "Mac app" }[gameKind(game)]} was found there.`,
+              `No ${{ nwjs: "NW.js game", windows: "Windows game", mac: "Mac app", renpy: "Ren'Py game" }[gameKind(game)]} was found there.`,
             );
           if (
             this.store.value.games.some(
@@ -321,6 +329,30 @@ export class DesktopLibrary {
         case "restorePlugins":
           this.idle(command.id);
           return await changePlugins(this.store, this.game(command.id), command.hash, "restore");
+        case "setCheatMenu": {
+          const game = this.game(command.id);
+          this.idle(game.id);
+          const folder = await rpgMakerFolder(game);
+          if (!folder) throw new Error("The cheat menu works in RPG Maker MV and MZ games only.");
+          const plugins = path.join(folder, "js", "plugins");
+          if (command.enabled)
+            for (const [name, data] of await cheatMenu(this.store.directory))
+              await atomicWrite(path.join(plugins, name), data, 0o644);
+          const list = await changePlugins(this.store, game, command.hash, {
+            plugin: cheatMenuPlugin,
+            enabled: command.enabled,
+          });
+          // Files the game shipped with itself stay.
+          if (!command.enabled && !(await originallyHas(this.store, game, cheatMenuPlugin)))
+            for (const name of cheatMenuFiles) await rm(path.join(plugins, name), { force: true });
+          return list;
+        }
+        case "setPixelFix": {
+          const game = this.game(command.id);
+          this.idle(game.id);
+          await this.changeGame(game.id, (current) => ({ ...current, pixelFix: command.enabled }));
+          return await this.applyPixelFix(this.game(game.id));
+        }
         case "removeRuntime": {
           const version = validVersion(command.version);
           if (this.runtimes.downloads.has(version))
@@ -666,6 +698,27 @@ export class DesktopLibrary {
     }
   }
 
+  /**
+   * Adds or removes the getPixel fix so the game's plugin list matches its setting. A list
+   * changed outside Aperto is left alone, as plugin edits are.
+   */
+  private async applyPixelFix(game: Game) {
+    const list = await listPlugins(this.store, game);
+    if (!list || list.conflict) return list;
+    const wanted = game.pixelFix !== false;
+    if (wanted === list.plugins.some((plugin) => plugin.name === pixelFixPlugin && plugin.enabled))
+      return list;
+    const file = path.join((await rpgMakerFolder(game))!, "js", "plugins", `${pixelFixPlugin}.js`);
+    if (wanted) await atomicWrite(file, pixelFixSource, 0o644);
+    const next = await changePlugins(this.store, game, list.hash, {
+      plugin: pixelFixPlugin,
+      enabled: wanted,
+    });
+    if (!wanted && !(await originallyHas(this.store, game, pixelFixPlugin)))
+      await rm(file, { force: true });
+    return next;
+  }
+
   private bottleFor(game: Game) {
     const bottle = game.bottle ?? this.store.value.defaultBottle;
     if (!bottle) throw new Error("Choose a CrossOver bottle in Settings to run Windows games.");
@@ -686,6 +739,28 @@ export class DesktopLibrary {
         game.executable,
         ...(game.flags.length ? ["--args", ...game.flags] : []),
       ]);
+    }
+    if (gameKind(game) === "renpy") {
+      if (!game.executable || !(await exists(game.executable)))
+        throw new Error("The game's launcher script is missing. Locate the game folder again.");
+      // Ren'Py keeps saves here as well as in the game folder, as native Mac builds do.
+      const saves = path.join(homedir(), "Library", "RenPy");
+      await mkdir(saves, { recursive: true });
+      const renpy = await renpyLaunch(
+        this.store.directory,
+        game.root,
+        game.executable,
+        AbortSignal.timeout(10 * 60_000),
+      );
+      return this.start(
+        game,
+        renpy.runtime,
+        renpy.executable,
+        [...renpy.args, ...game.flags],
+        game.sandbox === false
+          ? null
+          : { run: [renpy.folder], read: [saves], write: [game.folder, saves] },
+      );
     }
     if (gameKind(game) === "windows") {
       if (!(await exists(crossoverWine)))
@@ -734,20 +809,42 @@ export class DesktopLibrary {
       );
     }
     if (!game.runtime) throw new Error("Install and assign an NW.js runtime first.");
+    // A game whose plugin list cannot be edited still starts, just without the fix.
+    await this.applyPixelFix(game).catch((error) =>
+      console.error("Could not apply the getPixel fix:", error),
+    );
     const executable = runtimeExecutable(this.store.directory, game.runtime);
     if (!(await exists(executable)))
       throw new Error("The assigned runtime is missing. Reinstall it before launching.");
     const data = ownedPath(this.store.directory, "browser-data", game.id);
     await mkdir(data, { recursive: true });
-    return this.start(game, game.runtime, executable, [
-      `--user-data-dir=${data}`,
-      ...game.flags,
-      game.root,
-    ]);
+    return this.start(
+      game,
+      game.runtime,
+      executable,
+      [`--user-data-dir=${data}`, ...game.flags, game.root],
+      game.sandbox === false
+        ? null
+        : {
+            run: [path.resolve(executable, "..", "..", "..")],
+            read: [],
+            write: [game.folder, data],
+          },
+    );
   }
 
   /** Spawns a game process and records the session until it exits. */
-  private async start(game: Game, runtime: string, executable: string, args: string[]) {
+  private async start(
+    game: Game,
+    runtime: string,
+    executable: string,
+    args: string[],
+    sandbox: SandboxAccess | null = null,
+  ) {
+    // The history keeps the game's own arguments; the sandbox wrapper only adds its rules.
+    const [command, commandArgs] = sandbox
+      ? await sandboxed(executable, args, sandbox)
+      : [executable, args];
     const id = randomUUID();
     const startedAt = new Date().toISOString();
     await this.store.update((state) => ({
@@ -759,6 +856,7 @@ export class DesktopLibrary {
           runtime,
           startedAt,
           flags: args,
+          sandboxed: sandbox !== null,
           endedAt: null,
           outcome: "running" as const,
           detail: "",
@@ -771,7 +869,7 @@ export class DesktopLibrary {
     delete env.NW_PRE_ARGS;
     delete env.NODE_OPTIONS;
     delete env.NODE_PATH;
-    const child = spawn(executable, args, {
+    const child = spawn(command, commandArgs, {
       cwd: game.root,
       env,
       stdio: ["ignore", "pipe", "pipe"],

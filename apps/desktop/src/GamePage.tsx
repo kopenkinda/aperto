@@ -54,8 +54,11 @@ import {
   compareVersions,
   gameKind,
   launchOptions,
+  managedPlugins,
+  sandboxable,
   playCount,
   tagCounts,
+  type Command,
   type Engine,
   type Game,
   type Launch,
@@ -114,7 +117,7 @@ export function bottleOf(game: Game, snapshot: Snapshot) {
 export function playable(game: Game, snapshot: Snapshot) {
   if (snapshot.missing.includes(game.id)) return false;
   const kind = gameKind(game);
-  if (kind === "mac") return true;
+  if (kind === "mac" || kind === "renpy") return true;
   return kind === "windows"
     ? snapshot.bottles !== null && bottleOf(game, snapshot) !== null
     : game.runtime !== null;
@@ -170,20 +173,37 @@ export function GamePage({
   const windows = kind === "windows";
   const nwjs = kind === "nwjs";
   const [name, setName] = useState(game.name);
-  // Tags save on every change. Saves run one after another, since the library rejects a second
-  // change to a game while one is in progress, and the field shows the latest list meanwhile.
+  // Settings other than the name save on every change. Saves run one after another, since the
+  // library rejects a second change to a game while one is in progress, and each control shows
+  // its new value meanwhile. A failed save puts the saved value back.
+  const saves = useRef<Promise<unknown>>(Promise.resolve());
+  const queue = (work: () => Promise<unknown>) =>
+    (saves.current = saves.current.then(() => run(work)));
+  const save = (settings: Omit<Extract<Command, { action: "update" }>, "action" | "id">) =>
+    queue(() => request({ action: "update", id: game.id, ...settings }));
   const [tags, setTags] = useState(game.tags);
-  const tagSaves = useRef<Promise<unknown>>(Promise.resolve());
   const changeTags = (next: string[]) => {
     setTags(next);
-    tagSaves.current = tagSaves.current.then(() =>
-      run(() => request({ action: "setTags", id: game.id, tags: next })),
-    );
+    void queue(() => request({ action: "setTags", id: game.id, tags: next }));
   };
-  const [flags, setFlags] = useState(game.flags.join("\n"));
+  const savedFlags = game.flags.join("\n");
+  const [flags, setFlags] = useState(savedFlags);
+  const saveFlags = (next: string) => {
+    setFlags(next);
+    if (next !== savedFlags) void save({ flags: next });
+  };
   const [runtime, setRuntime] = useState(game.runtime);
   const [bottle, setBottle] = useState(game.bottle ?? null);
   const [highResolution, setHighResolution] = useState(!!game.highResolution);
+  const [sandbox, setSandbox] = useState(game.sandbox !== false);
+  const [pixelFix, setPixelFix] = useState(game.pixelFix !== false);
+  // Shown after choosing an older runtime, which backs up the game's browser data first.
+  const [downgraded, setDowngraded] = useState(false);
+  const changeRuntime = (next: string | null) => {
+    setDowngraded(!!game.runtime && !!next && compareVersions(next, game.runtime) < 0);
+    setRuntime(next);
+    void save({ runtime: next }).then((result) => result === undefined && setRuntime(game.runtime));
+  };
   // Undefined while loading; null when the game is not an RPG Maker export and has no plugin list.
   const [plugins, setPlugins] = useState<PluginList | null | undefined>(undefined);
   const [pluginError, setPluginError] = useState<string | null>(null);
@@ -199,14 +219,15 @@ export function GamePage({
   const running = snapshot.running.includes(game.id);
   // Keeps each plugin's position in the game's list, which toggling refers to.
   const pluginQuery = pluginSearch.trim().toLowerCase();
-  const shownPlugins = (plugins?.plugins ?? [])
+  const gamePlugins = (plugins?.plugins ?? [])
     .map((plugin, index) => ({ plugin, index }))
-    .filter(
-      ({ plugin }) =>
-        !pluginQuery ||
-        plugin.name.toLowerCase().includes(pluginQuery) ||
-        plugin.description.toLowerCase().includes(pluginQuery),
-    );
+    .filter(({ plugin }) => !managedPlugins.includes(plugin.name));
+  const shownPlugins = gamePlugins.filter(
+    ({ plugin }) =>
+      !pluginQuery ||
+      plugin.name.toLowerCase().includes(pluginQuery) ||
+      plugin.description.toLowerCase().includes(pluginQuery),
+  );
   const missing = snapshot.missing.includes(game.id);
   const launches = snapshot.launches.filter((launch) => launch.gameId === game.id);
   const runtimes = [...snapshot.runtimes].sort((a, b) => compareVersions(b.version, a.version));
@@ -217,20 +238,7 @@ export function GamePage({
   const terminal =
     snapshot.terminals.find((item) => item.id === snapshot.terminal) ?? snapshot.terminals[0];
   const knownTags = tagCounts(snapshot.games).map(([tag]) => tag);
-  const dirty =
-    name !== game.name ||
-    flags !== game.flags.join("\n") ||
-    runtime !== game.runtime ||
-    bottle !== (game.bottle ?? null) ||
-    highResolution !== !!game.highResolution;
-  const downgrading = game.runtime && runtime && compareVersions(runtime, game.runtime) < 0;
-  const revert = () => {
-    setName(game.name);
-    setFlags(game.flags.join("\n"));
-    setRuntime(game.runtime);
-    setBottle(game.bottle ?? null);
-    setHighResolution(!!game.highResolution);
-  };
+  const renamed = name.trim() !== game.name;
 
   useEffect(() => {
     setEngine(null);
@@ -246,9 +254,9 @@ export function GamePage({
     };
   }, [game.id, nwjs]);
 
+  // Launching can add the getPixel fix, so the list is read again when the game closes.
   useEffect(() => {
-    setPluginSearch("");
-    if (!nwjs) return;
+    if (!nwjs || running) return;
     let active = true;
     request({ action: "plugins", id: game.id }).then(
       (list) => active && setPlugins(list),
@@ -258,7 +266,7 @@ export function GamePage({
     return () => {
       active = false;
     };
-  }, [game.id, nwjs]);
+  }, [game.id, nwjs, running]);
 
   return (
     <div className="flex flex-col">
@@ -379,11 +387,14 @@ export function GamePage({
           <Fact label="Runs with">
             {kind === "mac"
               ? "macOS"
-              : windows
-                ? `CrossOver${activeBottle ? ` · ${activeBottle}` : ""}`
-                : game.runtime
-                  ? `NW.js ${game.runtime}`
-                  : "No runtime"}
+              : kind === "renpy"
+                ? (launches.find((launch) => launch.runtime.startsWith("Ren'Py"))?.runtime ??
+                  "Ren'Py")
+                : windows
+                  ? `CrossOver${activeBottle ? ` · ${activeBottle}` : ""}`
+                  : game.runtime
+                    ? `NW.js ${game.runtime}`
+                    : "No runtime"}
           </Fact>
         </dl>
         <div className="ml-auto flex gap-2">
@@ -480,10 +491,12 @@ export function GamePage({
                 <AlertTitle>The last launch failed</AlertTitle>
                 <AlertDescription>
                   {launches[0].detail} Check Activity for the log.
+                  {launches[0].sandboxed &&
+                    " If the game needs internet or saves outside its folder, turn off Protection."}
                   {!nwjs ? null : fallback ? (
                     <button
                       className="underline underline-offset-3"
-                      onClick={() => setRuntime(fallback.version)}
+                      onClick={() => changeRuntime(fallback.version)}
                     >
                       Try NW.js {fallback.version}
                     </button>
@@ -498,33 +511,41 @@ export function GamePage({
           </div>
 
           <section className="flex flex-col gap-3">
-            <h2 className="font-medium">Settings</h2>
-            <form
-              className="divide-y rounded-lg border bg-card/40"
-              onSubmit={(event) => {
-                event.preventDefault();
-                void run(async () => {
-                  await request({
-                    action: "update",
-                    id: game.id,
-                    name,
-                    runtime,
-                    bottle,
-                    highResolution,
-                    flags,
-                  });
-                  setName(name.trim());
-                });
-              }}
-            >
+            <h2 className="flex items-baseline justify-between font-medium">
+              Settings
+              {running && (
+                <span className="text-xs font-normal text-muted-foreground">
+                  Close the game to change how it launches.
+                </span>
+              )}
+            </h2>
+            <div className="divide-y rounded-lg border bg-card/40">
               <Field label="Name" htmlFor="game-name">
-                <Input
-                  id="game-name"
-                  required
-                  maxLength={160}
-                  value={name}
-                  onChange={(event) => setName(event.target.value)}
-                />
+                <form
+                  className="flex gap-2"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    if (renamed)
+                      void queue(async () => {
+                        await request({ action: "update", id: game.id, name });
+                        setName(name.trim());
+                      });
+                  }}
+                >
+                  <Input
+                    id="game-name"
+                    required
+                    maxLength={160}
+                    value={name}
+                    onChange={(event) => setName(event.target.value)}
+                    onKeyDown={(event) => event.key === "Escape" && setName(game.name)}
+                  />
+                  {renamed && (
+                    <Button type="submit" disabled={busy}>
+                      Save
+                    </Button>
+                  )}
+                </form>
               </Field>
               <Field label="Tags" htmlFor="game-tags" hint="Saved as you edit them.">
                 <TagEditor id="game-tags" tags={tags} known={knownTags} onChange={changeTags} />
@@ -539,7 +560,13 @@ export function GamePage({
                     <Select
                       value={bottle}
                       disabled={running || snapshot.bottles === null}
-                      onValueChange={(value) => setBottle(value as string | null)}
+                      onValueChange={(value) => {
+                        const next = value as string | null;
+                        setBottle(next);
+                        void save({ bottle: next }).then(
+                          (result) => result === undefined && setBottle(game.bottle ?? null),
+                        );
+                      }}
                       items={[
                         {
                           value: null,
@@ -576,7 +603,14 @@ export function GamePage({
                       <Switch
                         id="game-high-resolution"
                         checked={highResolution}
-                        onCheckedChange={setHighResolution}
+                        disabled={running}
+                        onCheckedChange={(on) => {
+                          setHighResolution(on);
+                          void save({ highResolution: on }).then(
+                            (result) =>
+                              result === undefined && setHighResolution(!!game.highResolution),
+                          );
+                        }}
                       />
                     </div>
                   </Field>
@@ -585,14 +619,14 @@ export function GamePage({
                 <Field
                   label="NW.js runtime"
                   hint={
-                    downgrading &&
-                    "Saving backs up this game's browser data first. Saves may not load in an older runtime."
+                    downgraded &&
+                    "Aperto backed up this game's browser data first. Saves may not load in an older runtime."
                   }
                 >
                   <Select
                     value={runtime}
                     disabled={running}
-                    onValueChange={(value) => setRuntime(value as string | null)}
+                    onValueChange={(value) => changeRuntime(value as string | null)}
                     items={[
                       { value: null, label: "None" },
                       ...runtimes.map((item) => ({
@@ -613,11 +647,40 @@ export function GamePage({
                     </SelectContent>
                   </Select>
                 </Field>
+              ) : kind === "renpy" ? (
+                <Field label="Runs with">
+                  <p className="flex min-h-8 items-center text-muted-foreground">
+                    The game's own Mac build if it has one, otherwise the Ren'Py release it was made
+                    with, downloaded from renpy.org the first time.
+                  </p>
+                </Field>
               ) : (
                 <Field label="Opens with">
                   <p className="flex min-h-8 items-center text-muted-foreground">
                     macOS, like double-clicking the app in Finder.
                   </p>
+                </Field>
+              )}
+
+              {sandboxable(game) && (
+                <Field
+                  label="Protection"
+                  htmlFor="game-sandbox"
+                  hint="Runs the game in a macOS sandbox: no internet, no other programs, and no access to your personal files. It can only save inside its own folder. Turn this off if the game needs to go online or save elsewhere."
+                >
+                  <div className="flex min-h-8 items-center">
+                    <Switch
+                      id="game-sandbox"
+                      checked={sandbox}
+                      disabled={running}
+                      onCheckedChange={(on) => {
+                        setSandbox(on);
+                        void save({ sandbox: on }).then(
+                          (result) => result === undefined && setSandbox(game.sandbox !== false),
+                        );
+                      }}
+                    />
+                  </div>
                 </Field>
               )}
 
@@ -640,16 +703,18 @@ export function GamePage({
                         <Switch
                           id={id}
                           checked={choice !== 0}
+                          disabled={running}
                           onCheckedChange={(on) =>
-                            setFlags(chooseOption(option, flags, on ? 1 : 0))
+                            saveFlags(chooseOption(option, flags, on ? 1 : 0))
                           }
                         />
                       </div>
                     ) : (
                       <Select
                         value={choice === null ? "custom" : String(choice)}
+                        disabled={running}
                         onValueChange={(value) =>
-                          setFlags(chooseOption(option, flags, Number(value)))
+                          saveFlags(chooseOption(option, flags, Number(value)))
                         }
                         items={[
                           ...option.choices.map((item, index) => ({
@@ -696,36 +761,22 @@ export function GamePage({
                   placeholder={nwjs ? "--force-device-scale-factor=1" : "-screen-width\n1920"}
                   className="min-h-20 font-mono text-xs"
                   value={flags}
+                  disabled={running}
                   onChange={(event) => setFlags(event.target.value)}
+                  onBlur={() => saveFlags(flags)}
                 />
               </Field>
-
-              <div className="flex items-center justify-end gap-2 px-4 py-3">
-                {running && (
-                  <p className="mr-auto text-xs text-muted-foreground">
-                    Close the game to save changes.
-                  </p>
-                )}
-                {dirty && (
-                  <Button type="button" variant="ghost" onClick={revert}>
-                    Revert
-                  </Button>
-                )}
-                <Button type="submit" disabled={busy || running || !dirty}>
-                  Save changes
-                </Button>
-              </div>
-            </form>
+            </div>
           </section>
 
           {nwjs && plugins !== null && (
             <section className="flex flex-col gap-3">
               <h2 className="flex items-baseline justify-between font-medium">
                 Plugins
-                {plugins && plugins.plugins.length > 0 && (
+                {gamePlugins.length > 0 && (
                   <span className="text-xs font-normal text-muted-foreground">
-                    {plugins.plugins.filter((plugin) => plugin.enabled).length} of{" "}
-                    {plugins.plugins.length} on
+                    {gamePlugins.filter(({ plugin }) => plugin.enabled).length} of{" "}
+                    {gamePlugins.length} on
                   </span>
                 )}
               </h2>
@@ -748,10 +799,67 @@ export function GamePage({
               {plugins === undefined && !pluginError && (
                 <p className="text-muted-foreground">Reading plugins…</p>
               )}
-              {plugins && !plugins.plugins.length && (
+              {plugins && (
+                <div className="divide-y rounded-lg border bg-card/40">
+                  <Field
+                    label="Cheat menu"
+                    htmlFor="game-cheat-menu"
+                    hint="Press 1 in the game to open it. Aperto downloads emerladCoder's RPG Maker Cheat Menu the first time."
+                  >
+                    <div className="flex min-h-8 items-center">
+                      <Switch
+                        id="game-cheat-menu"
+                        checked={plugins.cheatMenu}
+                        disabled={busy || running || plugins.conflict}
+                        onCheckedChange={(enabled) =>
+                          void queue(async () =>
+                            setPlugins(
+                              await request({
+                                action: "setCheatMenu",
+                                id: game.id,
+                                hash: plugins.hash,
+                                enabled,
+                              }),
+                            ),
+                          )
+                        }
+                      />
+                    </div>
+                  </Field>
+                  <Field
+                    label="getPixel fix"
+                    htmlFor="game-pixel-fix"
+                    hint="Prevents a crash in some games that read a pixel at an invalid position in newer NW.js. Added when the game launches."
+                  >
+                    <div className="flex min-h-8 items-center">
+                      <Switch
+                        id="game-pixel-fix"
+                        checked={pixelFix}
+                        disabled={running || plugins.conflict}
+                        onCheckedChange={(enabled) => {
+                          setPixelFix(enabled);
+                          void queue(async () => {
+                            const list = await request({
+                              action: "setPixelFix",
+                              id: game.id,
+                              enabled,
+                            });
+                            if (list) setPlugins(list);
+                            return true;
+                          }).then(
+                            (result) =>
+                              result === undefined && setPixelFix(game.pixelFix !== false),
+                          );
+                        }}
+                      />
+                    </div>
+                  </Field>
+                </div>
+              )}
+              {plugins && !gamePlugins.length && (
                 <p className="text-muted-foreground">This game has no plugins.</p>
               )}
-              {plugins && plugins.plugins.length > 0 && (
+              {gamePlugins.length > 0 && (
                 <div className="relative">
                   <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
                   <Input
@@ -763,7 +871,7 @@ export function GamePage({
                   />
                 </div>
               )}
-              {plugins && plugins.plugins.length > 0 && !shownPlugins.length && (
+              {gamePlugins.length > 0 && !shownPlugins.length && (
                 <p className="text-muted-foreground">No plugins match “{pluginSearch.trim()}”.</p>
               )}
               {shownPlugins.length > 0 && plugins && (

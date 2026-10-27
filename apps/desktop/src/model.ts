@@ -22,15 +22,22 @@ export const GameSchema = Schema.Struct({
   plays: Schema.optionalKey(Schema.Int),
   removed: Schema.Boolean,
   // Windows games run through CrossOver; Mac games are app bundles. Older libraries omit these.
-  kind: Schema.optionalKey(Schema.Literals(["nwjs", "windows", "mac"])),
+  kind: Schema.optionalKey(Schema.Literals(["nwjs", "windows", "mac", "renpy"])),
   executable: Schema.optionalKey(Schema.NullOr(Schema.String)),
   /** CrossOver bottle for this game; unset uses the library's default bottle. */
   bottle: Schema.optionalKey(Schema.NullOr(Schema.String)),
   /** Runs a Windows game in CrossOver's high resolution (Retina) mode. */
   highResolution: Schema.optionalKey(Schema.Boolean),
+  /** Adds Aperto's getPixel fix to an RPG Maker game at launch. Unset means on. */
+  pixelFix: Schema.optionalKey(Schema.Boolean),
+  /** Runs the game in Aperto's macOS sandbox. Unset means on; only `false` turns it off. */
+  sandbox: Schema.optionalKey(Schema.Boolean),
 });
 export type Game = typeof GameSchema.Type;
 export const gameKind = (game: Pick<Game, "kind">) => game.kind ?? "nwjs";
+/** Games Aperto starts itself can run in its sandbox; Mac apps open through macOS, Windows games through CrossOver. */
+export const sandboxable = (game: Pick<Game, "kind">) =>
+  gameKind(game) === "nwjs" || gameKind(game) === "renpy";
 export const RuntimeSchema = Schema.Struct({
   version: Schema.String,
   installedAt: Schema.String,
@@ -43,6 +50,8 @@ export const LaunchSchema = Schema.Struct({
   runtime: Schema.String,
   startedAt: Schema.String,
   flags: Schema.Array(Schema.String),
+  /** Ran in Aperto's sandbox. Older launches omit it. */
+  sandboxed: Schema.optionalKey(Schema.Boolean),
   endedAt: Schema.NullOr(Schema.String),
   outcome: Schema.Literals(["running", "ended", "failed", "stopped", "interrupted"]),
   detail: Schema.String,
@@ -80,8 +89,11 @@ export type Snapshot = Library & {
   terminals: { id: string; name: string }[];
 };
 export type Candidate = {
-  kind: "nwjs" | "windows" | "mac";
-  /** The Windows .exe or the Mac .app; null for NW.js games, which launch their root. */
+  kind: "nwjs" | "windows" | "mac" | "renpy";
+  /**
+   * The Windows .exe, the Mac .app, or a Ren'Py game's launcher script; null for NW.js games,
+   * which launch their root.
+   */
   executable: string | null;
   folder: string;
   root: string;
@@ -106,7 +118,11 @@ export type PluginList = {
   plugins: Plugin[];
   canRestore: boolean;
   conflict: boolean;
+  /** The cheat menu plugin is in the list and on. */
+  cheatMenu: boolean;
 };
+/** Plugins Aperto adds for its own switches; the plugin list leaves them out. */
+export const managedPlugins = ["Aperto_PixelFix", "Cheat_Menu"];
 export type Release = { version: string; chromium: string; node: string };
 
 const id = { id: Schema.String };
@@ -124,11 +140,13 @@ export const CommandSchema = Schema.Union([
   Schema.Struct({
     action: Schema.Literal("update"),
     ...id,
-    name: Schema.String,
-    runtime: Schema.NullOr(Schema.String),
-    bottle: Schema.NullOr(Schema.String),
-    highResolution: Schema.Boolean,
-    flags: Schema.String,
+    // Each setting saves on its own, so only the fields being changed are sent.
+    name: Schema.optionalKey(Schema.String),
+    runtime: Schema.optionalKey(Schema.NullOr(Schema.String)),
+    bottle: Schema.optionalKey(Schema.NullOr(Schema.String)),
+    highResolution: Schema.optionalKey(Schema.Boolean),
+    flags: Schema.optionalKey(Schema.String),
+    sandbox: Schema.optionalKey(Schema.Boolean),
   }),
   Schema.Struct({
     action: Schema.Literal("artwork"),
@@ -163,6 +181,13 @@ export const CommandSchema = Schema.Union([
     enabled: Schema.Boolean,
   }),
   Schema.Struct({ action: Schema.Literal("restorePlugins"), ...id, hash: Schema.String }),
+  Schema.Struct({
+    action: Schema.Literal("setCheatMenu"),
+    ...id,
+    hash: Schema.String,
+    enabled: Schema.Boolean,
+  }),
+  Schema.Struct({ action: Schema.Literal("setPixelFix"), ...id, enabled: Schema.Boolean }),
   Schema.Struct({ action: Schema.Literal("releases") }),
   Schema.Struct({ action: Schema.Literal("installRuntime"), version: Schema.String }),
   Schema.Struct({ action: Schema.Literal("cancelDownload"), version: Schema.String }),
@@ -176,15 +201,17 @@ export const CommandSchema = Schema.Union([
 export type Command = typeof CommandSchema.Type;
 export type ResultFor<C extends Command> = C["action"] extends "plugins"
   ? PluginList | null
-  : C["action"] extends "togglePlugin" | "restorePlugins"
+  : C["action"] extends "togglePlugin" | "restorePlugins" | "setCheatMenu"
     ? PluginList
-    : C["action"] extends "releases"
-      ? Release[]
-      : C["action"] extends "folderToTrash"
-        ? string
-        : C["action"] extends "engine"
-          ? Engine | null
-          : Snapshot;
+    : C["action"] extends "setPixelFix"
+      ? PluginList | null
+      : C["action"] extends "releases"
+        ? Release[]
+        : C["action"] extends "folderToTrash"
+          ? string
+          : C["action"] extends "engine"
+            ? Engine | null
+            : Snapshot;
 export interface DesktopApi {
   request<C extends Command>(command: C): Promise<ResultFor<C>>;
   onChange(listener: () => void): () => void;
@@ -267,7 +294,12 @@ export function sortGames(
   });
 }
 
-export const kindFilters = { nwjs: "NW.js", windows: "Windows", mac: "Mac" } as const;
+export const kindFilters = {
+  nwjs: "NW.js",
+  renpy: "Ren'Py",
+  windows: "Windows",
+  mac: "Mac",
+} as const;
 export const statusFilters = {
   favorite: "Favorites",
   running: "Running",

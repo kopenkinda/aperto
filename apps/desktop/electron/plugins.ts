@@ -2,8 +2,11 @@ import { lstat, readFile, realpath } from "node:fs/promises";
 import path from "node:path";
 import { Schema } from "effect";
 import type { Game, PluginList } from "../src/model";
+import type { BackupSchema } from "../src/model";
 import { localFile } from "./detection";
 import { atomicWrite, digest, exists, LibraryStore, ownedPath } from "./storage";
+
+type Backup = typeof BackupSchema.Type;
 
 const PluginsSchema = Schema.Array(
   Schema.Struct({
@@ -34,7 +37,7 @@ export function parsePlugins(source: string) {
  * The folder holding an RPG Maker MV/MZ export's js folder, the only kind with editable plugins,
  * or null for other games. Windows deployments keep the export in www next to package.json.
  */
-async function rpgMakerFolder(game: Game) {
+export async function rpgMakerFolder(game: Game) {
   for (const folder of [game.root, path.join(game.root, "www")]) {
     if (
       (await exists(path.join(folder, "js", "rpg_core.js"))) ||
@@ -77,6 +80,9 @@ export async function listPlugins(store: LibraryStore, game: Game): Promise<Plug
   return {
     hash: configuration.hash,
     conflict,
+    cheatMenu: configuration.plugins.some(
+      (plugin) => plugin.name === cheatMenuPlugin && plugin.status,
+    ),
     canRestore: Boolean(backup && !conflict && configuration.hash !== backup.original),
     plugins: await Promise.all(
       configuration.plugins.map(async (plugin) => ({
@@ -94,11 +100,59 @@ export async function listPlugins(store: LibraryStore, game: Game): Promise<Plug
   };
 }
 
+/** Plugins Aperto adds itself, shown as switches instead of in the game's list. */
+export type ManagedPlugin = typeof pixelFixPlugin | typeof cheatMenuPlugin;
+export const pixelFixPlugin = "Aperto_PixelFix";
+export const cheatMenuPlugin = "Cheat_Menu";
+
+/**
+ * Keeps the game's original plugin list before Aperto first changes it. Returns the backup record,
+ * which `changePlugins` stores together with the write.
+ */
+async function firstBackup(
+  store: LibraryStore,
+  game: Game,
+  configuration: { hash: string; source: string },
+  backupFile: string,
+  backup: Backup | undefined,
+): Promise<Backup> {
+  if (backup) return backup;
+  if (await exists(backupFile)) {
+    if (digest(await readFile(backupFile)) !== configuration.hash)
+      throw new Error(
+        "An older plugin backup already exists. Resolve it before editing this game.",
+      );
+  } else {
+    await atomicWrite(backupFile, configuration.source);
+  }
+  return {
+    gameId: game.id,
+    original: configuration.hash,
+    lastWritten: configuration.hash,
+    pending: null,
+  };
+}
+
+/** Whether the game's original plugin list, from before Aperto changed it, has this plugin. */
+export async function originallyHas(store: LibraryStore, game: Game, name: string) {
+  const backup = path.join(ownedPath(store.directory, "plugin-backups", game.id), "original.js");
+  const source = await readFile(backup, "utf8").catch(() => null);
+  if (source === null) return (await readConfiguration(game)).plugins.some((p) => p.name === name);
+  try {
+    return parsePlugins(source).plugins.some((plugin) => plugin.name === name);
+  } catch {
+    return true;
+  }
+}
+
 export async function changePlugins(
   store: LibraryStore,
   game: Game,
   expectedHash: string,
-  change: { index: number; enabled: boolean } | "restore",
+  change:
+    | { index: number; enabled: boolean }
+    | { plugin: ManagedPlugin; enabled: boolean }
+    | "restore",
 ) {
   const configuration = await readConfiguration(game);
   if (configuration.hash !== expectedHash)
@@ -122,6 +176,23 @@ export async function changePlugins(
     next = await readFile(backupFile, "utf8");
     if (digest(next) !== backup.original)
       throw new Error("The plugin backup is damaged. The game configuration has not been changed.");
+  } else if ("plugin" in change) {
+    const others = configuration.plugins.filter((plugin) => plugin.name !== change.plugin);
+    const entry = {
+      name: change.plugin,
+      status: true,
+      description: "Added by Aperto",
+      parameters: {},
+    };
+    // The fix goes first, so plugins that replace getPixel later still wrap it; the menu goes
+    // last, as its own install instructions say.
+    const plugins = !change.enabled
+      ? others
+      : change.plugin === pixelFixPlugin
+        ? [entry, ...others]
+        : [...others, entry];
+    next = configuration.prefix + JSON.stringify(plugins, null, 2) + configuration.suffix;
+    backup = await firstBackup(store, game, configuration, backupFile, backup);
   } else {
     const selected = configuration.plugins[change.index];
     if (!selected) throw new Error("That plugin is no longer in the list.");
@@ -130,22 +201,7 @@ export async function changePlugins(
       index === change.index ? { ...plugin, status: change.enabled } : plugin,
     );
     next = configuration.prefix + JSON.stringify(plugins, null, 2) + configuration.suffix;
-    if (!backup) {
-      if (await exists(backupFile)) {
-        if (digest(await readFile(backupFile)) !== configuration.hash)
-          throw new Error(
-            "An older plugin backup already exists. Resolve it before editing this game.",
-          );
-      } else {
-        await atomicWrite(backupFile, configuration.source);
-      }
-      backup = {
-        gameId: game.id,
-        original: configuration.hash,
-        lastWritten: configuration.hash,
-        pending: null,
-      };
-    }
+    backup = await firstBackup(store, game, configuration, backupFile, backup);
   }
   const pending = { ...backup, pending: digest(next) };
   await store.update((state) => ({

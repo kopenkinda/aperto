@@ -112,8 +112,6 @@ export function archiveDigest(manifest: string, filename: string): string {
 }
 
 export async function extractRuntime(zipFile: string, destination: string) {
-  await mkdir(destination, { recursive: true });
-  destination = await realpath(destination);
   const zip = await new Promise<yauzl.ZipFile>((resolve, reject) =>
     yauzl.open(
       zipFile,
@@ -121,6 +119,21 @@ export async function extractRuntime(zipFile: string, destination: string) {
       (error, value) => (error ? reject(error) : resolve(value!)),
     ),
   );
+  await extractZip(zip, destination);
+}
+
+/**
+ * Extracts a zip archive safely: no paths or symlinks outside `destination`, no duplicate names,
+ * and size limits. `select` maps an entry's name to its path in `destination`, or skips it with
+ * null. The archive is closed afterwards.
+ */
+export async function extractZip(
+  zip: yauzl.ZipFile,
+  destination: string,
+  select: (name: string) => string | null = (name) => name,
+) {
+  await mkdir(destination, { recursive: true });
+  destination = await realpath(destination);
   const links: { file: string; target: string }[] = [];
   const names = new Set<string>();
   let total = 0;
@@ -130,10 +143,11 @@ export async function extractRuntime(zipFile: string, destination: string) {
       zip.on("end", resolve);
       zip.on("entry", (entry: yauzl.Entry) => {
         const extract = async () => {
+          const name = select(entry.fileName);
+          if (name === null) return;
           total += entry.uncompressedSize;
           if (total > 3 * 1024 ** 3 || names.size > 100000)
             throw new Error("Runtime archive exceeds extraction limits.");
-          const name = entry.fileName;
           const file = path.resolve(destination, name);
           const normalized = name.replace(/\/$/, "").normalize("NFC").toLowerCase();
           if (!file.startsWith(`${destination}${path.sep}`) || names.has(normalized))

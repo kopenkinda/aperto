@@ -9,6 +9,7 @@ import { versionsIn } from "./discovery";
 import { DesktopLibrary } from "./library";
 import { runtimeExecutable } from "./runtimes";
 import { changePlugins, listPlugins, parsePlugins } from "./plugins";
+import type { PluginList } from "../src/model";
 import { retinaModeIn } from "./windows";
 import { digest, exists, LibraryStore, ownedPath } from "./storage";
 
@@ -112,8 +113,6 @@ describe("import and persistence", () => {
       id: game.id,
       name: game.name,
       runtime: null,
-      bottle: null,
-      highResolution: false,
       flags: "",
     });
     await library.handle({ action: "setTags", id: game.id, tags: ["Adventure", " adventure "] });
@@ -308,16 +307,17 @@ describe("Windows games", () => {
     await library.handle({
       action: "update",
       id: game.id,
-      name: game.name,
-      runtime: null,
       bottle: "Steam",
       highResolution: true,
-      flags: "-screen-fullscreen 0\n-popupwindow",
+      flags: "-screen-fullscreen\n0\n-popupwindow",
     });
+    await expect(library.handle({ action: "update", id: game.id, runtime: null })).rejects.toThrow(
+      "Only NW.js games",
+    );
     expect(store.value.games[0]).toMatchObject({
       bottle: "Steam",
       highResolution: true,
-      flags: ["-screen-fullscreen 0", "-popupwindow"],
+      flags: ["-screen-fullscreen", "0", "-popupwindow"],
     });
   });
 });
@@ -387,6 +387,23 @@ describe("plugin editing", () => {
     expect((await listPlugins(store, game))!.plugins[0]?.enabled).toBe(false);
     await library.handle({ action: "remove", id: game.id, deleteData: false });
     expect((await library.snapshot()).games).toHaveLength(0);
+  });
+  it("adds the getPixel fix first in the list and removes it with its file", async () => {
+    const game = await importGame();
+    const fix = path.join(root, "js", "plugins", "Aperto_PixelFix.js");
+    const list = await library.handle({ action: "setPixelFix", id: game.id, enabled: true });
+    expect((list as PluginList).plugins.map((plugin) => plugin.name)).toEqual([
+      "Aperto_PixelFix",
+      "Lighting",
+      "Weather",
+    ]);
+    expect(await readFile(fix, "utf8")).toContain("Bitmap.prototype.getPixel");
+    await library.handle({ action: "setPixelFix", id: game.id, enabled: false });
+    expect(await readFile(path.join(root, "js", "plugins.js"), "utf8")).not.toContain(
+      "Aperto_PixelFix",
+    );
+    await expect(readFile(fix)).rejects.toThrow();
+    expect(store.value.games[0]?.pixelFix).toBe(false);
   });
   it("changes only the selected state, keeps the first backup, and restores exact original bytes after restart", async () => {
     const game = await importGame();
@@ -465,6 +482,14 @@ describe.runIf(process.platform === "darwin" && process.arch === "arm64")(
       }));
       await writeFile(executable, "#!/bin/sh\nprintf '%s\\n' \"$@\"\nexit 0\n");
       await chmod(executable, 0o755);
+      // Games run sandboxed unless Protection is off. The sandbox only lets the runtime's own
+      // programs start, so this shell script stand-in cannot run inside it.
+      await library.handle({ action: "launch", id: game.id });
+      await expect
+        .poll(() => store.value.launches[0]?.outcome, { timeout: 10_000 })
+        .not.toBe("running");
+      expect(store.value.launches[0]?.sandboxed).toBe(true);
+      await library.handle({ action: "update", id: game.id, sandbox: false });
       await library.handle({ action: "launch", id: game.id });
       await expect.poll(() => store.value.launches[0]?.outcome, { timeout: 10_000 }).toBe("ended");
       expect(store.value.launches[0]?.log).toContain("--user-data-dir=");
@@ -474,7 +499,7 @@ describe.runIf(process.platform === "darwin" && process.arch === "arm64")(
       await expect.poll(() => store.value.launches[0]?.outcome, { timeout: 10_000 }).toBe("failed");
       expect(store.value.launches[0]?.detail).toContain("code 2");
       expect(store.value.games[0]?.runtime).toBe(version);
-    });
+    }, 30_000);
   },
 );
 
