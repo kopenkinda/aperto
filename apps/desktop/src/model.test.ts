@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  compareGameVersions,
+  updateAvailable,
   searchName,
   titleMatches,
   chooseOption,
@@ -174,5 +176,37 @@ describe("metadata matching", () => {
     // The library title's subtitle may name a different game in a series.
     expect(titleMatches("Lunar Mirror - The Pavilion of Desire", "Lunar Mirror")).toBe(false);
     expect(titleMatches("Ark Mobius", "Ark")).toBe(false);
+  });
+});
+
+describe("game versions", () => {
+  it("compares the version-like part of labels", () => {
+    expect(compareGameVersions("v2.3", "2.2")).toBeGreaterThan(0);
+    expect(compareGameVersions("v1.0.10", "1.0.9")).toBeGreaterThan(0);
+    expect(compareGameVersions("1.18c", "1.18b")).toBeGreaterThan(0);
+    expect(compareGameVersions("1.0.1", "1.0")).toBeGreaterThan(0);
+    expect(compareGameVersions("Ch.3 v0.5", "0.5")).toBe(0);
+    expect(compareGameVersions("2026-02-14", "2026.01.31")).toBeGreaterThan(0);
+    expect(compareGameVersions("Final", "1.0")).toBeNull();
+  });
+
+  it("flags an update only when both versions are known and the thread's is newer", () => {
+    const checkedAt = "2026-10-27T00:00:00.000Z";
+    expect(
+      updateAvailable({
+        update: { thread: "1", title: "Game", installed: "2.1", latest: "v2.2", checkedAt },
+      }),
+    ).toBe(true);
+    expect(
+      updateAvailable({
+        update: { thread: "1", title: "Game", installed: "2.2", latest: "v2.2", checkedAt },
+      }),
+    ).toBe(false);
+    expect(
+      updateAvailable({
+        update: { thread: "1", title: "Game", installed: null, latest: "v2.2", checkedAt },
+      }),
+    ).toBe(false);
+    expect(updateAvailable({})).toBe(false);
   });
 });

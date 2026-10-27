@@ -75,6 +75,7 @@ async function searchF95(query: string): Promise<MetadataMatch[]> {
       .filter(Boolean)
       .map((item) => decode(item!))
       .join(" · "),
+    version: thread.version ? decode(thread.version) : null,
     cover: thread.cover || null,
     // Search results link a 400-pixel preview; the same path on the attachments host is the
     // full image, often AVIF, which Aperto converts like other artwork.
@@ -99,10 +100,21 @@ async function searchSteam(query: string): Promise<MetadataMatch[]> {
       id: String(item.id),
       title: item.name,
       detail: "Steam",
+      version: null,
       cover: item.tiny_image ?? null,
       banner: null,
       url: `https://store.steampowered.com/app/${item.id}/`,
     }));
+}
+
+/** One F95zone thread, found again by searching its title; null when the search misses it. */
+export async function findF95Thread(id: string, title: string) {
+  const threads = await searchF95(title);
+  return (
+    threads.find((thread) => thread.id === id) ??
+    (await searchF95(mainTitle(title))).find((thread) => thread.id === id) ??
+    null
+  );
 }
 
 /** Games on F95zone and Steam whose titles match the query, F95zone first. */

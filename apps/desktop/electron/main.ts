@@ -39,6 +39,7 @@ const createWindow = () => {
     if (Date.now() - lastScan < 30_000) return;
     lastScan = Date.now();
     void library?.scanGamesFolder().catch((error) => console.error("Scan failed:", error));
+    library?.checkUpdatesIfStale();
   });
   window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   window.webContents.on("will-navigate", (event) => event.preventDefault());
@@ -101,6 +102,7 @@ else {
           shell.showItemInFolder(file);
         },
         trash: (file) => shell.trashItem(file),
+        openExternal: (url) => void shell.openExternal(url),
       },
       changed,
     );
@@ -112,6 +114,7 @@ else {
     if (!startupError) {
       lastScan = Date.now();
       void library.scanGamesFolder().catch((error) => console.error("Scan failed:", error));
+      library.checkUpdatesIfStale();
     }
     const request = Effect.fn("desktop.request")((input: unknown) =>
       Schema.decodeUnknownEffect(CommandSchema)(input).pipe(

@@ -6,6 +6,7 @@ import {
   ImageIcon,
   PlayIcon,
   RotateCcwIcon,
+  ArrowUpCircleIcon,
   SearchIcon,
   SparklesIcon,
   SquareIcon,
@@ -60,6 +61,7 @@ import {
   launchOptions,
   managedPlugins,
   metadataSites,
+  updateAvailable,
   sandboxable,
   playCount,
   tagCounts,
@@ -502,6 +504,23 @@ export function GamePage({
                 </AlertDescription>
               </Alert>
             )}
+            {updateAvailable(game) && (
+              <Alert>
+                <ArrowUpCircleIcon />
+                <AlertTitle>Update available</AlertTitle>
+                <AlertDescription>
+                  {game.update!.latest} is out on F95zone; this copy is {game.update!.installed}.{" "}
+                  <button
+                    className="underline underline-offset-3"
+                    onClick={() =>
+                      void run(() => request({ action: "openSource", id: game.id, update: true }))
+                    }
+                  >
+                    Open the thread
+                  </button>
+                </AlertDescription>
+              </Alert>
+            )}
             {launches[0]?.outcome === "failed" && !running && (
               <Alert>
                 <AlertTitle>The last launch failed</AlertTitle>
@@ -569,9 +588,25 @@ export function GamePage({
                 hint={
                   <span className="flex items-center gap-2">
                     <span className="flex-1">
-                      {game.source
-                        ? `Linked to “${game.source.title}” on ${metadataSites[game.source.site]}.`
-                        : "Saved as you edit them."}
+                      {game.source ? (
+                        <>
+                          Linked to{" "}
+                          <button
+                            type="button"
+                            className="underline underline-offset-3 hover:text-foreground"
+                            title={`Open on ${metadataSites[game.source.site]}`}
+                            onClick={() =>
+                              void run(() => request({ action: "openSource", id: game.id }))
+                            }
+                          >
+                            {game.source.title}
+                          </button>{" "}
+                          on {metadataSites[game.source.site]}.
+                          {game.update && ` Latest on F95zone: ${game.update.latest}.`}
+                        </>
+                      ) : (
+                        "Saved as you edit them."
+                      )}
                     </span>
                     <button
                       type="button"

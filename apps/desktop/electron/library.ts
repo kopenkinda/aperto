@@ -23,10 +23,10 @@ import {
 import { downloadImage, readableImage } from "./artwork";
 import { extractExeIcon } from "./exe-icon";
 import { inspectRoot, readObject } from "./detection";
-import { detectGame, findGames, fingerprint, versionedName, within } from "./discovery";
+import { detectGame, findGames, fingerprint, versionedName, versionsIn, within } from "./discovery";
 import { iconToPng } from "./mac";
 import { listComponents, removeComponent } from "./components";
-import { metadataDetails, searchMetadata } from "./metadata";
+import { findF95Thread, metadataDetails, searchMetadata } from "./metadata";
 import { mkxpLaunch } from "./mkxp";
 import { renpyLaunch } from "./renpy";
 import { sandboxed, type SandboxAccess } from "./sandbox";
@@ -52,6 +52,8 @@ export type NativeActions = {
   reveal: (file: string) => void;
   /** Moves a file or folder to the Trash. */
   trash: (file: string) => Promise<void>;
+  /** Opens a web page in the default browser. */
+  openExternal: (url: string) => void;
 };
 
 export class DesktopLibrary {
@@ -157,6 +159,24 @@ export class DesktopLibrary {
       return searchMetadata(command.query ?? searchName(this.game(command.id).name));
     if (command.action === "metadataDetails") return metadataDetails(command.site, command.matchId);
     if (command.action === "autoTag") return this.autoTag();
+    if (command.action === "checkUpdates") {
+      await this.checkUpdates();
+      return this.snapshot();
+    }
+    if (command.action === "openSource") {
+      const game = this.game(command.id);
+      const source =
+        command.update && game.update
+          ? { site: "f95" as const, id: game.update.thread }
+          : game.source;
+      if (!source) throw new Error("This game is not linked to F95zone or Steam.");
+      this.native.openExternal(
+        source.site === "f95"
+          ? `https://f95zone.to/threads/${source.id}/`
+          : `https://store.steampowered.com/app/${source.id}/`,
+      );
+      return this.snapshot();
+    }
     if (command.action === "applyMetadata") {
       const { site, matchId, title } = command;
       const game = this.game(command.id);
@@ -556,6 +576,60 @@ export class DesktopLibrary {
     }
   }
 
+  private updating: Promise<void> | null = null;
+
+  /**
+   * Reads each game's newest version from its F95zone thread, and records it with the version of
+   * this copy. A game whose thread is not known yet, such as one tagged from Steam, is looked up by
+   * its title, which must match exactly. One request at a time.
+   */
+  checkUpdates(): Promise<void> {
+    this.updating ??= (async () => {
+      for (const game of this.store.value.games) {
+        if (game.removed) continue;
+        const known =
+          game.update ??
+          (game.source?.site === "f95"
+            ? { thread: game.source.id, title: game.source.title }
+            : null);
+        const thread = known
+          ? await findF95Thread(known.thread, known.title).catch(() => null)
+          : ((await searchMetadata(searchName(game.name)).catch(() => [])).find(
+              (item) => item.site === "f95" && titleMatches(game.name, item.title),
+            ) ?? null);
+        if (!thread?.version) continue;
+        const { id, title, version } = thread;
+        await this.changeGame(game.id, (current) => ({
+          ...current,
+          update: {
+            thread: id,
+            title,
+            installed: installedVersion(current),
+            latest: version,
+            checkedAt: new Date().toISOString(),
+          },
+        }));
+        this.changed();
+      }
+      await this.store.update((state) => ({
+        ...state,
+        updatesCheckedAt: new Date().toISOString(),
+      }));
+    })().finally(() => {
+      this.updating = null;
+    });
+    return this.updating;
+  }
+
+  /** Checks for updates in the background when the last check is over 12 hours old. */
+  checkUpdatesIfStale() {
+    const last = this.store.value.updatesCheckedAt;
+    if (last && Date.now() - Date.parse(last) < 12 * 3_600_000) return;
+    void this.checkUpdates()
+      .then(() => this.changed())
+      .catch((error) => console.error("Update check failed:", error));
+  }
+
   private autoTagging: Promise<AutoTagReport> | null = null;
 
   /**
@@ -610,6 +684,17 @@ export class DesktopLibrary {
           ...current,
           tags: this.allowedTags([...current.tags, ...details.tags]),
           source: { site: match.site, id: match.id, title: match.title },
+          ...(match.version
+            ? {
+                update: {
+                  thread: match.id,
+                  title: match.title,
+                  installed: installedVersion(current),
+                  latest: match.version,
+                  checkedAt: new Date().toISOString(),
+                },
+              }
+            : {}),
         }));
         report.tagged.push(game.name);
         this.changed();
@@ -1164,6 +1249,15 @@ function artworkCopy(game: Game, slot: "icon" | "banner") {
     directory: path.join(mac ? path.dirname(game.folder) : game.folder, ".aperto"),
     name: mac ? `${path.basename(game.folder, path.extname(game.folder))}-${slot}` : slot,
   };
+}
+
+/**
+ * The version of a copy, as written in its folder names or its name, such as "v1.18c" in
+ * `Rinas_Train-1.18c`. A dotted version wins over a bare one; null when there is none.
+ */
+function installedVersion(game: Game): string | null {
+  const versions = versionsIn([...game.folder.split(path.sep).slice(-3), game.name]);
+  return versions.filter((version) => version.includes(".")).at(-1) ?? versions.at(-1) ?? null;
 }
 
 /** The engine of a Windows or Mac game, recognized by the files its player ships with. */

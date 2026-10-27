@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useState, type ReactNode } from "react";
 import {
+  ArrowUpCircleIcon,
   ArrowUpDownIcon,
   CheckIcon,
   FolderOpenIcon,
@@ -34,6 +35,7 @@ import {
   sortOrders,
   statusFilters,
   tagCounts,
+  updateAvailable,
   type Command,
   type Filters,
   type Game,
@@ -206,6 +208,12 @@ export function App() {
                     )}
                   </span>
                   <span className="min-w-0 flex-1 truncate">{item.name}</span>
+                  {updateAvailable(item) && (
+                    <ArrowUpCircleIcon
+                      className="size-3.5 shrink-0 text-blue-500"
+                      aria-label={`Update available: ${item.update!.latest}`}
+                    />
+                  )}
                   {running && (
                     <span
                       className="size-2 shrink-0 rounded-full bg-emerald-500"

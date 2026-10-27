@@ -17,7 +17,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
-import { compareVersions, type Component, type Release, type Snapshot } from "./model";
+import {
+  compareVersions,
+  updateAvailable,
+  type Component,
+  type Release,
+  type Snapshot,
+} from "./model";
 import { request, useTask } from "./desktop";
 import { TagManager } from "@/components/TagManager";
 
@@ -42,6 +48,15 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
     </section>
   );
 }
+
+const relative = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
+/** "5 minutes ago", "yesterday". */
+const ago = (time: string) => {
+  const minutes = Math.round((Date.parse(time) - Date.now()) / 60_000);
+  if (minutes > -60) return relative.format(minutes, "minute");
+  if (minutes > -24 * 60) return relative.format(Math.round(minutes / 60), "hour");
+  return relative.format(Math.round(minutes / (24 * 60)), "day");
+};
 
 const megabytes = (bytes: number) =>
   bytes >= 1e9 ? `${(bytes / 1e9).toFixed(1)} GB` : `${Math.max(1, Math.round(bytes / 1e6))} MB`;
@@ -109,6 +124,9 @@ export function Settings({
     ? `Automatic (${snapshot.terminals[0].name})`
     : "Automatic";
   const installed = [...snapshot.runtimes].sort((a, b) => compareVersions(b.version, a.version));
+  const [checking, setChecking] = useState(false);
+  const linked = snapshot.games.filter((game) => game.update).length;
+  const outdated = snapshot.games.filter(updateAvailable);
 
   const removeComponent = (id: string) =>
     void run(async () => setComponents(await request({ action: "removeComponent", id })));
@@ -255,6 +273,40 @@ export function Settings({
                 ))}
               </SelectContent>
             </Select>
+          </Row>
+        </Section>
+
+        <Section title="Updates">
+          <Row
+            label="F95zone"
+            hint={`Aperto compares the version in each game's folder name with its F95zone thread twice a day, while it runs. Games tagged from Steam are found on F95zone by their exact title. ${
+              snapshot.updatesCheckedAt
+                ? `Last checked ${ago(snapshot.updatesCheckedAt)}.`
+                : "Not checked yet."
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              <Button
+                variant="outline"
+                disabled={checking}
+                onClick={() => {
+                  setChecking(true);
+                  void run(() => request({ action: "checkUpdates" })).finally(() =>
+                    setChecking(false),
+                  );
+                }}
+              >
+                {checking ? <Spinner /> : <RefreshCwIcon />}
+                Check now
+              </Button>
+              <span className="text-muted-foreground">
+                {!linked
+                  ? "No game has been found on F95zone yet."
+                  : outdated.length
+                    ? `${outdated.length} ${outdated.length === 1 ? "update" : "updates"} available`
+                    : "Everything is up to date."}
+              </span>
+            </div>
           </Row>
         </Section>
 

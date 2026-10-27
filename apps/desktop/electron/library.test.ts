@@ -46,6 +46,7 @@ beforeEach(async () => {
       image: async () => null,
       reveal: () => {},
       trash: async () => {},
+      openExternal: () => {},
     },
     () => {},
   );
@@ -276,6 +277,7 @@ describe("Windows games", () => {
         image: async () => null,
         reveal: () => {},
         trash: async (file) => void trashed.push(file),
+        openExternal: () => {},
       },
       () => {},
     );
@@ -588,6 +590,7 @@ describe("custom artwork", () => {
         image: async (file) => `data:image/png;base64,${(await readFile(file)).toString("base64")}`,
         reveal: () => {},
         trash: async () => {},
+        openExternal: () => {},
       },
       () => {},
     );

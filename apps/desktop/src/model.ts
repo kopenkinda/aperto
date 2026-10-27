@@ -40,6 +40,19 @@ export const GameSchema = Schema.Struct({
       title: Schema.String,
     }),
   ),
+  /**
+   * The game's F95zone thread, which update checks read even when its tags came from Steam, its
+   * newest version there, and the version of this copy read from its folder or name.
+   */
+  update: Schema.optionalKey(
+    Schema.Struct({
+      thread: Schema.String,
+      title: Schema.String,
+      installed: Schema.NullOr(Schema.String),
+      latest: Schema.String,
+      checkedAt: Schema.String,
+    }),
+  ),
   /** Runs the game in Aperto's macOS sandbox. Unset means on; only `false` turns it off. */
   sandbox: Schema.optionalKey(Schema.Boolean),
 });
@@ -97,6 +110,8 @@ export const LibrarySchema = Schema.Struct({
   defaultBottle: Schema.optionalKey(Schema.NullOr(Schema.String)),
   /** Bundle ID of the terminal that opens game folders; unset picks one automatically. */
   terminal: Schema.optionalKey(Schema.NullOr(Schema.String)),
+  /** When linked games were last checked for updates. */
+  updatesCheckedAt: Schema.optionalKey(Schema.String),
   /** Tags removed from every game and never added again. Older libraries omit it. */
   blockedTags: Schema.optionalKey(Schema.Array(Schema.String)),
   /** Colors chosen for tags, by tag. Older libraries omit it. */
@@ -156,6 +171,8 @@ export type MetadataMatch = {
   title: string;
   /** Developer and version on F95zone. */
   detail: string;
+  /** The current version on F95zone; Steam does not publish versions. */
+  version: string | null;
   cover: string | null;
   /**
    * A wide image for the page header: F95zone's cover at full size. Steam's banner comes with the
@@ -239,6 +256,14 @@ export const CommandSchema = Schema.Union([
   }),
   /** Tags every game without a source whose title clearly matches one on F95zone or Steam. */
   Schema.Struct({ action: Schema.Literal("autoTag") }),
+  /** Reads the newest version of every game from its F95zone thread. */
+  Schema.Struct({ action: Schema.Literal("checkUpdates") }),
+  /** Opens a game's F95zone or Steam page in the browser, or with `update`, its F95zone thread. */
+  Schema.Struct({
+    action: Schema.Literal("openSource"),
+    ...id,
+    update: Schema.optionalKey(Schema.Boolean),
+  }),
   Schema.Struct({
     action: Schema.Literal("setTagColor"),
     tag: Schema.String,
@@ -372,6 +397,47 @@ export function titleMatches(name: string, title: string): boolean {
   return short === a && short.length >= 6;
 }
 
+/**
+ * The version-like part of a version label: "v1.18c" is 1.18c, "Ch.3 v0.5" is 0.5, and a date such
+ * as "2026-01-31" counts as 2026.01.31. Null for labels without digits, such as "Final".
+ */
+function versionParts(label: string): (number | string)[] | null {
+  const date = /(\d{4})-(\d{2})-(\d{2})/.exec(label);
+  const tokens = date ? [date.slice(1).join(".")] : label.match(/\d+(?:\.\d+)*[a-z]?/gi);
+  if (!tokens) return null;
+  // The token with the most parts; the last of equals, as in "Season 2 v1.4".
+  const token = tokens.reduce((best, item) =>
+    item.split(".").length >= best.split(".").length ? item : best,
+  );
+  return token
+    .toLowerCase()
+    .split(/\.|(?<=\d)(?=[a-z])/)
+    .map((part) => (/^\d+$/.test(part) ? Number(part) : part));
+}
+
+/** Compares two game version labels; null when either has no version number in it. */
+export function compareGameVersions(a: string, b: string): number | null {
+  const left = versionParts(a);
+  const right = versionParts(b);
+  if (!left || !right) return null;
+  for (let index = 0; index < Math.max(left.length, right.length); index++) {
+    const x = left[index];
+    const y = right[index];
+    // A label with more parts is newer: 1.0.1 after 1.0, 1.0b after 1.0.
+    if (x === undefined || y === undefined) return x === undefined ? -1 : 1;
+    if (x === y) continue;
+    if (typeof x === "number" && typeof y === "number") return x - y;
+    return String(x).localeCompare(String(y));
+  }
+  return 0;
+}
+
+/** The linked F95zone thread has a newer version than this copy. */
+export function updateAvailable(game: Pick<Game, "update">): boolean {
+  const update = game.update;
+  return !!update?.installed && (compareGameVersions(update.latest, update.installed) ?? 0) > 0;
+}
+
 /** Every tag in the library with how many games carry it, most used first. */
 export function tagCounts(games: readonly Game[]): [tag: string, count: number][] {
   const counts = new Map<string, number>();
@@ -450,6 +516,7 @@ export const statusFilters = {
   recent: "Played in the last 2 weeks",
   unplayed: "Never played",
   missing: "Missing files",
+  update: "Update available",
 } as const;
 export type GameKind = keyof typeof kindFilters;
 export type GameStatus = keyof typeof statusFilters;
@@ -501,6 +568,8 @@ export function matchesGame(
         return state.running.includes(game.id);
       case "missing":
         return state.missing.includes(game.id);
+      case "update":
+        return updateAvailable(game);
       case "unplayed":
         return !game.lastPlayed;
       case "recent":
