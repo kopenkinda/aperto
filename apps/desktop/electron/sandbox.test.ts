@@ -38,4 +38,36 @@ describe.runIf(process.platform === "darwin")("sandbox", () => {
       await rm(directory, { recursive: true, force: true });
     }
   });
+
+  it("lets a game kept inside an app bundle write its saves", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "aperto-sandbox-"));
+    const game = path.join(
+      directory,
+      "Game [MacOS]",
+      "Game.app",
+      "Contents",
+      "Resources",
+      "app.nw",
+    );
+    await mkdir(path.join(game, "save"), { recursive: true });
+    try {
+      const [command, args] = await sandboxed(
+        "/bin/sh",
+        [
+          "-c",
+          [
+            `echo saved > "${game}/save/config.rpgsave"`,
+            `mkdir "${game}/Other.app" 2>/dev/null && echo wrote-launchable`,
+            "echo done",
+          ].join("; "),
+        ],
+        { run: ["/bin"], read: [], write: [game] },
+      );
+      const { stdout } = await run(command, args);
+      expect(stdout.trim().split("\n")).toEqual(["done"]);
+      expect(await readFile(path.join(game, "save", "config.rpgsave"), "utf8")).toBe("saved\n");
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
 });

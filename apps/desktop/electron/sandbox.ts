@@ -23,10 +23,28 @@ const profile = (access: SandboxAccess) => {
 (deny file-read-data (subpath (param "HOME")))
 (allow file-read-data ${paths("RUN", access.run)} ${paths("READ", access.read)} ${paths("WRITE", access.write)})
 (deny file-write*)
-(allow file-write* ${paths("WRITE", access.write)})
-(deny file-write* (regex #"\\.(${launchable.join("|")})(/|$)"))
+${writes(access.write)}
 `;
 };
+
+/**
+ * Lets the game write each folder, but not create launchable files in it. The launchable rule
+ * looks only below the folder, so a game kept inside an app bundle, such as an NW.js game in
+ * `Game.app`, can still write its saves. The last matching rule wins, so folders go from the
+ * outermost in and the innermost folder holding a path decides.
+ */
+const writes = (folders: string[]) =>
+  [...folders]
+    .sort((a, b) => a.length - b.length)
+    .map(
+      (folder) =>
+        `(allow file-write* (subpath "${quote(folder)}"))\n(deny file-write* (regex #"^${escape(folder)}/.*\\.(${launchable.join("|")})(/|$)"))`,
+    )
+    .join("\n");
+
+/** A path as a sandbox string, and as a literal in a sandbox regex. */
+const quote = (folder: string) => folder.replace(/["\\]/g, "\\$&");
+const escape = (folder: string) => folder.replace(/[\\^$.|?*+()[\]{}"]/g, "\\$&");
 
 // Files Finder would run or install when opened. A game asking macOS to open one would run it
 // outside the sandbox, so it may not create them at all.
