@@ -19,7 +19,19 @@ let startupError: string | null = null;
 let quitting = false;
 let lastScan = 0;
 
+let playing = false;
+
 const changed = () => {
+  // Aperto steps aside while a game runs, and comes back when the last one closes.
+  const running = (library?.running.size ?? 0) > 0;
+  if (running !== playing) {
+    playing = running;
+    for (const window of BrowserWindow.getAllWindows()) {
+      if (running) window.minimize();
+      else if (window.isMinimized()) window.restore();
+    }
+    if (!running) app.focus({ steal: true });
+  }
   for (const window of BrowserWindow.getAllWindows()) window.webContents.send("aperto:changed");
 };
 
