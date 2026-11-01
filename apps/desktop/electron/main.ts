@@ -1,15 +1,19 @@
 import path from "node:path";
 import { stat } from "node:fs/promises";
-import { app, BrowserWindow, dialog, ipcMain, nativeImage, shell } from "electron";
+import { pathToFileURL } from "node:url";
+import { app, BrowserWindow, dialog, ipcMain, nativeImage, net, protocol, shell } from "electron";
 import { Effect, Schema } from "effect";
 import { CommandSchema } from "../src/model";
 import { DesktopLibrary } from "./library";
-import { exists, LibraryStore, message } from "./storage";
+import { exists, imageScheme, LibraryStore, message } from "./storage";
 import { applicationGames } from "./mac";
 import { bottleSteamGames, crossoverWine } from "./windows";
 
 app.setName("Aperto");
 app.setPath("userData", process.env.APERTO_DATA_DIR || path.join(app.getPath("appData"), "Aperto"));
+protocol.registerSchemesAsPrivileged([
+  { scheme: imageScheme, privileges: { standard: true, secure: true } },
+]);
 let library: DesktopLibrary;
 let startupError: string | null = null;
 let quitting = false;
@@ -59,6 +63,10 @@ else {
   });
   void app.whenReady().then(async () => {
     const store = new LibraryStore(app.getPath("userData"), changed);
+    protocol.handle(imageScheme, (request) => {
+      const file = store.imageFile(request.url);
+      return file ? net.fetch(pathToFileURL(file).href) : new Response(null, { status: 404 });
+    });
     library = new DesktopLibrary(
       store,
       {

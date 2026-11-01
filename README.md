@@ -75,7 +75,7 @@ Signing is automatic. The first build creates your own self-signed development c
 
 ## Data
 
-The library lives in `~/Library/Application Support/Aperto`, with each NW.js game's browser data and backups beside it. Aperto writes into game folders only for plugin changes, the cheat menu, the getPixel fix, and custom artwork in a `.aperto` folder.
+The library lives in `~/Library/Application Support/Aperto`, with each NW.js game's browser data and backups beside it. Aperto writes into game folders only for plugin changes, the cheat menu, the getPixel fix, and artwork in a `.aperto` folder: the images the library shows, and copies of artwork you chose.
 
 Downloads are verified before use: NW.js against its signed checksums, mkxp-z against GitHub's recorded SHA-256, and the cheat menu and Kawariki scripts against pinned hashes. Neither of those two is shipped with Aperto; the cheat menu has no license, and Kawariki is GPL-3.0.
 

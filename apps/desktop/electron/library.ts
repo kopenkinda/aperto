@@ -28,7 +28,7 @@ import { downloadImage, readableImage } from "./artwork";
 import { extractExeIcon } from "./exe-icon";
 import { inspectRoot, nameManifest, readObject } from "./detection";
 import { detectGame, findGames, fingerprint, versionedName, versionsIn, within } from "./discovery";
-import { applicationFolders, iconToPng } from "./mac";
+import { iconToPng } from "./mac";
 import { diskUsage, findComponents, listComponents, removeComponent } from "./components";
 import { findF95Thread, metadataDetails, searchF95, searchMetadata } from "./metadata";
 import { mkxpLaunch } from "./mkxp";
@@ -46,7 +46,7 @@ import {
 } from "./plugins";
 import { cheatMenu, cheatMenuFiles, pixelFixSource } from "./cheat-menu";
 import { RuntimeManager, getReleases, runtimeExecutable, validVersion } from "./runtimes";
-import { atomicWrite, exists, LibraryStore, message, ownedPath } from "./storage";
+import { artworkCopy, atomicWrite, exists, LibraryStore, message, ownedPath } from "./storage";
 
 const execute = promisify(execFile);
 
@@ -1364,24 +1364,6 @@ export class DesktopLibrary {
       );
     await setRetinaMode(bottle, highResolution);
   }
-}
-
-/**
- * Where the copy of custom artwork lives: `.aperto` inside the game's folder. A Mac game's folder
- * is its app bundle, and writing inside would break its signature, so its copy sits next to the
- * bundle instead.
- */
-function artworkCopy(game: Game, slot: "icon" | "banner", dataDirectory: string) {
-  const mac = gameKind(game) === "mac";
-  // Apps installed in an Applications folder, or a folder inside one, keep their copies in
-  // Aperto's data instead.
-  const parent = path.dirname(game.folder);
-  if (mac && [parent, path.dirname(parent)].some((folder) => applicationFolders.includes(folder)))
-    return { directory: ownedPath(dataDirectory, "artwork", game.id), name: slot };
-  return {
-    directory: path.join(mac ? path.dirname(game.folder) : game.folder, ".aperto"),
-    name: mac ? `${path.basename(game.folder, path.extname(game.folder))}-${slot}` : slot,
-  };
 }
 
 /** What an update check learned about a game from its F95zone thread. */

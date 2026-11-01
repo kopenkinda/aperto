@@ -1,13 +1,13 @@
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { readdir, realpath, stat } from "node:fs/promises";
-import { homedir, tmpdir } from "node:os";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { Schema } from "effect";
 import type { Candidate } from "../src/model";
 import { meaningfulName } from "./detection";
-import { exists } from "./storage";
+import { applicationFolders, exists } from "./storage";
 import { readableName } from "./windows";
 
 const execute = promisify(execFile);
@@ -85,9 +85,6 @@ export async function iconToPng(icns: string): Promise<string | null> {
 // Apps that launch other games; their games are added on their own where Aperto can run them.
 const launchers =
   /^(?:aperto|xenolauncher|steam|crossover|epic games launcher|gog galaxy|battle\.net|itch|heroic|playcover|whisky|porting kit|wineskin)/i;
-
-/** The folders apps are installed in, where games are found by their App Store category. */
-export const applicationFolders = ["/Applications", path.join(homedir(), "Applications")];
 
 /**
  * Games installed as apps outside the games folder: apps in the Applications folders, or one

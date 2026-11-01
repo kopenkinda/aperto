@@ -665,7 +665,8 @@ describe("custom artwork", () => {
 
     await library.handle({ action: "artwork", id: game.id, slot: "icon" });
     expect(await readFile(saved("icon"))).toEqual(png);
-    expect(store.value.games[0]?.artwork).toContain("data:image/png");
+    expect(store.value.games[0]?.artwork).toMatch(`aperto-image://${game.id}/icon.png?v=`);
+    expect(await readFile(saved("icon-display"))).toEqual(png);
     expect(store.value.games[0]?.customIcon).toBe(true);
 
     const server = createServer((request, response) => {
@@ -693,10 +694,11 @@ describe("custom artwork", () => {
       server.close();
     }
     expect(await readFile(saved("banner"))).toEqual(png);
-    expect(store.value.games[0]?.banner).toContain("data:image/png");
+    expect(store.imageFile(store.value.games[0]!.banner!)).toBe(saved("banner-display"));
 
     await library.handle({ action: "clearBanner", id: game.id });
     expect(await exists(saved("banner"))).toBe(false);
+    expect(await exists(saved("banner-display"))).toBe(false);
     expect(store.value.games[0]?.banner).toBeNull();
     expect(await exists(saved("icon"))).toBe(true);
 
@@ -705,6 +707,21 @@ describe("custom artwork", () => {
     expect(await exists(saved("icon"))).toBe(false);
     expect(store.value.games[0]?.artwork).toBeNull();
     expect(store.value.games[0]?.customIcon).toBe(false);
+  });
+
+  it("moves inline images out of older libraries", async () => {
+    const game = await importGame();
+    const file = path.join(directory, "data", "library.json");
+    const saved = JSON.parse(await readFile(file, "utf8"));
+    saved.games[0].banner = `data:image/png;base64,${png.toString("base64")}`;
+    await writeFile(file, JSON.stringify(saved));
+
+    const reopened = new LibraryStore(path.join(directory, "data"));
+    await reopened.load();
+    const banner = reopened.value.games[0]!.banner!;
+    expect(banner).toMatch(`aperto-image://${game.id}/banner.png?v=`);
+    expect(await readFile(path.join(game.folder, ".aperto", "banner-display.png"))).toEqual(png);
+    expect(await readFile(file, "utf8")).not.toContain("data:image");
   });
 });
 
