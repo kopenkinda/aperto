@@ -11,6 +11,8 @@ export const SteamInstallSchema = Schema.Struct({
   client: Schema.String,
 });
 export type SteamInstall = typeof SteamInstallSchema.Type;
+const LinkSchema = Schema.Struct({ id: Schema.String, title: Schema.String });
+export type Link = typeof LinkSchema.Type;
 export const GameSchema = Schema.Struct({
   id: Schema.String,
   folder: Schema.String,
@@ -45,22 +47,19 @@ export const GameSchema = Schema.Struct({
   highResolution: Schema.optionalKey(Schema.Boolean),
   /** Adds Aperto's getPixel fix to an RPG Maker game at launch. Unset means on. */
   pixelFix: Schema.optionalKey(Schema.Boolean),
-  /** The F95zone thread or Steam app the game's tags came from. */
-  source: Schema.optionalKey(
+  /**
+   * The game's F95zone thread and Steam app. Tags, banners, and update checks come from them.
+   * Older libraries have a single `source` instead, moved here on load by `migrateLibrary`.
+   */
+  links: Schema.optionalKey(
     Schema.Struct({
-      site: Schema.Literals(["f95", "steam"]),
-      id: Schema.String,
-      title: Schema.String,
+      f95: Schema.optionalKey(LinkSchema),
+      steam: Schema.optionalKey(LinkSchema),
     }),
   ),
-  /**
-   * The game's F95zone thread, which update checks read even when its tags came from Steam, its
-   * newest version there, and the version of this copy read from its folder or name.
-   */
+  /** The newest version on the game's F95zone thread and the version of this copy, read from its folder or name. */
   update: Schema.optionalKey(
     Schema.Struct({
-      thread: Schema.String,
-      title: Schema.String,
       installed: Schema.NullOr(Schema.String),
       latest: Schema.String,
       checkedAt: Schema.String,
@@ -70,6 +69,35 @@ export const GameSchema = Schema.Struct({
   sandbox: Schema.optionalKey(Schema.Boolean),
 });
 export type Game = typeof GameSchema.Type;
+/** The sites a game is linked to, Steam first, since its banners are larger than F95zone's. */
+export const linkedSites = (game: Pick<Game, "links">) =>
+  (["steam", "f95"] as const).filter((site) => game.links?.[site]);
+
+/**
+ * Brings a library written by an older Aperto up to date before it is decoded: the single
+ * `source` link and the F95zone thread that update checks kept become `links`.
+ */
+export function migrateLibrary(data: unknown): unknown {
+  if (!data || typeof data !== "object" || !Array.isArray((data as { games?: unknown }).games))
+    return data;
+  const library = data as { games: Record<string, unknown>[] };
+  return {
+    ...library,
+    games: library.games.map((game) => {
+      const { source, ...rest } = game as {
+        source?: { site: MetadataSite; id: string; title: string };
+        update?: { thread?: string; title?: string };
+        links?: Partial<Record<MetadataSite, Link>>;
+      };
+      const thread = rest.update?.thread;
+      if (!source && !thread) return game;
+      const links = { ...rest.links };
+      if (source) links[source.site] ??= { id: source.id, title: source.title };
+      if (thread) links.f95 ??= { id: thread, title: rest.update?.title ?? "" };
+      return { ...rest, links };
+    }),
+  };
+}
 export const gameKind = (game: Pick<Game, "kind">) => game.kind ?? "nwjs";
 /** Games Aperto starts itself can run in its sandbox; Mac apps open through macOS, Windows games through CrossOver. */
 export const sandboxable = (game: Pick<Game, "kind">) =>
@@ -254,18 +282,19 @@ export const CommandSchema = Schema.Union([
   Schema.Struct({ action: Schema.Literal("deleteTag"), tag: Schema.String }),
   /** Replaces the blocked tags and removes them from every game. */
   Schema.Struct({ action: Schema.Literal("setBlockedTags"), tags: Schema.Array(Schema.String) }),
-  /** Searches F95zone and Steam for a game, by its name unless a query is given. */
+  /** Searches F95zone and Steam, or only `site`, for a game, by its name unless a query is given. */
   Schema.Struct({
     action: Schema.Literal("findMetadata"),
     ...id,
     query: Schema.optionalKey(Schema.String),
+    site: Schema.optionalKey(Schema.Literals(["f95", "steam"])),
   }),
   Schema.Struct({
     action: Schema.Literal("metadataDetails"),
     site: Schema.Literals(["f95", "steam"]),
     matchId: Schema.String,
   }),
-  /** Adds tags from a chosen match to a game and remembers the match. */
+  /** Links a game to a chosen match and adds the match's tags. */
   Schema.Struct({
     action: Schema.Literal("applyMetadata"),
     ...id,
@@ -276,15 +305,24 @@ export const CommandSchema = Schema.Union([
     /** Replaces the game's banner with this image. */
     banner: Schema.optionalKey(Schema.String),
   }),
-  /** Tags every game without a source whose title clearly matches one on F95zone or Steam. */
+  /**
+   * Tags every unlinked game whose title clearly matches one on F95zone or Steam, and linked games
+   * without tags from their page.
+   */
   Schema.Struct({ action: Schema.Literal("autoTag") }),
   /** Reads the newest version of every game from its F95zone thread. */
   Schema.Struct({ action: Schema.Literal("checkUpdates") }),
-  /** Opens a game's F95zone or Steam page in the browser, or with `update`, its F95zone thread. */
+  /** Opens a game's linked F95zone thread or Steam page in the browser. */
   Schema.Struct({
     action: Schema.Literal("openSource"),
     ...id,
-    update: Schema.optionalKey(Schema.Boolean),
+    site: Schema.Literals(["f95", "steam"]),
+  }),
+  /** Forgets a game's link to a site; unlinking F95zone also forgets the update it found. */
+  Schema.Struct({
+    action: Schema.Literal("unlink"),
+    ...id,
+    site: Schema.Literals(["f95", "steam"]),
   }),
   Schema.Struct({
     action: Schema.Literal("setTagColor"),

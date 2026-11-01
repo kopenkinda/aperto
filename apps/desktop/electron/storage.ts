@@ -3,7 +3,7 @@ import { copyFile, mkdir, open, readFile, rename, rm, stat } from "node:fs/promi
 import { homedir } from "node:os";
 import path from "node:path";
 import { Schema } from "effect";
-import { gameKind, LibrarySchema, type Game, type Library } from "../src/model";
+import { gameKind, LibrarySchema, migrateLibrary, type Game, type Library } from "../src/model";
 
 export const digest = (data: string | Buffer) => createHash("sha256").update(data).digest("hex");
 export const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
@@ -92,7 +92,7 @@ export class LibraryStore {
     await mkdir(this.directory, { recursive: true });
     try {
       this.state = Schema.decodeUnknownSync(LibrarySchema)(
-        JSON.parse(await readFile(this.file, "utf8")),
+        migrateLibrary(JSON.parse(await readFile(this.file, "utf8"))),
       );
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") {

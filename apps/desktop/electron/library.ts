@@ -7,6 +7,8 @@ import { promisify } from "node:util";
 import {
   compareVersions,
   gameKind,
+  linkedSites,
+  metadataSites,
   normalizeTags,
   sandboxable,
   searchName,
@@ -190,7 +192,7 @@ export class DesktopLibrary {
       return this.snapshot();
     }
     if (command.action === "findMetadata")
-      return searchMetadata(command.query ?? searchName(this.game(command.id).name));
+      return searchMetadata(command.query ?? searchName(this.game(command.id).name), command.site);
     if (command.action === "metadataDetails") return metadataDetails(command.site, command.matchId);
     if (command.action === "autoTag") return this.autoTag();
     if (command.action === "checkUpdates") {
@@ -198,24 +200,38 @@ export class DesktopLibrary {
       return this.snapshot();
     }
     if (command.action === "openSource") {
-      const game = this.game(command.id);
-      const source =
-        command.update && game.update
-          ? { site: "f95" as const, id: game.update.thread }
-          : game.source;
-      if (!source) throw new Error("This game is not linked to F95zone or Steam.");
-      this.native.openExternal(sourceUrl(source.site, source.id));
+      const link = this.game(command.id).links?.[command.site];
+      if (!link) throw new Error(`This game is not linked to ${metadataSites[command.site]}.`);
+      this.native.openExternal(sourceUrl(command.site, link.id));
       return this.snapshot();
     }
     if (command.action === "applyMetadata") {
       const { site, matchId, title } = command;
       const game = this.game(command.id);
       if (command.banner) await this.setArtwork(game, "banner", null, command.banner);
-      await this.changeGame(game.id, (current) => ({
-        ...current,
-        tags: this.allowedTags([...current.tags, ...command.tags]),
-        source: { site, id: matchId, title },
-      }));
+      await this.changeGame(game.id, (current) => {
+        // A different F95zone thread makes the found update stale until the next check.
+        const { update, ...rest } = current;
+        const keepUpdate = site !== "f95" || current.links?.f95?.id === matchId;
+        return {
+          ...rest,
+          ...(keepUpdate && update ? { update } : {}),
+          tags: this.allowedTags([...current.tags, ...command.tags]),
+          links: { ...current.links, [site]: { id: matchId, title } },
+        };
+      });
+      return this.snapshot();
+    }
+    if (command.action === "unlink") {
+      await this.changeGame(command.id, (current) => {
+        const { [command.site]: _, ...links } = current.links ?? {};
+        const { update, ...rest } = current;
+        return {
+          ...rest,
+          ...(command.site !== "f95" && update ? { update } : {}),
+          links,
+        };
+      });
       return this.snapshot();
     }
     if (command.action === "renameTag") {
@@ -586,8 +602,8 @@ export class DesktopLibrary {
 
   /**
    * Reads each game's newest version from its F95zone thread, and records it with the version of
-   * this copy. A game whose thread is not known yet, such as one tagged from Steam, is looked up by
-   * its title, which must match exactly. One request at a time, with progress in the snapshot.
+   * this copy. A game not linked to F95zone yet is looked up by its title, which must match
+   * exactly, and linked to the thread found. One request at a time, with progress in the snapshot.
    */
   checkUpdates(): Promise<void> {
     this.updating ??= (async () => {
@@ -595,22 +611,24 @@ export class DesktopLibrary {
       for (const [index, game] of games.entries()) {
         this.updateProgress = { checked: index, total: games.length };
         this.changed();
-        const known =
-          game.update ??
-          (game.source?.site === "f95"
-            ? { thread: game.source.id, title: game.source.title }
-            : null);
+        const known = game.links?.f95;
         const thread = known
-          ? await findF95Thread(known.thread, known.title).catch(() => null)
+          ? await findF95Thread(known.id, known.title).catch(() => null)
           : ((await searchF95(searchName(game.name)).catch(() => [])).find((item) =>
               titleMatches(game.name, item.title),
             ) ?? null);
         const version = thread?.version;
-        if (!version) continue;
-        await this.changeGame(game.id, (current) => ({
-          ...current,
-          update: updateRecord(current, { ...thread, version }),
-        }));
+        if (!thread || !version) continue;
+        await this.changeGame(game.id, (current) =>
+          // The user may have linked another thread, or unlinked this one, during the check.
+          current.links?.f95?.id === known?.id
+            ? {
+                ...current,
+                links: { ...current.links, f95: { id: thread.id, title: thread.title } },
+                update: updateRecord(current, version),
+              }
+            : current,
+        );
       }
       await this.store.update((state) => ({
         ...state,
@@ -634,20 +652,33 @@ export class DesktopLibrary {
   private autoTagging: Promise<AutoTagReport> | null = null;
 
   /**
-   * Tags each game that has no source yet from F95zone, or else Steam, when a title there names it
-   * exactly, and gives games without a banner the store's. Games without such a match are left for
-   * the user to match on their page. Requests go one at a time, so the sites are not flooded.
+   * Tags each unlinked game from F95zone, or else Steam, when a title there names it exactly, and
+   * links it to that page. Linked games without tags get those of their page, F95zone first, and
+   * games without a banner get the store's. Games without such a match are left for the user to
+   * match on their page. Requests go one at a time, so the sites are not flooded.
    */
   autoTag(): Promise<AutoTagReport> {
     this.autoTagging ??= (async () => {
       const report: AutoTagReport = { tagged: [], unmatched: [], banners: [] };
       for (const game of this.store.value.games) {
         if (game.removed) continue;
-        // A linked game only needs a banner, from the page it is linked to.
-        if (game.source) {
+        const sites = linkedSites(game);
+        if (sites.length) {
+          if (!game.tags.length) {
+            const site = sites.includes("f95") ? "f95" : "steam";
+            const details = await metadataDetails(site, game.links![site]!.id).catch(() => null);
+            if (details?.tags.length) {
+              await this.changeGame(game.id, (current) => ({
+                ...current,
+                tags: this.allowedTags([...current.tags, ...details.tags]),
+              }));
+              report.tagged.push(game.name);
+            }
+          }
           if (game.banner) continue;
-          const { site, id, title } = game.source;
-          // F95zone's banner comes with its search result; Steam's with the game's details.
+          // Steam's banner comes with the game's details; F95zone's with its search result.
+          const site = sites[0]!;
+          const { id, title } = game.links![site]!;
           const banner =
             site === "f95"
               ? (await findF95Thread(id, title).catch(() => null))?.banner
@@ -681,10 +712,8 @@ export class DesktopLibrary {
         await this.changeGame(game.id, (current) => ({
           ...current,
           tags: this.allowedTags([...current.tags, ...details.tags]),
-          source: { site: match.site, id: match.id, title: match.title },
-          ...(match.version
-            ? { update: updateRecord(current, { ...match, version: match.version }) }
-            : {}),
+          links: { ...current.links, [match.site]: { id: match.id, title: match.title } },
+          ...(match.version ? { update: updateRecord(current, match.version) } : {}),
         }));
         report.tagged.push(game.name);
       }
@@ -785,7 +814,7 @@ export class DesktopLibrary {
           ? {
               steam: candidate.steam,
               bottle: candidate.steam.bottle,
-              source: { site: "steam" as const, id: candidate.steam.appId, title: candidate.name },
+              links: { steam: { id: candidate.steam.appId, title: candidate.name } },
             }
           : {}),
         flags: [],
@@ -1388,17 +1417,8 @@ export class DesktopLibrary {
 }
 
 /** What an update check learned about a game from its F95zone thread. */
-function updateRecord(
-  game: Game,
-  thread: { id: string; title: string; version: string },
-): NonNullable<Game["update"]> {
-  return {
-    thread: thread.id,
-    title: thread.title,
-    installed: installedVersion(game),
-    latest: thread.version,
-    checkedAt: new Date().toISOString(),
-  };
+function updateRecord(game: Game, latest: string): NonNullable<Game["update"]> {
+  return { installed: installedVersion(game), latest, checkedAt: new Date().toISOString() };
 }
 
 /**

@@ -15,19 +15,29 @@ import {
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import { request, useTask } from "../desktop";
-import { metadataSites, searchName, titleMatches, type Game, type MetadataMatch } from "../model";
+import {
+  metadataSites,
+  searchName,
+  titleMatches,
+  type Game,
+  type MetadataMatch,
+  type MetadataSite,
+} from "../model";
 
 /**
- * Finds a game on F95zone and Steam and adds the tags of the match the user picks. The likeliest
- * match is chosen to begin with, and its tags start ticked unless the game already has them.
+ * Finds a game on F95zone or Steam, links it to the match the user picks, and adds that match's
+ * tags. The linked page, or else the likeliest match, is chosen to begin with, and its tags start
+ * ticked unless the game already has them.
  */
 export function MetadataDialog({
   game,
+  site,
   blocked,
   open,
   onOpenChange,
 }: {
   game: Game;
+  site: MetadataSite;
   /** Tags that never go on a game, left out of the list. */
   blocked: readonly string[];
   open: boolean;
@@ -72,11 +82,12 @@ export function MetadataDialog({
       const found = await request({
         action: "findMetadata",
         id: game.id,
+        site,
         ...(text === undefined ? {} : { query: text }),
       });
       setMatches(found);
       const likely =
-        found.find((item) => game.source?.site === item.site && game.source.id === item.id) ??
+        found.find((item) => game.links?.[site]?.id === item.id) ??
         found.find((item) => titleMatches(game.name, item.title));
       if (likely) choose(likely);
     });
@@ -93,10 +104,13 @@ export function MetadataDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[85vh] grid-cols-[minmax(0,1fr)] gap-4 overflow-y-auto sm:max-w-xl">
         <DialogHeader>
-          <DialogTitle>Find {game.name} online</DialogTitle>
+          <DialogTitle>
+            Link {game.name} on {metadataSites[site]}
+          </DialogTitle>
           <DialogDescription>
-            Pick the game on F95zone or Steam, then choose which of its tags to add and whether to
-            use its banner.
+            Pick the game on {metadataSites[site]}, then choose which of its tags to add and whether
+            to use its banner.
+            {site === "f95" && " Update checks read the thread you pick."}
           </DialogDescription>
         </DialogHeader>
         {error && (
@@ -111,7 +125,7 @@ export function MetadataDialog({
           }}
         >
           <SearchInput
-            aria-label="Search F95zone and Steam"
+            aria-label={`Search ${metadataSites[site]}`}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
           />
@@ -125,7 +139,8 @@ export function MetadataDialog({
           )}
           {matches?.length === 0 && (
             <p className="text-muted-foreground">
-              Nothing found. Try a shorter name, or the title the game uses on F95zone or Steam.
+              Nothing found. Try a shorter name, or the title the game uses on {metadataSites[site]}
+              .
             </p>
           )}
           {matches?.map((item) => {
@@ -144,10 +159,11 @@ export function MetadataDialog({
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate font-medium">{item.title}</span>
-                  <span className="block truncate text-xs text-muted-foreground">
-                    {metadataSites[item.site]}
-                    {item.site === "f95" && item.detail && ` · ${item.detail}`}
-                  </span>
+                  {item.site === "f95" && item.detail && (
+                    <span className="block truncate text-xs text-muted-foreground">
+                      {item.detail}
+                    </span>
+                  )}
                 </span>
                 {selected && <CheckIcon className="mr-1 size-4 text-primary" />}
               </button>
@@ -257,10 +273,10 @@ export function MetadataDialog({
             }
           >
             {added.length
-              ? `Add ${added.length} ${added.length === 1 ? "tag" : "tags"}`
+              ? `Link and add ${added.length} ${added.length === 1 ? "tag" : "tags"}`
               : banner && useBanner
-                ? "Use banner"
-                : "Link without tags"}
+                ? "Link and use banner"
+                : "Link"}
           </Button>
         </DialogFooter>
       </DialogContent>

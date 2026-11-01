@@ -6,7 +6,6 @@ import {
   ImageIcon,
   PlayIcon,
   ArrowUpCircleIcon,
-  SparklesIcon,
   SquareIcon,
   SquareTerminalIcon,
   StarIcon,
@@ -14,7 +13,7 @@ import {
   XIcon,
 } from "lucide-react";
 import { Artwork } from "@/components/Artwork";
-import { MetadataDialog } from "@/components/MetadataDialog";
+import { GameLinks } from "@/components/GameLinks";
 import { PluginsSection } from "@/components/PluginsSection";
 import { Field, Note, SettingsCard, useSaved } from "@/components/settings";
 import { Label } from "@/components/ui/label";
@@ -58,7 +57,6 @@ import {
   compareVersions,
   gameKind,
   launchOptions,
-  metadataSites,
   updateAvailable,
   sandboxable,
   playCount,
@@ -187,10 +185,9 @@ export function GamePage({
   const save = (settings: Omit<Extract<Command, { action: "update" }>, "action" | "id">) =>
     queue(() => request({ action: "update", id: game.id, ...settings }));
   const [tags, setTags] = useState(game.tags);
-  // Tags also change outside this field: renamed or deleted in the sidebar, or found online.
+  // Tags also change outside this field: renamed or deleted in the sidebar, or added from a link.
   const savedTags = game.tags.join("\n");
   useEffect(() => setTags(game.tags), [savedTags]);
-  const [finding, setFinding] = useState(false);
   const changeTags = (next: string[]) => {
     setTags(next);
     void queue(() => request({ action: "setTags", id: game.id, tags: next }));
@@ -455,7 +452,7 @@ export function GamePage({
                   <button
                     className="underline underline-offset-3"
                     onClick={() =>
-                      void run(() => request({ action: "openSource", id: game.id, update: true }))
+                      void run(() => request({ action: "openSource", id: game.id, site: "f95" }))
                     }
                   >
                     Open the thread
@@ -488,14 +485,17 @@ export function GamePage({
           </div>
 
           <section className="flex flex-col gap-3">
-            <h2 className="flex items-baseline justify-between font-medium">
-              Settings
-              {running && (
-                <span className="text-xs font-normal text-muted-foreground">
-                  Close the game to change how it launches.
-                </span>
-              )}
-            </h2>
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="flex items-baseline gap-3 font-medium">
+                Settings
+                {running && (
+                  <span className="text-xs font-normal text-muted-foreground">
+                    Close the game to change how it launches.
+                  </span>
+                )}
+              </h2>
+              <GameLinks game={game} blocked={snapshot.blockedTags ?? []} run={run} />
+            </div>
             <SettingsCard>
               <Field label="Name" htmlFor="game-name">
                 <form
@@ -524,43 +524,7 @@ export function GamePage({
                   )}
                 </form>
               </Field>
-              <Field
-                label="Tags"
-                htmlFor="game-tags"
-                hint={
-                  <span className="flex items-center gap-2">
-                    <span className="flex-1">
-                      {game.source ? (
-                        <>
-                          Linked to{" "}
-                          <button
-                            type="button"
-                            className="underline underline-offset-3 hover:text-foreground"
-                            title={`Open on ${metadataSites[game.source.site]}`}
-                            onClick={() =>
-                              void run(() => request({ action: "openSource", id: game.id }))
-                            }
-                          >
-                            {game.source.title}
-                          </button>{" "}
-                          on {metadataSites[game.source.site]}.
-                          {game.update && ` Latest on F95zone: ${game.update.latest}.`}
-                        </>
-                      ) : (
-                        "Saved as you edit them."
-                      )}
-                    </span>
-                    <button
-                      type="button"
-                      className="inline-flex items-center gap-1 font-medium text-foreground/80 underline-offset-3 hover:text-foreground hover:underline"
-                      onClick={() => setFinding(true)}
-                    >
-                      <SparklesIcon className="size-3.5" />
-                      Find online
-                    </button>
-                  </span>
-                }
-              >
+              <Field label="Tags" htmlFor="game-tags" hint="Saved as you edit them.">
                 <TagEditor
                   id="game-tags"
                   tags={tags}
@@ -569,12 +533,6 @@ export function GamePage({
                   onChange={changeTags}
                 />
               </Field>
-              <MetadataDialog
-                game={game}
-                blocked={snapshot.blockedTags ?? []}
-                open={finding}
-                onOpenChange={setFinding}
-              />
 
               {windows ? (
                 <>

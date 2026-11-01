@@ -125,10 +125,13 @@ export async function findF95Thread(id: string, title: string) {
   );
 }
 
-/** Games on F95zone and Steam whose titles match the query, F95zone first. */
-export async function searchMetadata(query: string): Promise<MetadataMatch[]> {
+/** Games on F95zone and Steam, or only `site`, whose titles match the query, F95zone first. */
+export async function searchMetadata(query: string, site?: MetadataSite): Promise<MetadataMatch[]> {
   if (!query.trim()) return [];
-  const [f95, steam] = await Promise.all([searchF95(query), searchSteam(query)]);
+  const [f95, steam] = await Promise.all([
+    site === "steam" ? [] : searchF95(query),
+    site === "f95" ? [] : searchSteam(query),
+  ]);
   return [...f95, ...steam];
 }
 

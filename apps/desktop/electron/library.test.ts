@@ -469,8 +469,18 @@ describe("tag management", () => {
     });
     expect(store.value.games[0]).toMatchObject({
       tags: ["nice", "2dcg", "sandbox"],
-      source: { site: "f95", id: "289735", title: "Lifeguard Holic" },
+      links: { f95: { id: "289735", title: "Lifeguard Holic" } },
     });
+    await library.handle({
+      action: "applyMetadata",
+      id: game.id,
+      site: "steam",
+      matchId: "1",
+      title: "Lifeguard Holic",
+      tags: [],
+    });
+    await library.handle({ action: "unlink", id: game.id, site: "f95" });
+    expect(store.value.games[0]?.links).toEqual({ steam: { id: "1", title: "Lifeguard Holic" } });
   });
 });
 

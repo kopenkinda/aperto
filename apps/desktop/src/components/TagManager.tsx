@@ -6,7 +6,14 @@ import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Spinner } from "@/components/ui/spinner";
 import { request } from "../desktop";
-import { normalizeTags, tagColorNames, tagCounts, type Snapshot, type TagColor } from "../model";
+import {
+  linkedSites,
+  normalizeTags,
+  tagColorNames,
+  tagCounts,
+  type Snapshot,
+  type TagColor,
+} from "../model";
 import { Field } from "./settings";
 import { TagEditor } from "./TagEditor";
 import { TagDot } from "./tag-colors";
@@ -27,9 +34,14 @@ export function TagManager({
   const tags = tagCounts(snapshot.games);
   const colors = snapshot.tagColors ?? {};
   const blocked = snapshot.blockedTags ?? [];
-  const unlinked = snapshot.games.filter((game) => !game.source).length;
+  // Unlinked games are looked up by title; linked ones without tags get their page's.
+  const unlinked = snapshot.games.filter(
+    (game) => !linkedSites(game).length || !game.tags.length,
+  ).length;
   // Linked games without a banner get the one from the page they are linked to.
-  const bannerless = snapshot.games.filter((game) => game.source && !game.banner).length;
+  const bannerless = snapshot.games.filter(
+    (game) => linkedSites(game).length && !game.banner,
+  ).length;
   const single = tags.filter(([, count]) => count === 1).map(([tag]) => tag);
   const [query, setQuery] = useState("");
   const [tagging, setTagging] = useState(false);
@@ -54,7 +66,7 @@ export function TagManager({
                 ? `Added ${banners.length} ${banners.length === 1 ? "banner" : "banners"}.`
                 : "",
               unmatched.length
-                ? `No clear match for ${unmatched.join(", ")}. Use Find online on their pages.`
+                ? `No clear match for ${unmatched.join(", ")}. Link them on their pages.`
                 : "",
             ].join(" "),
           ),
@@ -71,7 +83,7 @@ export function TagManager({
           tagging
             ? "Looking up games on F95zone and Steam…"
             : (report ??
-              "Looks up games not yet linked on F95zone and Steam and adds their tags where the title matches exactly, and gives games without a banner the store's. Games without a clear match can be matched on their pages.")
+              "Looks up games not yet linked on F95zone and Steam and adds their tags where the title matches exactly, and gives games without a banner the store's. Games without a clear match can be linked on their pages.")
         }
       >
         <Button

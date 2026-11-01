@@ -9,6 +9,7 @@ import {
   compareVersions,
   launchOptions,
   matchesGame,
+  migrateLibrary,
   noFilters,
   normalizeTags,
   sortGames,
@@ -197,6 +198,30 @@ describe("metadata matching", () => {
   });
 });
 
+describe("library migration", () => {
+  it("moves the old source and the update check's thread into links", () => {
+    const update = { installed: "1.0", latest: "1.1", checkedAt: "2026-01-01T00:00:00.000Z" };
+    const migrated = migrateLibrary({
+      games: [
+        { id: "a", source: { site: "steam", id: "7", title: "Game" } },
+        { id: "b", update: { ...update, thread: "9", title: "Game" } },
+        { id: "c", source: { site: "f95", id: "3", title: "Old" }, update: { thread: "4" } },
+        { id: "d" },
+      ],
+    }) as { games: unknown[] };
+    expect(migrated.games).toEqual([
+      { id: "a", links: { steam: { id: "7", title: "Game" } } },
+      {
+        id: "b",
+        update: { ...update, thread: "9", title: "Game" },
+        links: { f95: { id: "9", title: "Game" } },
+      },
+      { id: "c", update: { thread: "4" }, links: { f95: { id: "3", title: "Old" } } },
+      { id: "d" },
+    ]);
+  });
+});
+
 describe("game versions", () => {
   it("compares the version-like part of labels", () => {
     expect(compareGameVersions("v2.3", "2.2")).toBeGreaterThan(0);
@@ -212,17 +237,17 @@ describe("game versions", () => {
     const checkedAt = "2026-10-27T00:00:00.000Z";
     expect(
       updateAvailable({
-        update: { thread: "1", title: "Game", installed: "2.1", latest: "v2.2", checkedAt },
+        update: { installed: "2.1", latest: "v2.2", checkedAt },
       }),
     ).toBe(true);
     expect(
       updateAvailable({
-        update: { thread: "1", title: "Game", installed: "2.2", latest: "v2.2", checkedAt },
+        update: { installed: "2.2", latest: "v2.2", checkedAt },
       }),
     ).toBe(false);
     expect(
       updateAvailable({
-        update: { thread: "1", title: "Game", installed: null, latest: "v2.2", checkedAt },
+        update: { installed: null, latest: "v2.2", checkedAt },
       }),
     ).toBe(false);
     expect(updateAvailable({})).toBe(false);
