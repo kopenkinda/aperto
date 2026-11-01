@@ -7,7 +7,7 @@ import { metadataSites, type Game, type MetadataSite } from "../model";
 import { MetadataDialog } from "./MetadataDialog";
 
 /**
- * The game's F95zone and Steam links. A linked site opens a card to visit, change, or unlink the
+ * The game's F95zone, Steam, and itch.io links. A linked site opens a card to visit, change, or unlink the
  * page; an unlinked one opens the search for it. Tags, banners, and update checks use the links.
  */
 export function GameLinks({

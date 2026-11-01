@@ -105,6 +105,42 @@ async function searchSteam(query: string): Promise<MetadataMatch[]> {
     }));
 }
 
+/** A game page's address without the scheme, which is how links to itch.io keep a game. */
+export const itchPage = /^[a-z0-9-]+\.itch\.io\/[a-z0-9_-]+$/i;
+
+/** itch.io's search, read from its results page; it lists adult games without an account. */
+async function searchItch(query: string): Promise<MetadataMatch[]> {
+  const url = new URL("https://itch.io/search");
+  url.searchParams.set("q", query);
+  const response = await fetch(url, { headers, signal: AbortSignal.timeout(20_000) }).catch(
+    () => null,
+  );
+  if (!response?.ok) return [];
+  const page = await response.text();
+  return page
+    .split(/<div class="game_cell\b/)
+    .slice(1)
+    .flatMap((cell) => {
+      const title =
+        /<a[^>]*class="title game_link"[^>]*href="https:\/\/([^"]+)"[^>]*>([^<]+)/.exec(cell) ??
+        /<a[^>]*href="https:\/\/([^"]+)"[^>]*class="title game_link"[^>]*>([^<]+)/.exec(cell);
+      if (!title || !itchPage.test(title[1]!)) return [];
+      const author = /<div class="game_author"><a[^>]*>([^<]+)/.exec(cell)?.[1];
+      return [
+        {
+          site: "itch" as const,
+          id: title[1]!,
+          title: decode(title[2]!.trim()),
+          detail: author ? decode(author) : "",
+          version: null,
+          cover: /data-lazy_src="([^"]+)"/.exec(cell)?.[1] ?? null,
+          banner: null,
+        },
+      ];
+    })
+    .slice(0, 6);
+}
+
 /**
  * F95zone threads matching a query. A word spelled differently there finds nothing, so the main
  * title alone is tried when the whole query finds nothing.
@@ -125,14 +161,17 @@ export async function findF95Thread(id: string, title: string) {
   );
 }
 
-/** Games on F95zone and Steam, or only `site`, whose titles match the query, F95zone first. */
+const searches: Record<MetadataSite, (query: string) => Promise<MetadataMatch[]>> = {
+  f95: searchF95,
+  steam: searchSteam,
+  itch: searchItch,
+};
+
+/** Games on F95zone, Steam, and itch.io, or only `site`, whose titles match the query, in that order. */
 export async function searchMetadata(query: string, site?: MetadataSite): Promise<MetadataMatch[]> {
   if (!query.trim()) return [];
-  const [f95, steam] = await Promise.all([
-    site === "steam" ? [] : searchF95(query),
-    site === "f95" ? [] : searchSteam(query),
-  ]);
-  return [...f95, ...steam];
+  const sites = site ? [site] : (Object.keys(searches) as MetadataSite[]);
+  return (await Promise.all(sites.map((item) => searches[item](query)))).flat();
 }
 
 let steamTagNames: Promise<Map<number, string>> | null = null;
@@ -154,10 +193,11 @@ function steamTags() {
 }
 
 /**
- * A game's tags on F95zone or Steam, most relevant first and normalized like library tags, and
- * Steam's wide library banner. F95zone's banner comes with its search result.
+ * A game's tags on F95zone, Steam, or itch.io, most relevant first and normalized like library
+ * tags, and a wide banner from Steam or itch.io. F95zone's banner comes with its search result.
  */
 export async function metadataDetails(site: MetadataSite, id: string): Promise<MetadataDetails> {
+  if (site === "itch") return itchDetails(id);
   if (!/^\d+$/.test(id)) throw new Error("Invalid game reference.");
   if (site === "f95") {
     const response = await fetch(`https://f95zone.to/threads/${id}/`, {
@@ -207,4 +247,30 @@ export async function metadataDetails(site: MetadataSite, id: string): Promise<M
         ? `https://shared.akamai.steamstatic.com/store_item_assets/${assets.asset_url_format.replace("${FILENAME}", hero)}`
         : null,
   };
+}
+
+/**
+ * A game's genre and tags from its itch.io page, and a banner: its first screenshot, which is
+ * usually wide, or else the page's header image, often only a title, or else its cover.
+ */
+async function itchDetails(id: string): Promise<MetadataDetails> {
+  if (!itchPage.test(id)) throw new Error("Invalid game reference.");
+  const response = await fetch(`https://${id}`, {
+    headers,
+    signal: AbortSignal.timeout(20_000),
+  }).catch(() => null);
+  if (!response?.ok) throw new Error("itch.io could not be reached. Try again.");
+  const page = await response.text();
+  const tags = [
+    ...page.matchAll(/<a href="https:\/\/itch\.io\/games\/(?:genre|tag)-[^"]+">([^<]+)<\/a>/g),
+  ]
+    .map((match) => decode(match[1]!))
+    // itch.io lists its AI disclosure among the tags.
+    .filter((tag) => !/generative AI/i.test(tag));
+  const banner =
+    /screenshot_list"><a href="([^"]+)"/.exec(page)?.[1] ??
+    /id="header"[^>]*>\s*(?:<a[^>]*>\s*)?<img[^>]*src="([^"]+)"/.exec(page)?.[1] ??
+    /og:image" content="([^"]+)"/.exec(page)?.[1] ??
+    null;
+  return { tags: normalizeTags(tags), banner };
 }

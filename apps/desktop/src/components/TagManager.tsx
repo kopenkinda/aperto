@@ -81,9 +81,9 @@ export function TagManager({
         label="Find online"
         hint={
           tagging
-            ? "Looking up games on F95zone and Steam…"
+            ? "Looking up games on F95zone, Steam, and itch.io…"
             : (report ??
-              "Looks up games not yet linked on F95zone and Steam and adds their tags where the title matches exactly, and gives games without a banner the store's. Games without a clear match can be linked on their pages.")
+              "Looks up games not yet linked on F95zone, Steam, and itch.io and adds their tags where the title matches exactly, and gives games without a banner the store's. Games without a clear match can be linked on their pages.")
         }
       >
         <Button
@@ -103,7 +103,7 @@ export function TagManager({
 
       <Field
         label="Blocked"
-        hint="Removed from every game and never added again, by hand or from F95zone and Steam."
+        hint="Removed from every game and never added again, by hand or from F95zone, Steam, and itch.io."
       >
         <TagEditor
           tags={blocked}

@@ -25,7 +25,7 @@ import {
 } from "../model";
 
 /**
- * Finds a game on F95zone or Steam, links it to the match the user picks, and adds that match's
+ * Finds a game on F95zone, Steam, or itch.io, links it to the match the user picks, and adds that match's
  * tags. The linked page, or else the likeliest match, is chosen to begin with, and its tags start
  * ticked unless the game already has them.
  */
@@ -159,7 +159,7 @@ export function MetadataDialog({
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate font-medium">{item.title}</span>
-                  {item.site === "f95" && item.detail && (
+                  {item.detail && item.site !== "steam" && (
                     <span className="block truncate text-xs text-muted-foreground">
                       {item.detail}
                     </span>

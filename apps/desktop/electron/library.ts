@@ -652,8 +652,9 @@ export class DesktopLibrary {
   private autoTagging: Promise<AutoTagReport> | null = null;
 
   /**
-   * Tags each unlinked game from F95zone, or else Steam, when a title there names it exactly, and
-   * links it to that page. Linked games without tags get those of their page, F95zone first, and
+   * Tags each unlinked game from F95zone, or else Steam, or else itch.io, when a title there names
+   * it exactly, and links it to that page. Linked games without tags get those of their page in
+   * the same order, and
    * games without a banner get the store's. Games without such a match are left for the user to
    * match on their page. Requests go one at a time, so the sites are not flooded.
    */
@@ -665,7 +666,7 @@ export class DesktopLibrary {
         const sites = linkedSites(game);
         if (sites.length) {
           if (!game.tags.length) {
-            const site = sites.includes("f95") ? "f95" : "steam";
+            const site = (["f95", "steam", "itch"] as const).find((item) => sites.includes(item))!;
             const details = await metadataDetails(site, game.links![site]!.id).catch(() => null);
             if (details?.tags.length) {
               await this.changeGame(game.id, (current) => ({
@@ -676,7 +677,7 @@ export class DesktopLibrary {
             }
           }
           if (game.banner) continue;
-          // Steam's banner comes with the game's details; F95zone's with its search result.
+          // Steam's and itch.io's banners come with the game's details; F95zone's with its search result.
           const site = sites[0]!;
           const { id, title } = game.links![site]!;
           const banner =
