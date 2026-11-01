@@ -14,6 +14,7 @@ import {
   sortGames,
   parseFlags,
   parseSearch,
+  playtime,
   tagCounts,
   type Game,
   type SortOrder,
@@ -120,6 +121,23 @@ describe("library filters", () => {
     expect(sorted("name", [], true)).toEqual(["Grpg Quest", "Moon Road", "Ember", "Ash"]);
     expect(sorted("lastPlayed", [], true)).toEqual(["Grpg Quest", "Ember", "Moon Road", "Ash"]);
     expect(sorted("plays", history, true)).toEqual(["Grpg Quest", "Ash", "Ember", "Moon Road"]);
+  });
+  it("totals playtime from the stored count or else the finished launches", () => {
+    const launch = (gameId: string, minutes: number, outcome = "ended" as const) => ({
+      gameId,
+      startedAt: "2026-10-20T10:00:00.000Z",
+      endedAt: new Date(Date.parse("2026-10-20T10:00:00.000Z") + minutes * 60_000).toISOString(),
+      outcome,
+    });
+    const history = [
+      launch("Ember", 30),
+      launch("Ember", 15),
+      { ...launch("Ember", 600), outcome: "interrupted" as const },
+      { ...launch("Ember", 0), endedAt: null, outcome: "running" as const },
+      launch("Ash", 90),
+    ];
+    expect(playtime(game("Ember", []), history)).toBe(45 * 60);
+    expect(playtime(game("Ember", [], { playtime: 7 }), history)).toBe(7);
   });
 });
 

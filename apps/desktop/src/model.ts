@@ -31,6 +31,8 @@ export const GameSchema = Schema.Struct({
   lastPlayed: Schema.NullOr(Schema.String),
   /** Launches started, kept apart from the launch history, which only holds the latest 100. */
   plays: Schema.optionalKey(Schema.Int),
+  /** Seconds played across finished launches, kept apart from the launch history like `plays`. */
+  playtime: Schema.optionalKey(Schema.Number),
   removed: Schema.Boolean,
   // Windows games run through CrossOver; Mac games are app bundles. Older libraries omit these.
   kind: Schema.optionalKey(Schema.Literals(["nwjs", "windows", "mac", "renpy", "rgss"])),
@@ -474,6 +476,22 @@ export function tagCounts(games: readonly Game[]): [tag: string, count: number][
 /** Times the game was launched. Older libraries count from the launch history they still hold. */
 export const playCount = (game: Game, launches: readonly Pick<Launch, "gameId">[]) =>
   game.plays ?? launches.filter((launch) => launch.gameId === game.id).length;
+
+/** Seconds a launch ran, or 0 while it runs or when Aperto missed its end. */
+export const launchSeconds = (launch: Pick<Launch, "startedAt" | "endedAt" | "outcome">) =>
+  launch.endedAt && launch.outcome !== "interrupted"
+    ? Math.max(0, (Date.parse(launch.endedAt) - Date.parse(launch.startedAt)) / 1000)
+    : 0;
+
+/** Seconds the game was played. Older libraries count from the launch history they still hold. */
+export const playtime = (
+  game: Game,
+  launches: readonly Pick<Launch, "gameId" | "startedAt" | "endedAt" | "outcome">[],
+) =>
+  game.playtime ??
+  launches
+    .filter((launch) => launch.gameId === game.id)
+    .reduce((total, launch) => total + launchSeconds(launch), 0);
 
 export const sortOrders = {
   name: "Name",

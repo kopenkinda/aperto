@@ -205,7 +205,7 @@ line([NSPoint(x: 533, y: 728), NSPoint(x: 1946, y: 728)], stroke: 0x262b32)
 rounded(NSRect(x: 573, y: 646, width: 210, height: 60), radius: 14, fill: 0xf2f3f5)
 polygon([NSPoint(x: 625, y: 662), NSPoint(x: 625, y: 690), NSPoint(x: 649, y: 676)], fill: 0x16191c)
 text("Play", NSRect(x: 664, y: 656, width: 100, height: 40), size: 29, weight: .semibold, fill: 0x16191c)
-for (index, fact) in [("Last played", "Today"), ("Times played", "14"), ("Runs with", "NW.js 0.119.2")].enumerated() {
+for (index, fact) in [("Last played", "Today"), ("Played for", "6h 20m"), ("Runs with", "NW.js 0.119.2")].enumerated() {
     let x = 840 + CGFloat(index) * 220
     text(fact.0, NSRect(x: x, y: 650, width: 220, height: 26), size: 19, fill: 0x7d8590)
     text(fact.1, NSRect(x: x, y: 676, width: 220, height: 32), size: 24, weight: .medium)

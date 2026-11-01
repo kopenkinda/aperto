@@ -13,7 +13,9 @@ import {
   sourceUrl,
   titleMatches,
   type AutoTagReport,
+  launchSeconds,
   playCount,
+  playtime,
   parseArguments,
   parseFlags,
   type Candidate,
@@ -1247,14 +1249,27 @@ export class DesktopLibrary {
     log: string,
   ) {
     void this.store
-      .update((state) => ({
-        ...state,
-        launches: state.launches.map((launch) =>
-          launch.id === id
-            ? { ...launch, endedAt: new Date().toISOString(), outcome, detail, log }
-            : launch,
-        ),
-      }))
+      .update((state) => {
+        const endedAt = new Date().toISOString();
+        const launches = state.launches.map((launch) =>
+          launch.id === id ? { ...launch, endedAt, outcome, detail, log } : launch,
+        );
+        const finished = launches.find((launch) => launch.id === id);
+        if (!finished) return { ...state, launches };
+        // A first total from the history already includes this launch.
+        const games = state.games.map((game) =>
+          game.id === finished.gameId
+            ? {
+                ...game,
+                playtime:
+                  game.playtime === undefined
+                    ? playtime(game, launches)
+                    : game.playtime + launchSeconds(finished),
+              }
+            : game,
+        );
+        return { ...state, launches, games };
+      })
       .catch((error) => {
         console.error("Could not save launch result:", error);
         this.changed();

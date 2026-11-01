@@ -62,6 +62,7 @@ import {
   updateAvailable,
   sandboxable,
   playCount,
+  playtime,
   tagCounts,
   type Command,
   type Engine,
@@ -81,7 +82,11 @@ const launchIcons: Record<Launch["outcome"], typeof PlayIcon> = {
 
 /** "45s", "12m", or "1h 5m". */
 function duration(from: string, to: string) {
-  const seconds = Math.max(0, Math.round((Date.parse(to) - Date.parse(from)) / 1000));
+  return formatSeconds((Date.parse(to) - Date.parse(from)) / 1000);
+}
+
+function formatSeconds(total: number) {
+  const seconds = Math.max(0, Math.round(total));
   if (seconds < 60) return `${seconds}s`;
   const minutes = Math.round(seconds / 60);
   if (minutes < 60) return `${minutes}m`;
@@ -137,6 +142,8 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
 }
 
 /** One settings row: the label on the left, the control and its hint on the right. */
+const plays = (count: number) => `Played ${count} ${count === 1 ? "time" : "times"}`;
+
 /** What starts the game, as shown beside Play. */
 function runsWith(game: Game, launches: readonly Launch[], bottle: string | null) {
   if (game.steam) return `Steam · ${game.steam.bottle}`;
@@ -343,7 +350,11 @@ export function GamePage({
         </Button>
         <dl className="flex gap-8 text-sm">
           <Fact label="Last played">{running ? "Now" : lastPlayed(game)}</Fact>
-          <Fact label="Times played">{playCount(game, snapshot.launches)}</Fact>
+          <Fact label="Played for">
+            <span title={plays(playCount(game, snapshot.launches))}>
+              {game.lastPlayed ? formatSeconds(playtime(game, snapshot.launches)) : "—"}
+            </span>
+          </Fact>
           <Fact label="Runs with">{runsWith(game, launches, activeBottle)}</Fact>
         </dl>
         <div className="ml-auto flex gap-2">
