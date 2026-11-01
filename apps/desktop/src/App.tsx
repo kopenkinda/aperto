@@ -253,13 +253,20 @@ export function App() {
             <ApertoMark className="size-4" />
             <span className="flex flex-col">
               {games.length} {games.length === 1 ? "game" : "games"}
-              {librarySize !== null && (
-                <span
-                  className="text-[10px] leading-tight text-muted-foreground/70 tabular-nums"
-                  title="Space the games' folders take on disk"
-                >
-                  {formatSize(librarySize)}
+              {snapshot?.checkingUpdates ? (
+                <span className="text-[10px] leading-tight text-muted-foreground/70 tabular-nums">
+                  Checking updates {snapshot.checkingUpdates.checked + 1} of{" "}
+                  {snapshot.checkingUpdates.total}
                 </span>
+              ) : (
+                librarySize !== null && (
+                  <span
+                    className="text-[10px] leading-tight text-muted-foreground/70 tabular-nums"
+                    title="Space the games' folders take on disk"
+                  >
+                    {formatSize(librarySize)}
+                  </span>
+                )
               )}
             </span>
           </span>

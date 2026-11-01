@@ -265,7 +265,7 @@ export function Settings({
             <div className="flex items-center gap-3">
               <Button
                 variant="outline"
-                disabled={checking}
+                disabled={checking || !!snapshot.checkingUpdates}
                 onClick={() => {
                   setChecking(true);
                   void run(() => request({ action: "checkUpdates" })).finally(() =>
@@ -273,15 +273,17 @@ export function Settings({
                   );
                 }}
               >
-                {checking ? <Spinner /> : <RefreshCwIcon />}
+                {checking || snapshot.checkingUpdates ? <Spinner /> : <RefreshCwIcon />}
                 Check now
               </Button>
               <span className="text-muted-foreground">
-                {!linked
-                  ? "No game has been found on F95zone yet."
-                  : outdated.length
-                    ? `${outdated.length} ${outdated.length === 1 ? "update" : "updates"} available`
-                    : "Everything is up to date."}
+                {snapshot.checkingUpdates
+                  ? `Checking ${snapshot.checkingUpdates.checked + 1} of ${snapshot.checkingUpdates.total}…`
+                  : !linked
+                    ? "No game has been found on F95zone yet."
+                    : outdated.length
+                      ? `${outdated.length} ${outdated.length === 1 ? "update" : "updates"} available`
+                      : "Everything is up to date."}
               </span>
             </div>
           </Field>

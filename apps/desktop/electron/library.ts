@@ -122,6 +122,7 @@ export class DesktopLibrary {
       })),
       scanning: this.scanning !== null,
       lastScan: this.lastScan,
+      checkingUpdates: this.updateProgress,
       bottles: (await exists(crossoverWine)) ? await listBottles() : null,
       terminals: await installedTerminals(),
     };
@@ -579,16 +580,19 @@ export class DesktopLibrary {
   }
 
   private updating: Promise<void> | null = null;
+  private updateProgress: { checked: number; total: number } | null = null;
 
   /**
    * Reads each game's newest version from its F95zone thread, and records it with the version of
    * this copy. A game whose thread is not known yet, such as one tagged from Steam, is looked up by
-   * its title, which must match exactly. One request at a time.
+   * its title, which must match exactly. One request at a time, with progress in the snapshot.
    */
   checkUpdates(): Promise<void> {
     this.updating ??= (async () => {
-      for (const game of this.store.value.games) {
-        if (game.removed) continue;
+      const games = this.store.value.games.filter((game) => !game.removed);
+      for (const [index, game] of games.entries()) {
+        this.updateProgress = { checked: index, total: games.length };
+        this.changed();
         const known =
           game.update ??
           (game.source?.site === "f95"
@@ -612,6 +616,8 @@ export class DesktopLibrary {
       }));
     })().finally(() => {
       this.updating = null;
+      this.updateProgress = null;
+      this.changed();
     });
     return this.updating;
   }

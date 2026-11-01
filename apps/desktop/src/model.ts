@@ -135,6 +135,8 @@ export type Snapshot = Library & {
   downloads: { version: string; detail: string }[];
   scanning: boolean;
   lastScan: ScanReport | null;
+  /** How far the running update check has got, or null when none is running. */
+  checkingUpdates: { checked: number; total: number } | null;
   /** CrossOver bottles, or null when CrossOver is not installed. */
   bottles: string[] | null;
   /** Supported terminals installed on this Mac, the automatic choice first. */
