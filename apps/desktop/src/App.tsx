@@ -4,6 +4,7 @@ import {
   ArrowUpCircleIcon,
   ArrowUpDownIcon,
   CheckIcon,
+  DownloadIcon,
   FolderOpenIcon,
   ListFilterIcon,
   PlusIcon,
@@ -12,6 +13,7 @@ import {
   XIcon,
 } from "lucide-react";
 import { ApertoMark } from "@/components/ApertoMark";
+import { ItchLibrary } from "@/components/Itch";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -54,6 +56,7 @@ export function App() {
   const [search, setSearch] = useState("");
   const [filters, setFilters] = useState<Filters>(noFilters);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [itchOpen, setItchOpen] = useState(false);
   const [dismissedScan, setDismissedScan] = useState<string | null>(null);
   const { run, busy, error, setError } = useTask();
 
@@ -283,6 +286,17 @@ export function App() {
                 {snapshot.scanning ? <Spinner /> : <RefreshCwIcon />}
               </Button>
             )}
+            {snapshot?.itchUser && (
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Your itch.io games"
+                title="Your itch.io games"
+                onClick={() => setItchOpen(true)}
+              >
+                <DownloadIcon />
+              </Button>
+            )}
             <Button
               variant="ghost"
               size="icon-sm"
@@ -389,6 +403,7 @@ export function App() {
       {snapshot && (
         <Settings open={settingsOpen} onOpenChange={setSettingsOpen} snapshot={snapshot} />
       )}
+      {snapshot && <ItchLibrary snapshot={snapshot} open={itchOpen} onOpenChange={setItchOpen} />}
     </div>
   );
 }

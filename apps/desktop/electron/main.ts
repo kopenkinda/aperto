@@ -1,7 +1,17 @@
 import path from "node:path";
-import { stat } from "node:fs/promises";
+import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
-import { app, BrowserWindow, dialog, ipcMain, nativeImage, net, protocol, shell } from "electron";
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  nativeImage,
+  net,
+  protocol,
+  safeStorage,
+  shell,
+} from "electron";
 import { Effect, Schema } from "effect";
 import { CommandSchema } from "../src/model";
 import { DesktopLibrary } from "./library";
@@ -125,6 +135,22 @@ else {
         },
         trash: (file) => shell.trashItem(file),
         openExternal: (url) => void shell.openExternal(url),
+        async secret(name, value) {
+          const file = path.join(app.getPath("userData"), "secrets", `${name}.bin`);
+          if (value === null) {
+            await rm(file, { force: true });
+            return null;
+          }
+          if (value !== undefined) {
+            if (!safeStorage.isEncryptionAvailable())
+              throw new Error("The Keychain is not available to keep the key safe.");
+            await mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
+            await writeFile(file, safeStorage.encryptString(value), { mode: 0o600 });
+            return value;
+          }
+          const data = await readFile(file).catch(() => null);
+          return data ? safeStorage.decryptString(data) : null;
+        },
         installedGames: async () =>
           (
             await Promise.all([

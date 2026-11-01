@@ -158,6 +158,8 @@ export const LibrarySchema = Schema.Struct({
   updatesCheckedAt: Schema.optionalKey(Schema.String),
   /** Tags removed from every game and never added again. Older libraries omit it. */
   blockedTags: Schema.optionalKey(Schema.Array(Schema.String)),
+  /** The itch.io account signed in with an API key, which is kept in the Keychain. */
+  itchUser: Schema.optionalKey(Schema.Struct({ id: Schema.String, name: Schema.String })),
   /** Colors chosen for tags, by tag. Older libraries omit it. */
   tagColors: Schema.optionalKey(Schema.Record(Schema.String, Schema.Literals(tagColorNames))),
 });
@@ -168,6 +170,8 @@ export type Snapshot = Library & {
   downloads: { version: string; detail: string }[];
   scanning: boolean;
   lastScan: ScanReport | null;
+  /** itch.io games downloading into the games folder, by itch.io game ID. */
+  itchDownloads: { gameId: string; title: string; detail: string }[];
   /** How far the running update check has got, or null when none is running. */
   checkingUpdates: { checked: number; total: number } | null;
   /** CrossOver bottles, or null when CrossOver is not installed. */
@@ -228,6 +232,19 @@ export type MetadataMatch = {
    * game's details instead.
    */
   banner: string | null;
+};
+export type ItchPlatform = "mac" | "windows" | "linux" | "web";
+/** A game the itch.io account bought or claimed. */
+export type ItchGame = {
+  /** The download key that proves the purchase. */
+  keyId: string;
+  gameId: string;
+  title: string;
+  /** The game's page without the scheme, as itch.io links keep it. */
+  page: string;
+  cover: string | null;
+  author: string;
+  platforms: ItchPlatform[];
 };
 /** A game's page on F95zone, Steam, or itch.io. */
 export const sourceUrl = (site: MetadataSite, id: string) =>
@@ -329,6 +346,16 @@ export const CommandSchema = Schema.Union([
     ...id,
     site: SiteSchema,
   }),
+  /** Signs in to itch.io with an API key from the account's API keys page. */
+  Schema.Struct({ action: Schema.Literal("itchSignIn"), key: Schema.String }),
+  Schema.Struct({ action: Schema.Literal("itchSignOut") }),
+  /** Opens itch.io's API keys page, where the user makes the key to sign in with. */
+  Schema.Struct({ action: Schema.Literal("itchKeysPage") }),
+  /** The games the itch.io account owns. */
+  Schema.Struct({ action: Schema.Literal("itchGames") }),
+  /** Downloads an owned itch.io game into the games folder, adds it, and links it. */
+  Schema.Struct({ action: Schema.Literal("itchDownload"), keyId: Schema.String }),
+  Schema.Struct({ action: Schema.Literal("itchCancel"), gameId: Schema.String }),
   Schema.Struct({
     action: Schema.Literal("setTagColor"),
     tag: Schema.String,
@@ -400,6 +427,7 @@ type Results = {
   findMetadata: MetadataMatch[];
   metadataDetails: MetadataDetails;
   autoTag: AutoTagReport;
+  itchGames: ItchGame[];
 };
 export type ResultFor<C extends Command> = C["action"] extends keyof Results
   ? Results[C["action"]]

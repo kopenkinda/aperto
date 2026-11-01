@@ -25,6 +25,8 @@ import {
   type Game,
   type ScanReport,
   type Engine,
+  formatSize,
+  type ItchGame,
   type SteamInstall,
   type Snapshot,
 } from "../src/model";
@@ -34,6 +36,7 @@ import { inspectRoot, nameManifest, readObject } from "./detection";
 import { detectGame, findGames, fingerprint, versionedName, versionsIn, within } from "./discovery";
 import { iconToPng } from "./mac";
 import { diskUsage, findComponents, listComponents, removeComponent } from "./components";
+import { chooseUpload, downloadUpload, itchProfile, ownedGames, unpack } from "./itch";
 import { findF95Thread, metadataDetails, searchF95, searchMetadata } from "./metadata";
 import { mkxpLaunch } from "./mkxp";
 import { renpyLaunch } from "./renpy";
@@ -64,6 +67,8 @@ export type NativeActions = {
   trash: (file: string) => Promise<void>;
   /** Opens a web page in the default browser. */
   openExternal: (url: string) => void;
+  /** Secrets such as the itch.io API key, kept encrypted with the Keychain. Null removes one. */
+  secret: (name: string, value?: string | null) => Promise<string | null>;
   /**
    * Games installed outside the games folder: game apps in the Applications folders and games
    * installed with Steam inside CrossOver bottles.
@@ -122,6 +127,11 @@ export class DesktopLibrary {
       running: [...this.running.keys()],
       downloads: [...this.runtimes.downloads].map(([version, item]) => ({
         version,
+        detail: item.detail,
+      })),
+      itchDownloads: [...this.itchDownloads].map(([gameId, item]) => ({
+        gameId,
+        title: item.title,
         detail: item.detail,
       })),
       scanning: this.scanning !== null,
@@ -203,6 +213,41 @@ export class DesktopLibrary {
       const link = this.game(command.id).links?.[command.site];
       if (!link) throw new Error(`This game is not linked to ${metadataSites[command.site]}.`);
       this.native.openExternal(sourceUrl(command.site, link.id));
+      return this.snapshot();
+    }
+    if (command.action === "itchSignIn") {
+      const key = command.key.trim();
+      if (!/^[A-Za-z0-9]{20,64}$/.test(key))
+        throw new Error("Paste the API key from itch.io's API keys page.");
+      const user = await itchProfile(key);
+      await this.native.secret("itch", key);
+      this.itchOwned = null;
+      await this.store.update((state) => ({ ...state, itchUser: user }));
+      return this.snapshot();
+    }
+    if (command.action === "itchSignOut") {
+      await this.native.secret("itch", null);
+      this.itchOwned = null;
+      await this.store.update((state) => {
+        const { itchUser: _, ...rest } = state;
+        return rest;
+      });
+      return this.snapshot();
+    }
+    if (command.action === "itchKeysPage") {
+      this.native.openExternal("https://itch.io/user/settings/api-keys");
+      return this.snapshot();
+    }
+    if (command.action === "itchGames") {
+      this.itchOwned = await ownedGames(await this.itchKey());
+      return this.itchOwned;
+    }
+    if (command.action === "itchDownload") {
+      await this.downloadItch(command.keyId);
+      return this.snapshot();
+    }
+    if (command.action === "itchCancel") {
+      this.itchDownloads.get(command.gameId)?.controller.abort();
       return this.snapshot();
     }
     if (command.action === "applyMetadata") {
@@ -647,6 +692,102 @@ export class DesktopLibrary {
     const last = this.store.value.updatesCheckedAt;
     if (last && Date.now() - Date.parse(last) < 12 * 3_600_000) return;
     void this.checkUpdates().catch((error) => console.error("Update check failed:", error));
+  }
+
+  private itchOwned: ItchGame[] | null = null;
+  private readonly itchDownloads = new Map<
+    string,
+    { title: string; detail: string; controller: AbortController }
+  >();
+
+  private async itchKey() {
+    const key = this.store.value.itchUser ? await this.native.secret("itch") : null;
+    if (!key) throw new Error("Sign in to itch.io in Settings first.");
+    return key;
+  }
+
+  /**
+   * Downloads an owned itch.io game into a new folder in the games folder, then scans the folder
+   * and links each game found in it to its itch.io page, with the page's tags and banner. The
+   * download unpacks beside Aperto's data first, so a scan never sees half a game.
+   */
+  private async downloadItch(keyId: string) {
+    const key = await this.itchKey();
+    const find = (games: ItchGame[] | null) => games?.find((item) => item.keyId === keyId);
+    const game = find(this.itchOwned) ?? find((this.itchOwned = await ownedGames(key)));
+    if (!game) throw new Error("This game is no longer in your itch.io library.");
+    const folder = this.store.value.gamesFolder;
+    if (!folder)
+      throw new Error("Choose a games folder in Settings first; itch.io games download there.");
+    if (this.itchDownloads.has(game.gameId))
+      throw new Error(`${game.title} is already downloading.`);
+    const download = { title: game.title, detail: "Starting…", controller: new AbortController() };
+    this.itchDownloads.set(game.gameId, download);
+    this.changed();
+    const staging = path.join(this.store.directory, "downloads", randomUUID());
+    try {
+      await mkdir(staging, { recursive: true });
+      const upload = await chooseUpload(key, game);
+      const file = path.join(staging, path.basename(upload.filename) || "download");
+      let reported = 0;
+      await downloadUpload(
+        key,
+        game,
+        upload,
+        file,
+        download.controller.signal,
+        (received, total) => {
+          if (received - reported < 1024 ** 2) return;
+          reported = received;
+          download.detail = total
+            ? `${formatSize(received)} of ${formatSize(total)}`
+            : formatSize(received);
+          this.changed();
+        },
+      );
+      download.detail = "Unpacking…";
+      this.changed();
+      const unpacked = path.join(staging, "game");
+      await unpack(file, unpacked);
+      download.controller.signal.throwIfAborted();
+      let destination = path.join(folder, folderName(game.title));
+      for (let copy = 2; await exists(destination); copy++)
+        destination = path.join(folder, `${folderName(game.title)} ${copy}`);
+      // The games folder may be on another drive, where a rename cannot reach.
+      await rename(unpacked, destination).catch(async (error: NodeJS.ErrnoException) => {
+        if (error.code !== "EXDEV") throw error;
+        await execute("/usr/bin/ditto", [unpacked, destination]);
+      });
+      await this.scanGamesFolder(true);
+      const real = await realpath(destination);
+      const found = this.store.value.games.filter(
+        (item) => !item.removed && within(item.folder, real),
+      );
+      if (!found.length) {
+        this.native.reveal(destination);
+        throw new Error(
+          `${game.title} downloaded to ${destination}, but Aperto found no game it can run in it.`,
+        );
+      }
+      const details = await metadataDetails("itch", game.page).catch(() => null);
+      for (const item of found) {
+        if (!item.banner && details?.banner)
+          await this.setArtwork(item, "banner", null, details.banner).catch(() => {});
+        await this.changeGame(item.id, (current) => ({
+          ...current,
+          name: game.title.slice(0, 160),
+          tags: this.allowedTags([...current.tags, ...(details?.tags ?? [])]),
+          links: { ...current.links, itch: { id: game.page, title: game.title } },
+        }));
+      }
+    } catch (error) {
+      // Stopped by the user, which needs no message.
+      if (!download.controller.signal.aborted) throw error;
+    } finally {
+      await rm(staging, { recursive: true, force: true });
+      this.itchDownloads.delete(game.gameId);
+      this.changed();
+    }
   }
 
   private autoTagging: Promise<AutoTagReport> | null = null;
@@ -1418,6 +1559,17 @@ export class DesktopLibrary {
 }
 
 /** What an update check learned about a game from its F95zone thread. */
+/** A folder name for a downloaded game: its title without characters macOS paths cannot hold. */
+function folderName(title: string) {
+  const name = title
+    .replace(/[/:\\\p{Cc}]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    // A leading dot would hide the folder.
+    .replace(/^\.+/, "");
+  return name.slice(0, 100) || "itch.io game";
+}
+
 function updateRecord(game: Game, latest: string): NonNullable<Game["update"]> {
   return { installed: installedVersion(game), latest, checkedAt: new Date().toISOString() };
 }

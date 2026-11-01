@@ -27,6 +27,7 @@ import {
 } from "./model";
 import { request, useTask } from "./desktop";
 import { Field, Section } from "@/components/settings";
+import { ItchAccount, ItchLibrary } from "@/components/Itch";
 import { TagManager } from "@/components/TagManager";
 
 const relative = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
@@ -102,6 +103,7 @@ export function Settings({
     : "Automatic";
   const installed = [...snapshot.runtimes].sort((a, b) => compareVersions(b.version, a.version));
   const [checking, setChecking] = useState(false);
+  const [itchOpen, setItchOpen] = useState(false);
   const linked = snapshot.games.filter((game) => game.update).length;
   const outdated = snapshot.games.filter(updateAvailable);
 
@@ -183,6 +185,11 @@ export function Settings({
             </div>
           </Field>
         </Section>
+
+        <Section title="itch.io">
+          <ItchAccount snapshot={snapshot} onLibrary={() => setItchOpen(true)} />
+        </Section>
+        <ItchLibrary snapshot={snapshot} open={itchOpen} onOpenChange={setItchOpen} />
 
         <Section title="Apps">
           <Field
