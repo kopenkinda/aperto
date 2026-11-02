@@ -9,10 +9,11 @@ import { crossoverWine, wineArgs } from "./windows";
 const execute = promisify(execFile);
 
 // GOG Galaxy's public client, which GOG's login page accepts for desktop apps; Heroic and
-// lgogdownloader sign in with it too.
+// lgogdownloader sign in with it too. Its secret is public, as any desktop app's is, and signs in
+// no one by itself, so secret scanners are told to skip it.
 const client = {
   id: "46899977096215655",
-  secret: "9d85c43b1482497dbbce61f6e4aa173a433796eeae2ca8c5f6129f2dc4de46d9",
+  secret: "9d85c43b1482497dbbce61f6e4aa173a433796eeae2ca8c5f6129f2dc4de46d9", // ggignore
 };
 /** Where GOG's login page sends the browser after signing in, with the code in the address. */
 export const gogRedirect = "https://embed.gog.com/on_login_success?origin=client";
