@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   compareGameVersions,
+  steamApp,
   updateAvailable,
   searchName,
   titleMatches,
@@ -251,5 +252,26 @@ describe("game versions", () => {
       }),
     ).toBe(false);
     expect(updateAvailable({})).toBe(false);
+  });
+});
+
+describe("steamApp", () => {
+  const steam = { steam: { id: "10", title: "Space Game" } };
+  it("knows games a Steam client installed, not ones only linked to Steam", () => {
+    expect(
+      steamApp({
+        kind: "mac",
+        root: "/Users/me/Library/Application Support/Steam/steamapps/common/Space/Space.app",
+        links: steam,
+      }),
+    ).toBe("10");
+    expect(steamApp({ kind: "mac", root: "/Applications/Space.app", links: steam })).toBe(null);
+    expect(
+      steamApp({
+        kind: "windows",
+        root: "/bottle/steamapps/common/Space",
+        steam: { appId: "20", bottle: "Steam", installdir: "Space", client: "steam.exe" },
+      }),
+    ).toBe("20");
   });
 });

@@ -11,6 +11,7 @@ import {
   metadataSites,
   normalizeTags,
   sandboxable,
+  steamApp,
   searchName,
   shownSites,
   sourceUrl,
@@ -634,7 +635,7 @@ export class DesktopLibrary {
           break;
         }
         case "launch":
-          await this.launch(this.game(command.id));
+          await this.launch(this.game(command.id), command.via);
           break;
         case "stop": {
           const running = this.running.get(command.id);
@@ -1268,11 +1269,13 @@ export class DesktopLibrary {
         : "off"
       : null;
     const how = game.steam
-      ? `Windows game installed with Steam in the CrossOver bottle "${game.steam.bottle}", started through that bottle's Steam.`
+      ? `Windows game installed with Steam in the CrossOver bottle "${game.steam.bottle}". Play starts it through that bottle's Steam; the user can also have Aperto run ${game.executable} in the bottle directly, like Run Command.`
       : kind === "windows"
         ? `Windows game run with CrossOver's wine in the bottle "${game.bottle ?? this.store.value.defaultBottle ?? "(none chosen)"}", like Run Command: ${game.executable}`
         : kind === "mac"
-          ? `Mac app, opened with \`open -W -n ${game.executable}\`.`
+          ? steamApp(game)
+            ? `Mac app installed with Steam (app ${steamApp(game)}). Play starts it through Steam with \`open steam://run/${steamApp(game)}\`; the user can also have Aperto open it directly with \`open -W -n ${game.executable}\`.`
+            : `Mac app, opened with \`open -W -n ${game.executable}\`.`
           : kind === "renpy"
             ? `Ren'Py game, run with Aperto's own Ren'Py runtime from the launcher script ${game.executable}. Saves are also in ~/Library/RenPy.`
             : kind === "rgss"
@@ -1311,9 +1314,15 @@ export class DesktopLibrary {
     return bottle;
   }
 
-  private async launch(game: Game) {
+  /** Starts a game. A Steam game starts through Steam unless `via` asks Aperto to run it itself. */
+  private async launch(game: Game, via: "steam" | "aperto" = "steam") {
     this.requireMac();
     this.idle(game.id);
+    const macSteam = game.steam ? null : steamApp(game);
+    if (macSteam && via === "steam") {
+      if (!(await exists(game.root))) throw new Error("The app is missing. Locate it again.");
+      return this.startMacSteam(game, macSteam);
+    }
     if (gameKind(game) === "mac") {
       if (!game.executable || !(await exists(game.executable)))
         throw new Error("The app is missing. Locate it again.");
@@ -1366,7 +1375,7 @@ export class DesktopLibrary {
         sandbox: { run: [renpy.folder], read: [saves], write: [game.folder, saves] },
       });
     }
-    if (game.steam) {
+    if (game.steam && via === "steam") {
       if (!(await exists(game.steam.client)))
         throw new Error(`Steam is no longer installed in the "${game.steam.bottle}" bottle.`);
       return this.startSteam(game, game.steam);
@@ -1569,32 +1578,29 @@ export class DesktopLibrary {
   }
 
   /**
-   * Starts a game through the Steam in its bottle, which keeps Steam's DRM and updates working,
-   * and follows the game's own processes, found by the folder they run from. Steam may first need
-   * to start, sign in, or update the game, so the game has three minutes to appear.
+   * Starts a game through the Steam in its bottle, which keeps Steam's DRM and updates working.
+   * Windows processes show their Windows path, as in `C:\…\steamapps\common\Game\Game.exe`.
    */
   private async startSteam(game: Game, steam: SteamInstall) {
     await this.prepareBottle(game, steam.bottle);
     const args = ["-applaunch", steam.appId, ...game.flags];
-    const launcher = spawn(crossoverWine, wineArgs(steam.bottle, [steam.client, ...args], "game"), {
-      stdio: "ignore",
-      detached: true,
-    });
-    await new Promise<void>((resolve, reject) => {
-      launcher.once("spawn", resolve);
-      launcher.once("error", reject);
-    });
-    launcher.unref();
-    const { id, startedAt } = await this.recordLaunch(game, `Steam · ${steam.bottle}`, args, false);
-    // Windows processes show their Windows path, as in `C:\…\steamapps\common\Game\Game.exe`.
     const marker = `\\steamapps\\common\\${steam.installdir}\\`.toLowerCase();
-    const processes = async () =>
-      (await execute("/bin/ps", ["-axo", "command="]).catch(() => ({ stdout: "" }))).stdout
-        .split("\n")
-        .filter((line) => line.toLowerCase().includes(marker));
     const executables = new Set<string>();
-    const session = {
-      stopped: false,
+    return this.followSteam(game, {
+      runtime: `Steam · ${steam.bottle}`,
+      args,
+      client: `Steam in the "${steam.bottle}" bottle`,
+      launcher: () =>
+        spawn(crossoverWine, wineArgs(steam.bottle, [steam.client, ...args], "game"), {
+          stdio: "ignore",
+          detached: true,
+        }),
+      matches: (line) => {
+        if (!line.toLowerCase().includes(marker)) return false;
+        const exe = /([^\\]+\.exe)/i.exec(line)?.[1];
+        if (exe) executables.add(exe);
+        return true;
+      },
       // Ends the game's own processes, which Steam started, inside the bottle.
       stop: () => {
         for (const name of executables)
@@ -1604,7 +1610,58 @@ export class DesktopLibrary {
             { stdio: "ignore" },
           ).on("error", () => {});
       },
-    };
+    });
+  }
+
+  /** Starts a Mac game through the Mac Steam client, by its Steam link. */
+  private async startMacSteam(game: Game, appId: string) {
+    const contents = path.join(game.root, "Contents", "MacOS") + "/";
+    // Steam passes what follows `//` in a run link to the game.
+    const link = `steam://run/${appId}${game.flags.length ? `//${encodeURIComponent(game.flags.join(" "))}` : ""}`;
+    return this.followSteam(game, {
+      runtime: "Steam",
+      args: [...game.flags],
+      client: "Steam",
+      launcher: () => spawn("/usr/bin/open", ["-g", link], { stdio: "ignore", detached: true }),
+      matches: (line) => line.includes(contents),
+      stop: () => {
+        spawn("/usr/bin/pkill", ["-TERM", "-f", contents], { stdio: "ignore" }).on(
+          "error",
+          () => {},
+        );
+      },
+    });
+  }
+
+  /**
+   * Asks a Steam client to start a game, then follows the game's own processes, which Steam
+   * starts, by the lines of `ps` they match. Steam may first need to start, sign in, or update the
+   * game, so the game has three minutes to appear.
+   */
+  private async followSteam(
+    game: Game,
+    steam: {
+      runtime: string;
+      args: string[];
+      /** The Steam client, as named in the message when the game does not start. */
+      client: string;
+      launcher: () => ChildProcess;
+      matches: (line: string) => boolean;
+      stop: () => void;
+    },
+  ) {
+    const launcher = steam.launcher();
+    await new Promise<void>((resolve, reject) => {
+      launcher.once("spawn", resolve);
+      launcher.once("error", reject);
+    });
+    launcher.unref();
+    const { id, startedAt } = await this.recordLaunch(game, steam.runtime, steam.args, false);
+    const processes = async () =>
+      (await execute("/bin/ps", ["-axo", "command="]).catch(() => ({ stdout: "" }))).stdout
+        .split("\n")
+        .filter(steam.matches);
+    const session = { stopped: false, stop: steam.stop };
     this.running.set(game.id, session);
     this.changed();
     await this.countPlay(game, startedAt);
@@ -1614,10 +1671,6 @@ export class DesktopLibrary {
       let misses = 0;
       for (let waited = 0; !session.stopped; waited += 2000) {
         const found = await processes();
-        for (const line of found) {
-          const exe = /([^\\]+\.exe)/i.exec(line)?.[1];
-          if (exe) executables.add(exe);
-        }
         if (found.length) {
           seen = true;
           misses = 0;
@@ -1635,7 +1688,7 @@ export class DesktopLibrary {
           ? "Stopped from Aperto."
           : seen
             ? "The game closed."
-            : `The game did not start within 3 minutes. Steam in the "${steam.bottle}" bottle may need you to sign in or finish an update.`,
+            : `The game did not start within 3 minutes. ${steam.client} may need you to sign in or finish an update.`,
         "",
       );
     })();

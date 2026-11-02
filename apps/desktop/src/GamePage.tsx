@@ -16,7 +16,8 @@ import {
 } from "@hugeicons/core-free-icons";
 import { Artwork } from "@/components/Artwork";
 import { cn } from "@/lib/utils";
-import { AgentLogo } from "@/components/logos";
+import { ApertoMark } from "@/components/ApertoMark";
+import { AgentLogo, SiteLogo } from "@/components/logos";
 import { GameLinks } from "@/components/GameLinks";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { PluginsSection } from "@/components/PluginsSection";
@@ -61,6 +62,7 @@ import {
   chosenOption,
   compareVersions,
   gameKind,
+  steamApp,
   launchOptions,
   updateAvailable,
   sandboxable,
@@ -151,6 +153,7 @@ const plays = (count: number) => `Played ${count} ${count === 1 ? "time" : "time
 /** What starts the game, as shown beside Play. */
 function runsWith(game: Game, launches: readonly Launch[], bottle: string | null) {
   if (game.steam) return `Steam · ${game.steam.bottle}`;
+  if (steamApp(game)) return "Steam · macOS";
   switch (gameKind(game)) {
     case "mac":
       return "macOS";
@@ -225,6 +228,7 @@ export function GamePage({
   const [artworkUrl, setArtworkUrl] = useState("");
   const { run, busy, error, setError } = useTask();
   const running = snapshot.running.includes(game.id);
+  const steam = steamApp(game) !== null;
   const missing = snapshot.missing.includes(game.id);
   const launches = snapshot.launches.filter((launch) => launch.gameId === game.id);
   const runtimes = [...snapshot.runtimes].sort((a, b) => compareVersions(b.version, a.version));
@@ -340,21 +344,42 @@ export function GamePage({
       </header>
 
       <div className="flex items-center gap-8 border-y bg-card/40 px-8 py-4">
-        <Button
-          size="lg"
-          className="h-11 min-w-36 text-base"
-          disabled={busy || (!running && !playable(game, snapshot))}
-          onClick={() =>
-            void run(() => request({ action: running ? "stop" : "launch", id: game.id }))
-          }
-        >
-          {running ? (
-            <HugeiconsIcon icon={StopIcon} className="fill-current" />
-          ) : (
-            <HugeiconsIcon icon={PlayIcon} className="fill-current" />
+        <div className="flex gap-2">
+          <Button
+            size="lg"
+            className="h-11 min-w-36 text-base"
+            disabled={busy || (!running && !playable(game, snapshot))}
+            title={!running && steam ? "Start the game through Steam" : undefined}
+            onClick={() =>
+              void run(() => request({ action: running ? "stop" : "launch", id: game.id }))
+            }
+          >
+            {running ? (
+              <HugeiconsIcon icon={StopIcon} className="fill-current" />
+            ) : steam ? (
+              <SiteLogo site="steam" className="size-4" />
+            ) : (
+              <HugeiconsIcon icon={PlayIcon} className="fill-current" />
+            )}
+            {running ? "Stop" : steam ? "Play via Steam" : "Play"}
+          </Button>
+          {/* Steam games can also skip Steam, for when it is not signed in or the game has no DRM. */}
+          {!running && steam && (
+            <Button
+              variant="outline"
+              size="lg"
+              className="h-11 text-base"
+              disabled={busy || !playable(game, snapshot)}
+              title="Run the game directly, without Steam"
+              onClick={() =>
+                void run(() => request({ action: "launch", id: game.id, via: "aperto" }))
+              }
+            >
+              <ApertoMark className="size-4" />
+              Play via Aperto
+            </Button>
           )}
-          {running ? "Stop" : "Play"}
-        </Button>
+        </div>
         <dl className="flex gap-8 text-sm">
           <Fact label="Last played">{running ? "Now" : lastPlayed(game)}</Fact>
           <Fact label="Played for">
@@ -589,7 +614,8 @@ export function GamePage({
                   {game.steam ? (
                     <Note label="Runs through">
                       Steam in the &ldquo;{game.steam.bottle}&rdquo; CrossOver bottle, which keeps
-                      the game&rsquo;s updates and DRM working.
+                      the game&rsquo;s updates and DRM working. Play via Aperto runs it in the
+                      bottle directly instead.
                     </Note>
                   ) : (
                     <Field

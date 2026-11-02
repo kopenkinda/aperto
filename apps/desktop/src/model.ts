@@ -102,6 +102,15 @@ export function migrateLibrary(data: unknown): unknown {
   };
 }
 export const gameKind = (game: Pick<Game, "kind">) => game.kind ?? "nwjs";
+/**
+ * The Steam app a Steam client installed this game as, which can start it: one in a CrossOver
+ * bottle, or a Mac game in a Mac Steam library. Null for games that are only linked to Steam.
+ */
+export const steamApp = (game: Pick<Game, "kind" | "steam" | "root" | "links">) =>
+  game.steam?.appId ??
+  (gameKind(game) === "mac" && /\/steamapps\/common\//.test(game.root)
+    ? (game.links?.steam?.id ?? null)
+    : null);
 /** Games Aperto starts itself can run in its sandbox; Mac apps open through macOS, Windows games through CrossOver. */
 export const sandboxable = (game: Pick<Game, "kind">) =>
   ["nwjs", "renpy", "rgss"].includes(gameKind(game));
@@ -427,7 +436,12 @@ export const CommandSchema = Schema.Union([
     from: Schema.String,
     to: Schema.String,
   }),
-  Schema.Struct({ action: Schema.Literal("launch"), ...id }),
+  /** Steam games start through Steam unless `via` is "aperto", which runs the game directly. */
+  Schema.Struct({
+    action: Schema.Literal("launch"),
+    ...id,
+    via: Schema.optionalKey(Schema.Literals(["steam", "aperto"])),
+  }),
   Schema.Struct({ action: Schema.Literal("stop"), ...id }),
   Schema.Struct({ action: Schema.Literal("reveal"), ...id }),
   Schema.Struct({ action: Schema.Literal("openTerminal"), ...id }),
