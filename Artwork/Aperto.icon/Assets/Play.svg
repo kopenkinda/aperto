@@ -1,3 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
-  <path transform="translate(512 512) scale(0.86) translate(-525 -521)" d="M388 446V638L520 542Z" fill="#262831" stroke="#262831" stroke-width="44" stroke-linejoin="round"/>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024"><path fill="#262831" stroke="#262831" stroke-linejoin="round" stroke-width="44" d="M388 446V638L520 542Z" transform="translate(512 512) scale(0.86) translate(-525 -521)"/></svg>
