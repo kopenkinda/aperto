@@ -301,10 +301,7 @@ export function App() {
               </Button>
             )}
             {!!snapshot?.storeDownloads.length && (
-              <DownloadsButton
-                downloads={snapshot.storeDownloads}
-                onClick={() => setStore(snapshot.storeDownloads[0]!.site)}
-              />
+              <DownloadsButton downloads={snapshot.storeDownloads} />
             )}
             <Popover open={addOpen} onOpenChange={setAddOpen}>
               <PopoverTrigger
@@ -471,51 +468,102 @@ const menuItem =
   "flex items-center gap-2 rounded-md px-2 py-1.5 text-left outline-none hover:bg-accent focus-visible:bg-accent";
 
 /**
- * Running store downloads as a download icon ringed by how far they have got, all together.
- * The ring spins while any download's size is unknown or it is unpacking.
+ * Running store downloads as a download icon ringed by how far they have got, all together; the
+ * ring spins while any download's size is unknown or it is unpacking. Clicking it lists each
+ * download with its progress and a way to stop it.
  */
-function DownloadsButton({
-  downloads,
-  onClick,
-}: {
-  downloads: Snapshot["storeDownloads"];
-  onClick: () => void;
-}) {
+function DownloadsButton({ downloads }: { downloads: Snapshot["storeDownloads"] }) {
   const known = downloads.every((item) => item.progress !== null);
   const progress = known
     ? downloads.reduce((sum, item) => sum + item.progress!, 0) / downloads.length
     : 0.25;
-  const label = downloads.map((item) => `${item.title}: ${item.detail}`).join("\n");
   return (
-    <Button
-      variant="ghost"
-      size="icon-sm"
-      aria-label={`Downloading ${downloads.length === 1 ? downloads[0]!.title : `${downloads.length} games`}`}
-      title={label}
-      onClick={onClick}
-    >
-      <span className="relative grid size-5 place-items-center">
-        <svg
-          viewBox="0 0 20 20"
-          className={cn("absolute inset-0 size-5 -rotate-90", !known && "animate-spin")}
-          aria-hidden
-        >
-          <circle cx="10" cy="10" r="9" fill="none" strokeWidth="1.5" className="stroke-muted" />
-          <circle
-            cx="10"
-            cy="10"
-            r="9"
-            fill="none"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-            pathLength={100}
-            strokeDasharray={`${progress * 100} 100`}
-            className="stroke-blue-500 transition-[stroke-dasharray] duration-300"
-          />
-        </svg>
-        <HugeiconsIcon icon={Download04Icon} className="size-3" />
-      </span>
-    </Button>
+    <Popover>
+      <PopoverTrigger
+        render={
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label={`Downloading ${downloads.length === 1 ? downloads[0]!.title : `${downloads.length} games`}`}
+            title="Downloads"
+          >
+            <span className="relative grid size-5 place-items-center">
+              <svg
+                viewBox="0 0 20 20"
+                className={cn("absolute inset-0 size-5 -rotate-90", !known && "animate-spin")}
+                aria-hidden
+              >
+                <circle
+                  cx="10"
+                  cy="10"
+                  r="9"
+                  fill="none"
+                  strokeWidth="1.5"
+                  className="stroke-muted"
+                />
+                <circle
+                  cx="10"
+                  cy="10"
+                  r="9"
+                  fill="none"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  pathLength={100}
+                  strokeDasharray={`${progress * 100} 100`}
+                  className="stroke-blue-500 transition-[stroke-dasharray] duration-300"
+                />
+              </svg>
+              <HugeiconsIcon icon={Download04Icon} className="size-3" />
+            </span>
+          </Button>
+        }
+      />
+      <PopoverContent side="top" align="end" className="w-80 gap-1 p-1">
+        <p className="px-2 pt-1.5 pb-1 text-xs font-medium text-muted-foreground">Downloads</p>
+        {downloads.map((item) => (
+          <div
+            key={`${item.site}:${item.gameId}`}
+            className="flex items-center gap-2.5 rounded-md px-2 py-1.5"
+          >
+            <SiteLogo site={item.site} className="size-4" />
+            <div className="flex min-w-0 flex-1 flex-col gap-1">
+              <span className="truncate">{item.title}</span>
+              <span className="relative h-1 overflow-hidden rounded-full bg-muted">
+                <span
+                  className={cn(
+                    "absolute inset-y-0 left-0 rounded-full bg-blue-500 transition-[width] duration-300",
+                    item.progress === null && "w-1/4 animate-pulse",
+                  )}
+                  style={item.progress === null ? undefined : { width: `${item.progress * 100}%` }}
+                />
+              </span>
+              <span className="truncate text-xs text-muted-foreground tabular-nums">
+                {item.detail}
+              </span>
+            </div>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label={`Stop ${item.title}`}
+              title={
+                item.site === "steam"
+                  ? "Stop following this install; Steam goes on installing it"
+                  : "Stop downloading"
+              }
+              onClick={() =>
+                void request({
+                  action: "stopStoreDownload",
+                  site: item.site,
+                  gameId: item.gameId,
+                }).catch(() => {})
+              }
+            >
+              <HugeiconsIcon icon={Cancel01Icon} />
+            </Button>
+          </div>
+        ))}
+      </PopoverContent>
+    </Popover>
   );
 }
 
