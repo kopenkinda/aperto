@@ -275,9 +275,11 @@ export function GamePage({
   const [engine, setEngine] = useState<Engine | null>(null);
   const [confirm, setConfirm] = useState<"remove" | "trash" | null>(null);
   const [deleteMenu, setDeleteMenu] = useState(false);
+  // A game a Steam client installed is uninstalled through that Steam, not moved to the Trash.
+  const steamInstall = steamApp(game) !== null;
   const trash = () =>
     void run(async () => {
-      setTrashFolder(await request({ action: "folderToTrash", id: game.id }));
+      setTrashFolder(steamInstall ? null : await request({ action: "folderToTrash", id: game.id }));
       setConfirm("trash");
     });
   // The folder a Shift-click removal moves to the Trash, shown in the dialog before it happens.
@@ -576,7 +578,9 @@ export function GamePage({
                   },
                   {
                     label: "Delete from disk",
-                    hint: "Moves the folder to the Trash.",
+                    hint: steamInstall
+                      ? "Uninstalls it through Steam."
+                      : "Moves the folder to the Trash.",
                     icon: Delete02Icon,
                     pick: trash,
                   },
@@ -1141,9 +1145,11 @@ export function GamePage({
               {confirm === "trash" ? `Delete ${game.name}?` : `Remove ${game.name}?`}
             </DialogTitle>
             <DialogDescription>
-              {confirm === "trash"
-                ? "Aperto moves the game's folder to the Trash, with any saves inside it, and its browser data too for NW.js games. Aperto then forgets the game, its icon, and its history, so downloading it again adds it as new."
-                : "The game folder stays where it is, and later scans will not add it back. Restore it in Settings, under Library."}
+              {confirm === "trash" && steamInstall
+                ? "Steam uninstalls the game, after asking you to confirm. Aperto then forgets the game, its icon, and its history, so installing it again adds it as new."
+                : confirm === "trash"
+                  ? "Aperto moves the game's folder to the Trash, with any saves inside it, and its browser data too for NW.js games. Aperto then forgets the game, its icon, and its history, so downloading it again adds it as new."
+                  : "The game folder stays where it is, and later scans will not add it back. Restore it in Settings, under Library."}
             </DialogDescription>
           </DialogHeader>
           {confirm === "trash" && trashFolder && (
@@ -1179,7 +1185,11 @@ export function GamePage({
                 })
               }
             >
-              {confirm === "trash" ? "Move to Trash" : "Remove"}
+              {confirm !== "trash"
+                ? "Remove"
+                : steamInstall
+                  ? "Uninstall in Steam"
+                  : "Move to Trash"}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -634,10 +634,14 @@ export class DesktopLibrary {
           this.idle(game.id);
           // Checked again here, since the library may have changed since the dialog asked.
           if (command.trashFolder) {
-            await this.native.trash(await this.folderToTrash(game));
-            // Browser data can hold saves, so it goes to the Trash too, where it can be put back.
-            const browserData = ownedPath(this.store.directory, "browser-data", game.id);
-            if (await exists(browserData)) await this.native.trash(browserData);
+            const appId = steamApp(game);
+            if (appId) await this.uninstallWithSteam(game, appId);
+            else {
+              await this.native.trash(await this.folderToTrash(game));
+              // Browser data can hold saves, so it goes to the Trash too, where it can be put back.
+              const browserData = ownedPath(this.store.directory, "browser-data", game.id);
+              if (await exists(browserData)) await this.native.trash(browserData);
+            }
             await this.forget([game.id]);
             break;
           }
@@ -1445,6 +1449,32 @@ export class DesktopLibrary {
    * nothing else, as an extracted archive often leaves (`Game-v1.2/Game/`), but never to the games
    * folder itself. Refuses folders that hold the games folder, the home folder, or another game.
    */
+  /**
+   * Asks the Steam client that installed a game to uninstall it, so Steam's own records stay
+   * right: the Steam in the game's CrossOver bottle, or Mac Steam. Steam asks to confirm and
+   * removes the files; if the user declines, the next scan adds the game back.
+   */
+  private async uninstallWithSteam(game: Game, appId: string) {
+    const link = `steam://uninstall/${appId}`;
+    if (!game.steam) {
+      await execute("/usr/bin/open", [link]);
+      return;
+    }
+    if (!(await exists(game.steam.client)))
+      throw new Error(`Steam is no longer installed in the "${game.steam.bottle}" bottle.`);
+    await this.prepareBottle(game, game.steam.bottle);
+    const child = spawn(
+      crossoverWine,
+      wineArgs(game.steam.bottle, [game.steam.client, link], "game"),
+      { stdio: "ignore", detached: true },
+    );
+    await new Promise<void>((resolve, reject) => {
+      child.once("spawn", resolve);
+      child.once("error", reject);
+    });
+    child.unref();
+  }
+
   /**
    * Run when Aperto starts: forgets games whose folders were deleted while it was closed, and
    * deletes data left in Aperto's folders for games no longer in the library.
