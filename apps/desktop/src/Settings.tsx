@@ -388,6 +388,9 @@ export function Settings({
                   onLibrary={() => setStore("steam")}
                 />
               </Section>
+              <Section title="Epic Games">
+                <StoreAccount site="epic" snapshot={snapshot} onLibrary={() => setStore("epic")} />
+              </Section>
               <Section title="GOG">
                 <StoreAccount site="gog" snapshot={snapshot} onLibrary={() => setStore("gog")} />
               </Section>

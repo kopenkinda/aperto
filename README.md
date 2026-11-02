@@ -61,6 +61,7 @@ A game's page lists its plugins with switches, edited in the game's own `js/plug
 Sign in under Settings, Accounts, then open your games from there or from the + button. While something downloads, an icon in the sidebar shows overall progress. Click it to see each download and stop one.
 
 - **Steam** signs in on Steam's own page. Install hands the game to Mac Steam when it has a Mac version, and to the Steam in a CrossOver bottle otherwise. The game joins the library when Steam finishes.
+- **Epic Games** signs in on Epic's own page and installs through [Legendary](https://github.com/derrod/legendary), the open-source Epic client, which you install with `uv tool install legendary-gl`. Aperto keeps its own Legendary sign-in. Games that check Epic's servers when they start may not run outside Epic.
 - **GOG** signs in on GOG's own page. Aperto unpacks Mac installers without running them and runs Windows installers silently in the default CrossOver bottle. Either way the game lands in the games folder.
 - **itch.io** signs in with an API key from its API keys page. Aperto downloads the Mac build when there is one, else the Windows or web build.
 - **DLsite** appears with Adult sexual content on, and signs in on DLsite's own page. Aperto lists the games among your purchases and downloads them into the games folder. Large works come in parts; joining them needs 7-Zip from Homebrew (`brew install sevenzip`).

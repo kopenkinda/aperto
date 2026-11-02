@@ -201,6 +201,8 @@ export const LibrarySchema = Schema.Struct({
   itchUser: Schema.optionalKey(Schema.Struct({ id: Schema.String, name: Schema.String })),
   /** The Steam account, whose store sign-in cookies Aperto keeps in its own session. */
   steamUser: Schema.optionalKey(Schema.Struct({ id: Schema.String, name: Schema.String })),
+  /** The Epic Games account, signed in through Legendary with Aperto's own config. */
+  epicUser: Schema.optionalKey(Schema.Struct({ id: Schema.String, name: Schema.String })),
   /** The DLsite account, whose sign-in cookies Aperto keeps in its own session. */
   dlsiteUser: Schema.optionalKey(Schema.Struct({ id: Schema.String, name: Schema.String })),
   /** The GOG account, whose refresh token is kept in the Keychain. */
@@ -301,11 +303,18 @@ export type MetadataMatch = {
 export type Agent = { id: string; name: string };
 export type Platform = "mac" | "windows" | "linux" | "web";
 /** Stores Aperto signs in to and downloads owned games from. */
-export const storeSites = ["steam", "gog", "itch", "dlsite"] as const;
+export const storeSites = ["steam", "epic", "gog", "itch", "dlsite"] as const;
 export type StoreSite = (typeof storeSites)[number];
+export const storeNames: Record<StoreSite, string> = {
+  steam: "Steam",
+  epic: "Epic Games",
+  gog: "GOG",
+  itch: "itch.io",
+  dlsite: "DLsite",
+};
 /** The account a store is signed in with, if any. */
 export const storeUser = (
-  library: Pick<Library, "steamUser" | "gogUser" | "itchUser" | "dlsiteUser">,
+  library: Pick<Library, "steamUser" | "epicUser" | "gogUser" | "itchUser" | "dlsiteUser">,
   site: StoreSite,
 ) => library[`${site}User`];
 const StoreSchema = Schema.Literals(storeSites);
@@ -444,6 +453,9 @@ export const CommandSchema = Schema.Union([
   /** Signs in to the Steam store on its own login page, in a window Aperto opens. */
   Schema.Struct({ action: Schema.Literal("steamSignIn") }),
   Schema.Struct({ action: Schema.Literal("steamSignOut") }),
+  /** Signs in to Epic Games on its own login page, in a window Aperto opens. */
+  Schema.Struct({ action: Schema.Literal("epicSignIn") }),
+  Schema.Struct({ action: Schema.Literal("epicSignOut") }),
   /** Signs in to DLsite on its own login page, in a window Aperto opens. */
   Schema.Struct({ action: Schema.Literal("dlsiteSignIn") }),
   Schema.Struct({ action: Schema.Literal("dlsiteSignOut") }),

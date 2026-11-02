@@ -1,7 +1,7 @@
 import { HugeiconsIcon } from "@hugeicons/react";
 import { AiProgrammingIcon } from "@hugeicons/core-free-icons";
 import { cn } from "@/lib/utils";
-import type { MetadataSite } from "../model";
+import type { MetadataSite, StoreSite } from "../model";
 import claude from "@/assets/logos/claude.svg";
 import codex from "@/assets/logos/codex.svg";
 import copilot from "@/assets/logos/copilot.svg";
@@ -11,6 +11,7 @@ import opencode from "@/assets/logos/opencode.svg";
 import pi from "@/assets/logos/pi.svg";
 import qwen from "@/assets/logos/qwen.svg";
 import dlsiteFavicon from "@/assets/favicons/dlsite.png";
+import epicFavicon from "@/assets/favicons/epic.png";
 import f95Favicon from "@/assets/favicons/f95.png";
 import gogFavicon from "@/assets/favicons/gog.png";
 import itchFavicon from "@/assets/favicons/itch.png";
@@ -28,7 +29,8 @@ const agents: Record<string, string> = {
   qwen,
 };
 // Each store's own favicon.
-const favicons: Record<MetadataSite, string> = {
+const favicons: Record<MetadataSite | StoreSite, string> = {
+  epic: epicFavicon,
   f95: f95Favicon,
   steam: steamFavicon,
   gog: gogFavicon,
@@ -52,7 +54,7 @@ export function SiteLogo({
   linked = true,
   className,
 }: {
-  site: MetadataSite;
+  site: MetadataSite | StoreSite;
   linked?: boolean;
   className?: string;
 }) {

@@ -19,11 +19,11 @@ import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { request, useTask } from "../desktop";
 import {
-  metadataSites,
   type OwnedGame,
   type Platform,
   type Snapshot,
   type StoreSite,
+  storeNames,
   storeUser,
 } from "../model";
 import { Field } from "./settings";
@@ -135,6 +135,12 @@ const accountHints = {
     signedIn:
       "Installing asks Steam to install the game: Steam for Mac when the game has a Mac version, else the Steam in a CrossOver bottle. It joins the library when Steam finishes.",
   },
+  epic: {
+    signedOut:
+      "Sign in on Epic's own page to install the games you own. Needs Legendary, the open-source Epic client: uv tool install legendary-gl.",
+    signedIn:
+      "Games install through Legendary into the games folder: the Mac version when there is one, else the Windows one for CrossOver. Games that check Epic's servers at launch may not start outside Epic.",
+  },
   dlsite: {
     signedOut: "Sign in on DLsite's own page to download the games you bought.",
     signedIn:
@@ -157,14 +163,14 @@ export function StoreAccount({
   snapshot,
   onLibrary,
 }: {
-  site: "steam" | "gog" | "dlsite";
+  site: "steam" | "epic" | "gog" | "dlsite";
   snapshot: Snapshot;
   /** Opens the list of the account's games. */
   onLibrary: () => void;
 }) {
   const { run, busy, error } = useTask();
   const user = storeUser(snapshot, site);
-  const name = metadataSites[site];
+  const name = storeNames[site];
   if (user)
     return (
       <Field
@@ -224,12 +230,14 @@ export function StoreLibrary({
   onOpenChange: (open: boolean) => void;
 }) {
   const open = site !== null;
-  const name = site ? metadataSites[site] : "";
+  const name = site ? storeNames[site] : "";
   // Undefined while loading.
   const [games, setGames] = useState<OwnedGame[] | undefined>();
   const [query, setQuery] = useState("");
   const { run, error } = useTask();
-  const linked = new Set(snapshot.games.map((game) => site && game.links?.[site]?.id));
+  const linked = new Set(
+    snapshot.games.map((game) => (site && site !== "epic" ? game.links?.[site]?.id : undefined)),
+  );
   const shown = (games ?? []).filter((game) =>
     game.title.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()),
   );

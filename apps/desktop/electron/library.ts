@@ -32,6 +32,7 @@ import {
   formatSize,
   type OwnedGame,
   type StoreSite,
+  storeNames,
   type RefillReport,
   type SteamInstall,
   type Snapshot,
@@ -42,6 +43,17 @@ import { inspectRoot, nameManifest, readObject } from "./detection";
 import { detectGame, findGames, fingerprint, versionedName, versionsIn, within } from "./discovery";
 import { iconToPng, macSteamLibraries } from "./mac";
 import { createShortcut } from "./shortcuts";
+import {
+  epicAccount,
+  epicCodeUrl,
+  epicInstall,
+  epicLoginUrl,
+  epicOwnedGames,
+  epicSession,
+  findLegendary,
+  legendary,
+  legendaryMissing,
+} from "./epic";
 import {
   dlsiteDownload,
   dlsiteLoginUrl,
@@ -392,6 +404,39 @@ export class DesktopLibrary {
       delete this.owned.steam;
       await this.store.update((state) => {
         const { steamUser: _, ...rest } = state;
+        return rest;
+      });
+      return this.snapshot();
+    }
+    if (command.action === "epicSignIn") {
+      const binary = await findLegendary();
+      if (!binary) throw new Error(legendaryMissing);
+      const landed = await this.native.signInWindow({
+        url: epicLoginUrl,
+        redirect: "https://www.epicgames.com/id/api/redirect",
+        partition: epicSession,
+      });
+      if (!landed) return this.snapshot();
+      // The redirect page shows a one-time code, which Legendary trades for its own session.
+      const page = await this.native.sessionResponse(epicSession, epicCodeUrl);
+      const code = ((await page.json().catch(() => null)) as { authorizationCode?: string } | null)
+        ?.authorizationCode;
+      if (!code) throw new Error("Epic did not finish signing in. Try again.");
+      await legendary(binary, this.epicConfig, ["auth", "--code", code]).catch(() => {
+        throw new Error("Legendary could not sign in to Epic with that code. Try again.");
+      });
+      const name = (await epicAccount(binary, this.epicConfig)) ?? "your Epic account";
+      delete this.owned.epic;
+      await this.store.update((state) => ({ ...state, epicUser: { id: name, name } }));
+      return this.snapshot();
+    }
+    if (command.action === "epicSignOut") {
+      const binary = await findLegendary();
+      if (binary) await legendary(binary, this.epicConfig, ["auth", "--delete"]).catch(() => {});
+      await this.native.clearSession(epicSession);
+      delete this.owned.epic;
+      await this.store.update((state) => {
+        const { epicUser: _, ...rest } = state;
         return rest;
       });
       return this.snapshot();
@@ -969,6 +1014,11 @@ export class DesktopLibrary {
     void this.checkUpdates().catch((error) => console.error("Update check failed:", error));
   }
 
+  /** Legendary's config for Epic, kept apart from any other Legendary setup. */
+  private get epicConfig() {
+    return path.join(this.store.directory, "legendary");
+  }
+
   /** Each store's owned games, as last listed, so a download need not list them again. */
   private owned: Partial<Record<StoreSite, OwnedGame[]>> = {};
   private gogTokens: GogTokens | null = null;
@@ -1003,6 +1053,12 @@ export class DesktopLibrary {
   private async listOwned(site: StoreSite) {
     if (site === "gog") return gogOwnedGames(await this.gogAccess());
     if (site === "itch") return ownedGames(await this.itchKey());
+    if (site === "epic") {
+      if (!this.store.value.epicUser) throw new Error("Sign in to Epic Games in Settings first.");
+      const binary = await findLegendary();
+      if (!binary) throw new Error(legendaryMissing);
+      return epicOwnedGames(binary, this.epicConfig);
+    }
     if (site === "dlsite") {
       if (!this.store.value.dlsiteUser || !this.store.value.adultContent)
         throw new Error("Turn on adult sexual content and sign in to DLsite in Settings first.");
@@ -1088,7 +1144,7 @@ export class DesktopLibrary {
   private async downloadOwned(site: StoreSite, id: string) {
     const find = (games?: OwnedGame[]) => games?.find((item) => item.id === id);
     const game = find(this.owned[site]) ?? find((this.owned[site] = await this.listOwned(site)));
-    if (!game) throw new Error(`This game is no longer in your ${metadataSites[site]} library.`);
+    if (!game) throw new Error(`This game is no longer in your ${storeNames[site]} library.`);
     const folder = this.store.value.gamesFolder;
     if (!folder && site !== "steam")
       throw new Error("Choose a games folder in Settings first; downloaded games go there.");
@@ -1132,6 +1188,7 @@ export class DesktopLibrary {
     try {
       await mkdir(staging, { recursive: true });
       const unpacked = path.join(staging, "game");
+      let epicFolder: string | null = null;
       if (site === "itch") {
         const itchKey = await this.itchKey();
         const upload = await chooseUpload(itchKey, game);
@@ -1139,6 +1196,30 @@ export class DesktopLibrary {
         await downloadUpload(itchKey, game, upload, file, download.controller.signal, progress);
         step("Unpacking…");
         await unpack(file, unpacked);
+      } else if (site === "epic") {
+        const binary = await findLegendary();
+        if (!binary) throw new Error(legendaryMissing);
+        const mac = game.platforms.includes("mac");
+        if (!mac && !(await exists(crossoverWine)))
+          throw new Error(`${game.title} only has a Windows version, which needs CrossOver.`);
+        await epicInstall(
+          binary,
+          this.epicConfig,
+          game,
+          staging,
+          mac ? "Mac" : "Windows",
+          download.controller.signal,
+          (fraction, detail) => {
+            download.progress = fraction;
+            download.detail = detail;
+            this.changed();
+          },
+        );
+        // Legendary installs into a folder of its own naming inside the staging folder.
+        const [installed] = await readdir(staging);
+        if (!installed) throw new Error(`Legendary installed nothing for ${game.title}.`);
+        await rename(path.join(staging, installed), unpacked);
+        epicFolder = installed;
       } else if (site === "dlsite") {
         const files = await dlsiteDownload(
           (url, signal) => this.native.sessionResponse(dlsiteSession, url, signal),
@@ -1173,14 +1254,23 @@ export class DesktopLibrary {
         await gogInstall(installer.platform, files, unpacked, bottle ?? null);
       }
       download.controller.signal.throwIfAborted();
-      let destination = path.join(folder, folderName(game.title));
+      // Epic games keep Legendary's folder name, so Legendary can find them to update.
+      const name = epicFolder ?? folderName(game.title);
+      let destination = path.join(folder, name);
       for (let copy = 2; await exists(destination); copy++)
-        destination = path.join(folder, `${folderName(game.title)} ${copy}`);
+        destination = path.join(folder, `${name} ${copy}`);
       // The games folder may be on another drive, where a rename cannot reach.
       await rename(unpacked, destination).catch(async (error: NodeJS.ErrnoException) => {
         if (error.code !== "EXDEV") throw error;
         await execute("/usr/bin/ditto", [unpacked, destination]);
       });
+      if (site === "epic") {
+        const binary = await findLegendary();
+        if (binary)
+          await legendary(binary, this.epicConfig, ["move", game.id, folder, "--skip-move"]).catch(
+            (error: unknown) => console.error("Legendary could not record the move:", error),
+          );
+      }
       await this.scanGamesFolder(true);
       const real = await realpath(destination);
       const found = this.store.value.games.filter(
@@ -1192,10 +1282,14 @@ export class DesktopLibrary {
           `${game.title} downloaded to ${destination}, but Aperto found no game it can run in it.`,
         );
       }
-      const details = await metadataDetails(site, game.page).catch(() => null);
+      // Epic is not a site games link to; the others give tags and a banner.
+      const linkSite = site === "epic" ? null : site;
+      const details = linkSite
+        ? await metadataDetails(linkSite, game.page).catch(() => null)
+        : null;
       this.native.notify(
         `${game.title} is ready`,
-        `Downloaded from ${metadataSites[site]} and added to your library.`,
+        `Downloaded from ${storeNames[site]} and added to your library.`,
       );
       for (const item of found) {
         if (!item.banner && details?.banner)
@@ -1204,7 +1298,9 @@ export class DesktopLibrary {
           ...current,
           name: game.title.slice(0, 160),
           tags: this.allowedTags([...current.tags, ...(details?.tags ?? [])]),
-          links: { ...current.links, [site]: { id: game.page, title: game.title } },
+          ...(linkSite
+            ? { links: { ...current.links, [linkSite]: { id: game.page, title: game.title } } }
+            : {}),
         }));
       }
     } catch (error) {

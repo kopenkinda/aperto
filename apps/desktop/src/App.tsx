@@ -57,8 +57,8 @@ import {
   sortOrders,
   statusFilters,
   formatSize,
-  metadataSites,
   storeSites,
+  storeNames,
   storeUser,
   shownAgents,
   steamApp,
@@ -405,9 +405,7 @@ export function App() {
                         }}
                       >
                         <SiteLogo site={site} className="size-4" />
-                        {signedIn
-                          ? `From ${metadataSites[site]}…`
-                          : `Sign in to ${metadataSites[site]}…`}
+                        {signedIn ? `From ${storeNames[site]}…` : `Sign in to ${storeNames[site]}…`}
                       </button>
                     );
                   })}
