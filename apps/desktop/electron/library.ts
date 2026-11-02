@@ -45,11 +45,12 @@ import { iconToPng, macSteamLibraries } from "./mac";
 import { createShortcut } from "./shortcuts";
 import {
   epicAccount,
-  epicCodeUrl,
+  epicCode,
   epicInstall,
   epicLoginUrl,
   epicOwnedGames,
   epicSession,
+  epicSignOutUrl,
   legendary,
   legendaryBinary,
   legendaryPath,
@@ -130,7 +131,9 @@ export type NativeActions = {
   /**
    * Opens a store's login page in a window and resolves with the address it sends the browser to
    * once signed in, which starts with `redirect`; null when the window is closed first. With a
-   * partition, the session's cookies are kept for later requests.
+   * partition, the session's cookies are kept for later requests. With `read`, the redirect page
+   * loads and the window resolves with what `read` finds on it, or an empty string when it finds
+   * nothing even after one more sign-in through `retry`.
    */
   signInWindow: (options: {
     url: string;
@@ -139,6 +142,10 @@ export type NativeActions = {
     /** For stores without such an address: whether the kept session is signed in yet. */
     signedIn?: () => Promise<boolean>;
     partition?: string;
+    /** For stores whose redirect page holds the result: the result, or null when it is missing. */
+    read?: (page: string) => string | null;
+    /** Where the window goes when `read` finds nothing, such as a page that signs out first. */
+    retry?: string;
   }) => Promise<string | null>;
   /** Fetches with a kept session's cookies and returns the response, for streaming downloads. */
   sessionResponse: (partition: string, url: string, signal?: AbortSignal) => Promise<Response>;
@@ -410,17 +417,16 @@ export class DesktopLibrary {
     }
     if (command.action === "epicSignIn") {
       const binary = await legendaryBinary(this.store.directory);
-      const landed = await this.native.signInWindow({
+      // The redirect page shows a one-time code, which Legendary trades for its own session.
+      const code = await this.native.signInWindow({
         url: epicLoginUrl,
         redirect: "https://www.epicgames.com/id/api/redirect",
         partition: epicSession,
+        read: epicCode,
+        retry: epicSignOutUrl,
       });
-      if (!landed) return this.snapshot();
-      // The redirect page shows a one-time code, which Legendary trades for its own session.
-      const page = await this.native.sessionResponse(epicSession, epicCodeUrl);
-      const code = ((await page.json().catch(() => null)) as { authorizationCode?: string } | null)
-        ?.authorizationCode;
-      if (!code) throw new Error("Epic did not finish signing in. Try again.");
+      if (code === null) return this.snapshot();
+      if (!code) throw new Error("Epic did not give Aperto a sign-in code. Try again.");
       await legendary(binary, this.epicConfig, ["auth", "--code", code]).catch(() => {
         throw new Error("Legendary could not sign in to Epic with that code. Try again.");
       });

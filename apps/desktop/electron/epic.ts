@@ -11,10 +11,25 @@ const execute = promisify(execFile);
  * Epic's public launcher client, which Legendary and Heroic sign in with. Its redirect page shows
  * a one-time code that Legendary trades for a session.
  */
-export const epicCodeUrl =
+const epicCodeUrl =
   "https://www.epicgames.com/id/api/redirect?clientId=34a02cf8f4414e29b15921876da36f9a&responseType=code";
 export const epicLoginUrl = `https://www.epicgames.com/id/login?redirectUrl=${encodeURIComponent(epicCodeUrl)}`;
 export const epicSession = "persist:epic";
+/** Signs the kept session out of Epic and back to the login page, for a session that gives no code. */
+export const epicSignOutUrl = `https://www.epicgames.com/id/logout?redirectUrl=${encodeURIComponent(epicLoginUrl)}`;
+
+/**
+ * The one-time code on the redirect page. Epic shows `null` there for a session it remembers but
+ * has not fully signed in, which needs signing in again.
+ */
+export function epicCode(page: string) {
+  try {
+    const code = (JSON.parse(page) as { authorizationCode?: unknown }).authorizationCode;
+    return typeof code === "string" && code ? code : null;
+  } catch {
+    return null;
+  }
+}
 
 // Legendary's own macOS builds, pinned to their SHA-256 hashes.
 export const legendaryVersion = "0.21.1";

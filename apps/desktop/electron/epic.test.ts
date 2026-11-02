@@ -2,7 +2,7 @@ import { chmod, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { epicInstall, epicOwnedGames } from "./epic";
+import { epicCode, epicInstall, epicOwnedGames } from "./epic";
 
 let directory = "";
 let binary = "";
@@ -80,5 +80,19 @@ describe("Epic", () => {
     );
     expect(reports).toContain("42.50%, 00:00:07 left");
     expect(await readdir(base)).toEqual(["Firewatch"]);
+  });
+});
+
+describe("Epic sign-in code", () => {
+  it("reads the code from the redirect page and nothing from a half-signed-in one", () => {
+    const page = (code: string | null) =>
+      JSON.stringify({
+        redirectUrl: "https://localhost/launcher/authorized",
+        authorizationCode: code,
+        sid: null,
+      });
+    expect(epicCode(page("abc123"))).toBe("abc123");
+    expect(epicCode(page(null))).toBeNull();
+    expect(epicCode("<html>Sign in</html>")).toBeNull();
   });
 });
