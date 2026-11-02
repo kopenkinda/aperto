@@ -26,6 +26,7 @@ import {
   parseFlags,
   type Candidate,
   type Command,
+  type CrossoverRating,
   type Game,
   type ScanReport,
   type Engine,
@@ -38,6 +39,7 @@ import {
   type Snapshot,
 } from "../src/model";
 import { downloadImage, readableImage } from "./artwork";
+import { crossoverRating } from "./crossover-rating";
 import { extractExeIcon } from "./exe-icon";
 import { inspectRoot, nameManifest, readObject } from "./detection";
 import { detectGame, findGames, fingerprint, versionedName, versionsIn, within } from "./discovery";
@@ -485,6 +487,13 @@ export class DesktopLibrary {
         const { gogUser: _, ...rest } = state;
         return rest;
       });
+      return this.snapshot();
+    }
+    if (command.action === "crossoverRating") return this.crossoverRating(this.game(command.id));
+    if (command.action === "openCrossoverRating") {
+      const rating = await this.crossoverRating(this.game(command.id));
+      if (!rating) throw new Error("CodeWeavers has not rated this game.");
+      this.native.openExternal(rating.url);
       return this.snapshot();
     }
     if (command.action === "ownedGames") {
@@ -1019,6 +1028,18 @@ export class DesktopLibrary {
   /** Legendary's config for Epic, kept apart from any other Legendary setup. */
   private get epicConfig() {
     return path.join(this.store.directory, "legendary");
+  }
+
+  /** CrossOver ratings looked up this session, by game name; failed lookups are tried again. */
+  private crossoverRatings = new Map<string, Promise<CrossoverRating | null>>();
+  private crossoverRating(game: Game) {
+    let rating = this.crossoverRatings.get(game.name);
+    if (!rating) {
+      rating = crossoverRating(game.name);
+      rating.catch(() => this.crossoverRatings.delete(game.name));
+      this.crossoverRatings.set(game.name, rating);
+    }
+    return rating;
   }
 
   /** Each store's owned games, as last listed, so a download need not list them again. */

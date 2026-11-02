@@ -72,6 +72,7 @@ import {
   playtime,
   tagCounts,
   type Command,
+  type CrossoverRating,
   type Engine,
   type Agent,
   type Game,
@@ -331,6 +332,23 @@ export function GamePage({
     };
   }, [game.id, nwjs]);
 
+  // Games that run through CrossOver show how well CodeWeavers rates it running them.
+  const crossover = !!game.steam || gameKind(game) === "windows";
+  const [rating, setRating] = useState<CrossoverRating | null>(null);
+  useEffect(() => {
+    setRating(null);
+    if (!crossover) return;
+    let active = true;
+    // A game CodeWeavers has not rated, or a failed lookup, shows nothing.
+    request({ action: "crossoverRating", id: game.id }).then(
+      (found) => active && setRating(found),
+      () => {},
+    );
+    return () => {
+      active = false;
+    };
+  }, [game.id, game.name, crossover]);
+
   return (
     <div className="flex flex-col">
       <header className="group/hero relative h-64 shrink-0 overflow-hidden">
@@ -495,7 +513,33 @@ export function GamePage({
               {game.lastPlayed ? formatSeconds(playtime(game, snapshot.launches)) : "—"}
             </span>
           </Fact>
-          <Fact label="Runs with">{runsWith(game, launches, activeBottle)}</Fact>
+          <Fact label="Runs with">
+            <span className="flex items-center gap-2">
+              {runsWith(game, launches, activeBottle)}
+              {rating && (
+                <button
+                  type="button"
+                  className="flex items-center rounded-sm text-amber-400 outline-none hover:opacity-80 focus-visible:ring-2 focus-visible:ring-ring/50"
+                  aria-label={`Rated ${rating.stars} of 5 for CrossOver on CodeWeavers`}
+                  title={`CodeWeavers rates ${rating.title} ${rating.stars} of 5 in CrossOver on Mac.\nClick to open its page.`}
+                  onClick={() =>
+                    void run(() => request({ action: "openCrossoverRating", id: game.id }))
+                  }
+                >
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <HugeiconsIcon
+                      key={star}
+                      icon={StarIcon}
+                      className={cn(
+                        "size-3",
+                        star <= rating.stars ? "fill-current" : "text-muted-foreground/50",
+                      )}
+                    />
+                  ))}
+                </button>
+              )}
+            </span>
+          </Fact>
         </dl>
         <div className="ml-auto flex gap-2">
           <Button

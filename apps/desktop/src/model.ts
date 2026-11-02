@@ -301,6 +301,8 @@ export type MetadataMatch = {
    */
   banner: string | null;
 };
+/** How well CrossOver runs a game, out of five stars, from CodeWeavers' compatibility database. */
+export type CrossoverRating = { title: string; url: string; stars: number };
 /** A coding agent's command and name, such as `claude` for Claude Code. */
 export type Agent = { id: string; name: string };
 export type Platform = "mac" | "windows" | "linux" | "web";
@@ -537,6 +539,10 @@ export const CommandSchema = Schema.Union([
   Schema.Struct({ action: Schema.Literal("stop"), ...id }),
   Schema.Struct({ action: Schema.Literal("reveal"), ...id }),
   Schema.Struct({ action: Schema.Literal("openTerminal"), ...id }),
+  /** Looks up how well CrossOver runs a game that runs through it. */
+  Schema.Struct({ action: Schema.Literal("crossoverRating"), ...id }),
+  /** Opens the CodeWeavers page a game's CrossOver rating comes from. */
+  Schema.Struct({ action: Schema.Literal("openCrossoverRating"), ...id }),
   /** Makes an app in ~/Applications/Aperto Games that starts the game, and shows it in Finder. */
   Schema.Struct({ action: Schema.Literal("createShortcut"), ...id }),
   /** Opens a coding agent in the game's folder, told where the game is and how it runs. */
@@ -568,6 +574,7 @@ type Results = {
   autoTag: AutoTagReport;
   refillTags: RefillReport;
   ownedGames: OwnedGame[];
+  crossoverRating: CrossoverRating | null;
 };
 export type ResultFor<C extends Command> = C["action"] extends keyof Results
   ? Results[C["action"]]
