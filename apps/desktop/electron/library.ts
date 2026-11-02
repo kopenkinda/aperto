@@ -136,6 +136,7 @@ export class DesktopLibrary {
         gameId,
         title: item.title,
         detail: item.detail,
+        progress: item.progress,
       })),
       scanning: this.scanning !== null,
       lastScan: this.lastScan,
@@ -741,7 +742,7 @@ export class DesktopLibrary {
   private itchOwned: ItchGame[] | null = null;
   private readonly itchDownloads = new Map<
     string,
-    { title: string; detail: string; controller: AbortController }
+    { title: string; detail: string; progress: number | null; controller: AbortController }
   >();
 
   private async itchKey() {
@@ -765,7 +766,12 @@ export class DesktopLibrary {
       throw new Error("Choose a games folder in Settings first; itch.io games download there.");
     if (this.itchDownloads.has(game.gameId))
       throw new Error(`${game.title} is already downloading.`);
-    const download = { title: game.title, detail: "Starting…", controller: new AbortController() };
+    const download = {
+      title: game.title,
+      detail: "Starting…",
+      progress: null as number | null,
+      controller: new AbortController(),
+    };
     this.itchDownloads.set(game.gameId, download);
     this.changed();
     const staging = path.join(this.store.directory, "downloads", randomUUID());
@@ -783,6 +789,7 @@ export class DesktopLibrary {
         (received, total) => {
           if (received - reported < 1024 ** 2) return;
           reported = received;
+          download.progress = total ? received / total : null;
           download.detail = total
             ? `${formatSize(received)} of ${formatSize(total)}`
             : formatSize(received);
@@ -790,6 +797,7 @@ export class DesktopLibrary {
         },
       );
       download.detail = "Unpacking…";
+      download.progress = null;
       this.changed();
       const unpacked = path.join(staging, "game");
       await unpack(file, unpacked);

@@ -7,6 +7,7 @@ import {
   CircleArrowUp01Icon,
   Download04Icon,
   FilterHorizontalIcon,
+  FolderAddIcon,
   FolderOpenIcon,
   PlusSignIcon,
   RefreshIcon,
@@ -18,6 +19,7 @@ import { ItchLibrary } from "@/components/Itch";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { SiteLogo } from "@/components/logos";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
@@ -58,6 +60,7 @@ export function App() {
   const [filters, setFilters] = useState<Filters>(noFilters);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [itchOpen, setItchOpen] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
   const [dismissedScan, setDismissedScan] = useState<string | null>(null);
   const { run, busy, error, setError } = useTask();
 
@@ -288,27 +291,52 @@ export function App() {
                 {snapshot.scanning ? <Spinner /> : <HugeiconsIcon icon={RefreshIcon} />}
               </Button>
             )}
-            {snapshot?.itchUser && (
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label="Your itch.io games"
-                title="Your itch.io games"
+            {!!snapshot?.itchDownloads.length && (
+              <DownloadsButton
+                downloads={snapshot.itchDownloads}
                 onClick={() => setItchOpen(true)}
-              >
-                <HugeiconsIcon icon={Download04Icon} />
-              </Button>
+              />
             )}
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label="Add games from a folder"
-              title="Add games from a folder"
-              disabled={busy}
-              onClick={() => act({ action: "addGames" })}
-            >
-              <HugeiconsIcon icon={PlusSignIcon} />
-            </Button>
+            <Popover open={addOpen} onOpenChange={setAddOpen}>
+              <PopoverTrigger
+                render={
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label="Add games"
+                    title="Add games"
+                    disabled={busy}
+                  >
+                    <HugeiconsIcon icon={PlusSignIcon} />
+                  </Button>
+                }
+              />
+              <PopoverContent side="top" align="end" className="w-52 gap-0 p-1">
+                <button
+                  type="button"
+                  className={menuItem}
+                  onClick={() => {
+                    setAddOpen(false);
+                    act({ action: "addGames" });
+                  }}
+                >
+                  <HugeiconsIcon icon={FolderAddIcon} className="size-4" />
+                  From a folder…
+                </button>
+                <button
+                  type="button"
+                  className={menuItem}
+                  onClick={() => {
+                    setAddOpen(false);
+                    if (snapshot?.itchUser) setItchOpen(true);
+                    else setSettingsOpen(true);
+                  }}
+                >
+                  <SiteLogo site="itch" className="size-4" />
+                  {snapshot?.itchUser ? "From itch.io…" : "Sign in to itch.io…"}
+                </button>
+              </PopoverContent>
+            </Popover>
             <Button
               variant="ghost"
               size="icon-sm"
@@ -407,6 +435,58 @@ export function App() {
       )}
       {snapshot && <ItchLibrary snapshot={snapshot} open={itchOpen} onOpenChange={setItchOpen} />}
     </div>
+  );
+}
+
+const menuItem =
+  "flex items-center gap-2 rounded-md px-2 py-1.5 text-left outline-none hover:bg-accent focus-visible:bg-accent";
+
+/**
+ * Running itch.io downloads as a download icon ringed by how far they have got, all together.
+ * The ring spins while any download's size is unknown or it is unpacking.
+ */
+function DownloadsButton({
+  downloads,
+  onClick,
+}: {
+  downloads: Snapshot["itchDownloads"];
+  onClick: () => void;
+}) {
+  const known = downloads.every((item) => item.progress !== null);
+  const progress = known
+    ? downloads.reduce((sum, item) => sum + item.progress!, 0) / downloads.length
+    : 0.25;
+  const label = downloads.map((item) => `${item.title}: ${item.detail}`).join("\n");
+  return (
+    <Button
+      variant="ghost"
+      size="icon-sm"
+      aria-label={`Downloading ${downloads.length === 1 ? downloads[0]!.title : `${downloads.length} games`}`}
+      title={label}
+      onClick={onClick}
+    >
+      <span className="relative grid size-5 place-items-center">
+        <svg
+          viewBox="0 0 20 20"
+          className={cn("absolute inset-0 size-5 -rotate-90", !known && "animate-spin")}
+          aria-hidden
+        >
+          <circle cx="10" cy="10" r="9" fill="none" strokeWidth="1.5" className="stroke-muted" />
+          <circle
+            cx="10"
+            cy="10"
+            r="9"
+            fill="none"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            pathLength={100}
+            strokeDasharray={`${progress * 100} 100`}
+            className="stroke-blue-500 transition-[stroke-dasharray] duration-300"
+          />
+        </svg>
+        <HugeiconsIcon icon={Download04Icon} className="size-3" />
+      </span>
+    </Button>
   );
 }
 

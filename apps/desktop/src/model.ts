@@ -181,7 +181,13 @@ export type Snapshot = Library & {
   scanning: boolean;
   lastScan: ScanReport | null;
   /** itch.io games downloading into the games folder, by itch.io game ID. */
-  itchDownloads: { gameId: string; title: string; detail: string }[];
+  itchDownloads: {
+    gameId: string;
+    title: string;
+    detail: string;
+    /** How much has downloaded, from 0 to 1, or null when the size is unknown or it is unpacking. */
+    progress: number | null;
+  }[];
   /** How far the running update check has got, or null when none is running. */
   checkingUpdates: { checked: number; total: number } | null;
   /** CrossOver bottles, or null when CrossOver is not installed. */
