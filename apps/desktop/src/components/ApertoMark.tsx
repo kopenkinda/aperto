@@ -17,7 +17,7 @@ export function ApertoMark(props: ComponentProps<"svg">) {
         d="M632 262C632 252 638 244 647 240L718 209C732 203 748 213 748 228V828C748 843 732 853 718 847L647 816C638 812 632 804 632 794Z M682 528a16 16 0 1 0 32 0a16 16 0 1 0 -32 0Z"
       />
       <path
-        d="M408 446V638L540 542Z"
+        d="M388 446V638L520 542Z"
         stroke="currentColor"
         strokeWidth="28"
         strokeLinejoin="round"
