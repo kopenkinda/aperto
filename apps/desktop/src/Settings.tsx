@@ -29,6 +29,7 @@ import {
   metadataSites,
   availableSites,
   shownSites,
+  shownStores,
   updateAvailable,
   type Component,
   type StoreSite,
@@ -407,7 +408,7 @@ export function Settings({
               <Section title="itch.io">
                 <ItchAccount snapshot={snapshot} onLibrary={() => onStoreGames("itch")} />
               </Section>
-              {snapshot.adultContent && (
+              {shownStores(snapshot).includes("dlsite") && (
                 <Section title="DLsite">
                   <StoreAccount
                     site="dlsite"

@@ -306,6 +306,9 @@ export type Platform = "mac" | "windows" | "linux" | "web";
 /** Stores Aperto signs in to and downloads owned games from. */
 export const storeSites = ["steam", "epic", "gog", "itch", "dlsite"] as const;
 export type StoreSite = (typeof storeSites)[number];
+/** Stores to offer downloads from: DLsite only while it is also shown in game links. */
+export const shownStores = (library: Pick<Library, "linkSites" | "adultContent">) =>
+  storeSites.filter((site) => site !== "dlsite" || shownSites(library).includes("dlsite"));
 export const storeNames: Record<StoreSite, string> = {
   steam: "Steam",
   epic: "Epic Games",

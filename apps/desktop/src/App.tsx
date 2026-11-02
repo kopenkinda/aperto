@@ -56,7 +56,7 @@ import {
   sortOrders,
   statusFilters,
   formatSize,
-  storeSites,
+  shownStores,
   storeUser,
   shownAgents,
   steamApp,
@@ -87,14 +87,12 @@ export function App() {
     setSettingsOpen(true);
   };
   const [addOpen, setAddOpen] = useState(false);
-  // The store Add games shows; until one is chosen, the first signed-in one.
+  // The store Add games shows; until one is chosen, or once it is hidden, the first signed-in one.
   const [chosenStore, setStore] = useState<StoreSite | null>(null);
+  const stores = snapshot ? shownStores(snapshot) : [];
   const store =
-    chosenStore ??
-    (snapshot &&
-      storeSites.find(
-        (site) => storeUser(snapshot, site) && (site !== "dlsite" || snapshot.adultContent),
-      )) ??
+    (chosenStore && stores.includes(chosenStore) ? chosenStore : null) ??
+    stores.find((site) => snapshot && storeUser(snapshot, site)) ??
     "steam";
   // The game the sidebar's context menu is for. The ref is read while the menu decides to open.
   const menuTarget = useRef<string | null>(null);

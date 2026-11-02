@@ -1,7 +1,7 @@
 import { HugeiconsIcon } from "@hugeicons/react";
 import { FolderAddIcon } from "@hugeicons/core-free-icons";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
-import { type Snapshot, type StoreSite, storeNames, storeSites, storeUser } from "../model";
+import { type Snapshot, type StoreSite, shownStores, storeNames, storeUser } from "../model";
 import { SiteLogo } from "./logos";
 import { ItchAccount, StoreAccount, StoreGames, storeLibraryHint } from "./Stores";
 
@@ -28,7 +28,7 @@ export function AddGames({
   /** Picks a folder of games on disk; the dialog closes first. */
   onAddFolder: () => void;
 }) {
-  const sites = storeSites.filter((item) => item !== "dlsite" || snapshot.adultContent);
+  const sites = shownStores(snapshot);
   const signedIn = !!storeUser(snapshot, site);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
