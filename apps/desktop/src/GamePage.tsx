@@ -706,6 +706,23 @@ export function GamePage({
                       Install an older runtime
                     </button>
                   )}
+                  {agents.length > 0 && (
+                    <div className="mt-2">
+                      <AskAgent
+                        agents={agents}
+                        onAsk={(agent) =>
+                          void run(() =>
+                            request({
+                              action: "openAgent",
+                              id: game.id,
+                              agent,
+                              launchId: launches[0]!.id,
+                            }),
+                          )
+                        }
+                      />
+                    </div>
+                  )}
                 </AlertDescription>
               </Alert>
             )}
