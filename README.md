@@ -89,7 +89,7 @@ pnpm install
 ./scripts/run.sh
 ```
 
-This builds, signs, installs into `/Applications/Aperto.app`, and launches it. Use `./scripts/build.sh` to build and sign without installing, and `pnpm dev` to work on it. CrossOver is only needed for Windows games.
+This builds, signs, installs into `/Applications/Aperto.app`, and launches it. The marketing site lives in `apps/web`; `pnpm --filter @aperto/web dev` serves it locally. Use `./scripts/build.sh` to build and sign without installing, and `pnpm dev` to work on it. CrossOver is only needed for Windows games.
 
 Signing is automatic. The first build creates your own self-signed development certificate in a private keychain under `~/Library/Application Support/Aperto/Signing`. Later builds reuse it. Keep that directory private and intact. No paid Apple Developer account or notarization is needed for this local build. The scripts do not change system certificate trust or your default keychain.
 

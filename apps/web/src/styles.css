@@ -1,0 +1,15 @@
+@import "tailwindcss";
+@import "@fontsource-variable/geist";
+
+@theme {
+  --font-sans: "Geist Variable", -apple-system, system-ui, sans-serif;
+  --color-ink: #08080a;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  @apply bg-ink font-sans text-zinc-100 antialiased;
+}
