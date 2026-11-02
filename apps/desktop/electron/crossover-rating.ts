@@ -27,18 +27,37 @@ export function parseCrossoverRatings(html: string): CrossoverRating[] {
   return ratings;
 }
 
+// A store's whole list of games asks at once, so CodeWeavers gets two searches at a time.
+let searching = 0;
+const waiting: (() => void)[] = [];
+async function queued<T>(work: () => Promise<T>) {
+  // A finished search hands its place straight to the next one waiting.
+  if (searching >= 2) await new Promise<void>((resolve) => waiting.push(resolve));
+  else searching++;
+  try {
+    return await work();
+  } finally {
+    const next = waiting.shift();
+    if (next) next();
+    else searching--;
+  }
+}
+
 /**
  * How well CrossOver runs the game, as CodeWeavers' compatibility database rates it: the entry
  * named the same, or else one whose title clearly names it. Null when none is rated; throws when
  * the database cannot be reached, so that is not remembered as no rating.
  */
 export async function crossoverRating(name: string): Promise<CrossoverRating | null> {
-  const response = await fetch(
-    `${site}/compatibility?name=${encodeURIComponent(name)}&search=app`,
-    { headers, signal: AbortSignal.timeout(20_000) },
-  );
-  if (!response.ok) throw new Error(`CodeWeavers answered ${response.status}.`);
-  const rated = parseCrossoverRatings(await response.text()).filter((item) => item.stars > 0);
+  const page = await queued(async () => {
+    const response = await fetch(
+      `${site}/compatibility?name=${encodeURIComponent(name)}&search=app`,
+      { headers, signal: AbortSignal.timeout(20_000) },
+    );
+    if (!response.ok) throw new Error(`CodeWeavers answered ${response.status}.`);
+    return response.text();
+  });
+  const rated = parseCrossoverRatings(page).filter((item) => item.stars > 0);
   const same = (title: string) =>
     title.toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, "") ===
     name.toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");

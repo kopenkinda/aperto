@@ -19,6 +19,7 @@ import {
   storeNames,
   storeUser,
 } from "../model";
+import { CrossoverStars } from "./CrossoverStars";
 import { Field } from "./settings";
 import { SearchInput } from "./SearchInput";
 import { SiteLogo } from "./logos";
@@ -296,6 +297,10 @@ export function StoreGames({ site, snapshot }: { site: StoreSite | null; snapsho
                         .join(" · ")}
                 </span>
               </span>
+              {/* Games without a Mac version would run through CrossOver. */}
+              {game.platforms.includes("windows") && !game.platforms.includes("mac") && (
+                <CrossoverStars name={game.title} className="mr-1" />
+              )}
               {download ? (
                 <Button
                   variant="ghost"

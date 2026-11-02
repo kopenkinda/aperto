@@ -490,9 +490,9 @@ export class DesktopLibrary {
       });
       return this.snapshot();
     }
-    if (command.action === "crossoverRating") return this.crossoverRating(this.game(command.id));
+    if (command.action === "crossoverRating") return this.crossoverRating(command.name);
     if (command.action === "openCrossoverRating") {
-      const rating = await this.crossoverRating(this.game(command.id));
+      const rating = await this.crossoverRating(command.name);
       if (!rating) throw new Error("CodeWeavers has not rated this game.");
       this.native.openExternal(rating.url);
       return this.snapshot();
@@ -1082,12 +1082,12 @@ export class DesktopLibrary {
 
   /** CrossOver ratings looked up this session, by game name; failed lookups are tried again. */
   private crossoverRatings = new Map<string, Promise<CrossoverRating | null>>();
-  private crossoverRating(game: Game) {
-    let rating = this.crossoverRatings.get(game.name);
+  private crossoverRating(name: string) {
+    let rating = this.crossoverRatings.get(name);
     if (!rating) {
-      rating = crossoverRating(game.name);
-      rating.catch(() => this.crossoverRatings.delete(game.name));
-      this.crossoverRatings.set(game.name, rating);
+      rating = crossoverRating(name);
+      rating.catch(() => this.crossoverRatings.delete(name));
+      this.crossoverRatings.set(name, rating);
     }
     return rating;
   }

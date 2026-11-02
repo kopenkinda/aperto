@@ -563,10 +563,10 @@ export const CommandSchema = Schema.Union([
   Schema.Struct({ action: Schema.Literal("stop"), ...id }),
   Schema.Struct({ action: Schema.Literal("reveal"), ...id }),
   Schema.Struct({ action: Schema.Literal("openTerminal"), ...id }),
-  /** Looks up how well CrossOver runs a game that runs through it. */
-  Schema.Struct({ action: Schema.Literal("crossoverRating"), ...id }),
+  /** Looks up how well CrossOver runs a game, by name, which need not be in the library. */
+  Schema.Struct({ action: Schema.Literal("crossoverRating"), name: Schema.String }),
   /** Opens the CodeWeavers page a game's CrossOver rating comes from. */
-  Schema.Struct({ action: Schema.Literal("openCrossoverRating"), ...id }),
+  Schema.Struct({ action: Schema.Literal("openCrossoverRating"), name: Schema.String }),
   /** Makes an app in ~/Applications/Aperto Games that starts the game, and shows it in Finder. */
   Schema.Struct({ action: Schema.Literal("createShortcut"), ...id }),
   /** Opens a coding agent in the game's folder, told where the game is and how it runs. */
