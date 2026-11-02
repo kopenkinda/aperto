@@ -286,6 +286,8 @@ export const sourceUrl = (site: MetadataSite, id: string) =>
       : `https://${id}`;
 export type MetadataDetails = { tags: string[]; banner: string | null };
 export type AutoTagReport = { tagged: string[]; unmatched: string[]; banners: string[] };
+/** Games that got tags back, with how many each got, and games whose pages could not be read. */
+export type RefillReport = { refilled: { name: string; added: number }[]; failed: string[] };
 /** A download Aperto keeps besides NW.js runtimes, needed by games of one kind. */
 export type Component = {
   id: string;
@@ -363,6 +365,8 @@ export const CommandSchema = Schema.Union([
    * without tags from their page.
    */
   Schema.Struct({ action: Schema.Literal("autoTag") }),
+  /** Adds back the tags of every page each game is linked to that the game lacks. */
+  Schema.Struct({ action: Schema.Literal("refillTags") }),
   /** Reads the newest version of every game from its F95zone thread. */
   Schema.Struct({ action: Schema.Literal("checkUpdates") }),
   /** Opens a game's linked F95zone thread or Steam page in the browser. */
@@ -472,6 +476,7 @@ type Results = {
   findMetadata: MetadataMatch[];
   metadataDetails: MetadataDetails;
   autoTag: AutoTagReport;
+  refillTags: RefillReport;
   itchGames: ItchGame[];
 };
 export type ResultFor<C extends Command> = C["action"] extends keyof Results

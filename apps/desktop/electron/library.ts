@@ -30,6 +30,7 @@ import {
   type Engine,
   formatSize,
   type ItchGame,
+  type RefillReport,
   type SteamInstall,
   type Snapshot,
 } from "../src/model";
@@ -228,6 +229,7 @@ export class DesktopLibrary {
       return searchMetadata(command.query ?? searchName(this.game(command.id).name), command.site);
     if (command.action === "metadataDetails") return metadataDetails(command.site, command.matchId);
     if (command.action === "autoTag") return this.autoTag();
+    if (command.action === "refillTags") return this.refillTags();
     if (command.action === "checkUpdates") {
       await this.checkUpdates();
       return this.snapshot();
@@ -842,6 +844,43 @@ export class DesktopLibrary {
       this.itchDownloads.delete(game.gameId);
       this.changed();
     }
+  }
+
+  private refilling: Promise<RefillReport> | null = null;
+
+  /**
+   * Adds back the tags of every site each game is linked to that the game lacks, such as ones
+   * removed with a blocked tag later unblocked. Blocked tags stay off. One request at a time.
+   */
+  refillTags(): Promise<RefillReport> {
+    this.refilling ??= (async () => {
+      const report: RefillReport = { refilled: [], failed: [] };
+      for (const game of this.store.value.games) {
+        if (game.removed) continue;
+        const found: string[] = [];
+        let failed = false;
+        for (const site of linkedSites(game)) {
+          const details = await metadataDetails(site, game.links![site]!.id).catch(() => null);
+          if (details) found.push(...details.tags);
+          else failed = true;
+        }
+        if (failed) report.failed.push(game.name);
+        const current = this.store.value.games.find((item) => item.id === game.id);
+        if (!current) continue;
+        const tags = this.allowedTags([...current.tags, ...found]);
+        const added = tags.length - current.tags.length;
+        if (added <= 0) continue;
+        await this.changeGame(game.id, (latest) => ({
+          ...latest,
+          tags: this.allowedTags([...latest.tags, ...found]),
+        }));
+        report.refilled.push({ name: game.name, added });
+      }
+      return report;
+    })().finally(() => {
+      this.refilling = null;
+    });
+    return this.refilling;
   }
 
   private autoTagging: Promise<AutoTagReport> | null = null;

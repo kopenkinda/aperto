@@ -57,6 +57,26 @@ export function TagManager({
   const block = (more: readonly string[]) =>
     run(() => request({ action: "setBlockedTags", tags: [...blocked, ...more] }));
 
+  const linked = snapshot.games.filter((game) => linkedSites(game).length).length;
+  const refill = () => {
+    setTagging(true);
+    setReport(null);
+    request({ action: "refillTags" })
+      .then(
+        ({ refilled, failed }) =>
+          setReport(
+            [
+              refilled.length
+                ? `Added ${refilled.reduce((sum, item) => sum + item.added, 0)} tags back to ${refilled.length} ${refilled.length === 1 ? "game" : "games"}.`
+                : "Every linked game already has its pages' tags.",
+              failed.length ? `Could not read the pages of ${failed.join(", ")}.` : "",
+            ].join(" "),
+          ),
+        (cause: unknown) => setReport(cause instanceof Error ? cause.message : String(cause)),
+      )
+      .finally(() => setTagging(false));
+  };
+
   const autoTag = () => {
     setTagging(true);
     setReport(null);
@@ -105,6 +125,17 @@ export function TagManager({
               ? `Find banners for ${bannerless} ${bannerless === 1 ? "game" : "games"}`
               : "Every game is linked"}
         </Button>
+        {linked > 0 && (
+          <button
+            type="button"
+            className="self-start text-xs font-medium text-foreground/80 underline-offset-3 hover:text-foreground hover:underline disabled:opacity-50"
+            disabled={tagging}
+            title="Tags you removed by hand come back too, unless they are blocked."
+            onClick={refill}
+          >
+            Re-add missing tags from the pages of {linked} linked {linked === 1 ? "game" : "games"}
+          </button>
+        )}
       </Field>
 
       <Field
