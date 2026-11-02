@@ -344,40 +344,73 @@ export function GamePage({
       </header>
 
       <div className="flex items-center gap-8 border-y bg-card/40 px-8 py-4">
-        <div className="flex gap-2">
+        <div className="flex">
           <Button
             size="lg"
-            className="h-11 min-w-36 text-base"
+            className={cn("h-11 min-w-36 text-base", !running && steam && "rounded-r-none")}
             disabled={busy || (!running && !playable(game, snapshot))}
-            title={!running && steam ? "Start the game through Steam" : undefined}
+            title={!running && steam ? "Play through Steam" : undefined}
             onClick={() =>
               void run(() => request({ action: running ? "stop" : "launch", id: game.id }))
             }
           >
             {running ? (
               <HugeiconsIcon icon={StopIcon} className="fill-current" />
-            ) : steam ? (
-              <SiteLogo site="steam" className="size-4" />
             ) : (
               <HugeiconsIcon icon={PlayIcon} className="fill-current" />
             )}
-            {running ? "Stop" : steam ? "Play via Steam" : "Play"}
+            {running ? "Stop" : "Play"}
           </Button>
           {/* Steam games can also skip Steam, for when it is not signed in or the game has no DRM. */}
           {!running && steam && (
-            <Button
-              variant="outline"
-              size="lg"
-              className="h-11 text-base"
-              disabled={busy || !playable(game, snapshot)}
-              title="Run the game directly, without Steam"
-              onClick={() =>
-                void run(() => request({ action: "launch", id: game.id, via: "aperto" }))
-              }
-            >
-              <ApertoMark className="size-4" />
-              Play via Aperto
-            </Button>
+            <Popover>
+              <PopoverTrigger
+                render={
+                  <Button
+                    size="lg"
+                    className="h-11 w-8 rounded-l-none border-l border-primary-foreground/15 px-0"
+                    disabled={busy || !playable(game, snapshot)}
+                    aria-label="Choose how to play"
+                    title="Choose how to play"
+                  >
+                    <HugeiconsIcon icon={ArrowDown01Icon} />
+                  </Button>
+                }
+              />
+              <PopoverContent align="start" className="w-64 gap-0 p-1">
+                {(
+                  [
+                    {
+                      via: "steam",
+                      icon: <SiteLogo site="steam" className="size-4" />,
+                      label: "Play via Steam",
+                      hint: "Keeps Steam's updates, achievements, and DRM.",
+                    },
+                    {
+                      via: "aperto",
+                      icon: <ApertoMark className="size-4" />,
+                      label: "Play via Aperto",
+                      hint: "Runs the game directly, without Steam.",
+                    },
+                  ] as const
+                ).map((option) => (
+                  <button
+                    key={option.via}
+                    type="button"
+                    className="flex items-start gap-2.5 rounded-md px-2 py-1.5 text-left outline-none hover:bg-accent focus-visible:bg-accent"
+                    onClick={() =>
+                      void run(() => request({ action: "launch", id: game.id, via: option.via }))
+                    }
+                  >
+                    <span className="mt-0.5">{option.icon}</span>
+                    <span className="flex flex-col">
+                      {option.label}
+                      <span className="text-xs text-muted-foreground">{option.hint}</span>
+                    </span>
+                  </button>
+                ))}
+              </PopoverContent>
+            </Popover>
           )}
         </div>
         <dl className="flex gap-8 text-sm">
