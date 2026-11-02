@@ -1,5 +1,12 @@
 import { useEffect, useState } from "react";
-import { ArrowUpIcon, DownloadIcon, FolderOpenIcon, RefreshCwIcon, XIcon } from "lucide-react";
+import { HugeiconsIcon } from "@hugeicons/react";
+import {
+  ArrowUp02Icon,
+  Cancel01Icon,
+  Download04Icon,
+  FolderOpenIcon,
+  RefreshIcon,
+} from "@hugeicons/core-free-icons";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -159,7 +166,7 @@ export function Settings({
                     disabled={snapshot.scanning}
                     onClick={() => void run(() => request({ action: "scan" }))}
                   >
-                    {snapshot.scanning ? <Spinner /> : <RefreshCwIcon />}
+                    {snapshot.scanning ? <Spinner /> : <HugeiconsIcon icon={RefreshIcon} />}
                   </Button>
                   <Button
                     variant="ghost"
@@ -168,7 +175,7 @@ export function Settings({
                     title="Stop using this folder"
                     onClick={() => void run(() => request({ action: "clearGamesFolder" }))}
                   >
-                    <XIcon />
+                    <HugeiconsIcon icon={Cancel01Icon} />
                   </Button>
                 </div>
               ) : (
@@ -179,7 +186,7 @@ export function Settings({
                 disabled={busy || snapshot.scanning}
                 onClick={() => void run(() => request({ action: "chooseGamesFolder" }))}
               >
-                <FolderOpenIcon />
+                <HugeiconsIcon icon={FolderOpenIcon} />
                 {snapshot.gamesFolder ? "Change" : "Choose"}
               </Button>
             </div>
@@ -280,7 +287,11 @@ export function Settings({
                   );
                 }}
               >
-                {checking || snapshot.checkingUpdates ? <Spinner /> : <RefreshCwIcon />}
+                {checking || snapshot.checkingUpdates ? (
+                  <Spinner />
+                ) : (
+                  <HugeiconsIcon icon={RefreshIcon} />
+                )}
                 Check now
               </Button>
               <span className="text-muted-foreground">
@@ -325,7 +336,7 @@ export function Settings({
                       )
                     }
                   >
-                    <ArrowUpIcon />
+                    <HugeiconsIcon icon={ArrowUp02Icon} />
                     Update {users === 1 ? "game" : "games"} to {newest}
                   </Button>
                 )}
@@ -393,7 +404,7 @@ export function Settings({
                       version && void run(() => request({ action: "installRuntime", version }))
                     }
                   >
-                    <DownloadIcon />
+                    <HugeiconsIcon icon={Download04Icon} />
                     Install
                   </Button>
                 </>
@@ -409,7 +420,7 @@ export function Settings({
                     })
                   }
                 >
-                  {busy ? <Spinner /> : <DownloadIcon />}
+                  {busy ? <Spinner /> : <HugeiconsIcon icon={Download04Icon} />}
                   {installed.length ? "Install another version" : "Install NW.js"}
                 </Button>
               )}

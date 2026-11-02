@@ -1,5 +1,11 @@
 import { useEffect, useState } from "react";
-import { CheckIcon, DownloadIcon, ExternalLinkIcon, XIcon } from "lucide-react";
+import { HugeiconsIcon } from "@hugeicons/react";
+import {
+  Cancel01Icon,
+  Download04Icon,
+  LinkSquare02Icon,
+  Tick02Icon,
+} from "@hugeicons/core-free-icons";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -53,7 +59,7 @@ export function ItchAccount({
             Signed in as <span className="font-medium">{snapshot.itchUser.name}</span>
           </span>
           <Button variant="outline" onClick={onLibrary}>
-            <DownloadIcon />
+            <HugeiconsIcon icon={Download04Icon} />
             Your games
           </Button>
           <Button
@@ -80,7 +86,7 @@ export function ItchAccount({
               onClick={() => void run(() => request({ action: "itchKeysPage" }))}
             >
               itch.io&rsquo;s API keys page
-              <ExternalLinkIcon className="size-3" />
+              <HugeiconsIcon icon={LinkSquare02Icon} className="size-3" />
             </button>{" "}
             with &ldquo;Generate new API key&rdquo;, then paste it here to download the games you
             own. It is kept in the Keychain.
@@ -209,11 +215,14 @@ export function ItchLibrary({
                     }
                   >
                     <Spinner className="group-hover/button:hidden" />
-                    <XIcon className="hidden group-hover/button:block" />
+                    <HugeiconsIcon
+                      icon={Cancel01Icon}
+                      className="hidden group-hover/button:block"
+                    />
                   </Button>
                 ) : owned ? (
                   <span className="flex items-center gap-1 pr-2 text-xs text-muted-foreground">
-                    <CheckIcon className="size-3.5" />
+                    <HugeiconsIcon icon={Tick02Icon} className="size-3.5" />
                     In library
                   </span>
                 ) : (
@@ -225,7 +234,7 @@ export function ItchLibrary({
                       void run(() => request({ action: "itchDownload", keyId: game.keyId }))
                     }
                   >
-                    <DownloadIcon />
+                    <HugeiconsIcon icon={Download04Icon} />
                     Download
                   </Button>
                 )}

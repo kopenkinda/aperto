@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { RotateCcwIcon } from "lucide-react";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { Undo02Icon } from "@hugeicons/core-free-icons";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -202,7 +203,7 @@ export function PluginsSection({
         {plugins?.canRestore && (
           <div className="flex gap-2">
             <Button variant="outline" disabled={busy || running} onClick={() => setRestoring(true)}>
-              <RotateCcwIcon />
+              <HugeiconsIcon icon={Undo02Icon} />
               Restore original
             </Button>
             <Button

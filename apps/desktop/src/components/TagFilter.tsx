@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { SearchInput } from "./SearchInput";
-import { CheckIcon, MinusIcon, TagIcon } from "lucide-react";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { MinusSignIcon, Tag01Icon, Tick02Icon } from "@hugeicons/core-free-icons";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
@@ -48,7 +49,7 @@ export function TagFilter({
           />
         }
       >
-        <TagIcon />
+        <HugeiconsIcon icon={Tag01Icon} />
         {count > 0 && (
           <span className="absolute -top-1 -right-1 grid h-4 min-w-4 place-items-center rounded-full bg-primary px-1 text-[10px] leading-none font-semibold text-primary-foreground">
             {count}
@@ -88,8 +89,10 @@ export function TagFilter({
                         "border-destructive bg-destructive text-destructive-foreground",
                     )}
                   >
-                    {state === "include" && <CheckIcon className="size-3" />}
-                    {state === "exclude" && <MinusIcon className="size-3" />}
+                    {state === "include" && <HugeiconsIcon icon={Tick02Icon} className="size-3" />}
+                    {state === "exclude" && (
+                      <HugeiconsIcon icon={MinusSignIcon} className="size-3" />
+                    )}
                   </span>
                   <TagDot color={colors[tag]} />
                   <span

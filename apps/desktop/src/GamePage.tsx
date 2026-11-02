@@ -1,17 +1,18 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 import {
-  CircleAlertIcon,
-  CircleXIcon,
+  AlertCircleIcon,
+  Cancel01Icon,
+  CancelCircleIcon,
+  CircleArrowUp01Icon,
+  ComputerTerminal01Icon,
+  Delete02Icon,
   FolderOpenIcon,
-  ImageIcon,
+  Image01Icon,
   PlayIcon,
-  ArrowUpCircleIcon,
-  SquareIcon,
-  SquareTerminalIcon,
   StarIcon,
-  Trash2Icon,
-  XIcon,
-} from "lucide-react";
+  StopIcon,
+} from "@hugeicons/core-free-icons";
 import { Artwork } from "@/components/Artwork";
 import { GameLinks } from "@/components/GameLinks";
 import { PluginsSection } from "@/components/PluginsSection";
@@ -70,12 +71,12 @@ import {
 } from "./model";
 import { request, useTask } from "./desktop";
 
-const launchIcons: Record<Launch["outcome"], typeof PlayIcon> = {
+const launchIcons: Record<Launch["outcome"], IconSvgElement> = {
   running: PlayIcon,
   ended: PlayIcon,
-  stopped: SquareIcon,
-  interrupted: CircleAlertIcon,
-  failed: CircleXIcon,
+  stopped: StopIcon,
+  interrupted: AlertCircleIcon,
+  failed: CancelCircleIcon,
 };
 
 /** "45s", "12m", or "1h 5m". */
@@ -279,7 +280,7 @@ export function GamePage({
                 setArtworkSlot(slot);
               }}
             >
-              <ImageIcon />
+              <HugeiconsIcon icon={Image01Icon} />
               {slot === "icon" ? "Change icon" : "Change banner"}
             </Button>
           ))}
@@ -293,7 +294,7 @@ export function GamePage({
               disabled={busy}
               onClick={() => void run(() => request({ action: "clearBanner", id: game.id }))}
             >
-              <XIcon />
+              <HugeiconsIcon icon={Cancel01Icon} />
             </Button>
           )}
         </div>
@@ -316,7 +317,10 @@ export function GamePage({
                   )
                 }
               >
-                <StarIcon className={`size-5 ${game.favorite ? "fill-current" : ""}`} />
+                <HugeiconsIcon
+                  icon={StarIcon}
+                  className={`size-5 ${game.favorite ? "fill-current" : ""}`}
+                />
               </button>
             </div>
             {tags.length > 0 && (
@@ -339,9 +343,9 @@ export function GamePage({
           }
         >
           {running ? (
-            <SquareIcon className="fill-current" />
+            <HugeiconsIcon icon={StopIcon} className="fill-current" />
           ) : (
-            <PlayIcon className="fill-current" />
+            <HugeiconsIcon icon={PlayIcon} className="fill-current" />
           )}
           {running ? "Stop" : "Play"}
         </Button>
@@ -362,7 +366,7 @@ export function GamePage({
             title="Show in Finder"
             onClick={() => void run(() => request({ action: "reveal", id: game.id }))}
           >
-            <FolderOpenIcon />
+            <HugeiconsIcon icon={FolderOpenIcon} />
           </Button>
           {terminal && (
             <Button
@@ -372,7 +376,7 @@ export function GamePage({
               title={`Open in ${terminal.name}`}
               onClick={() => void run(() => request({ action: "openTerminal", id: game.id }))}
             >
-              <SquareTerminalIcon />
+              <HugeiconsIcon icon={ComputerTerminal01Icon} />
             </Button>
           )}
           <Button
@@ -389,7 +393,7 @@ export function GamePage({
               });
             }}
           >
-            <Trash2Icon />
+            <HugeiconsIcon icon={Delete02Icon} />
           </Button>
         </div>
       </div>
@@ -445,7 +449,7 @@ export function GamePage({
             )}
             {updateAvailable(game) && (
               <Alert>
-                <ArrowUpCircleIcon />
+                <HugeiconsIcon icon={CircleArrowUp01Icon} />
                 <AlertTitle>Update available</AlertTitle>
                 <AlertDescription>
                   {game.update!.latest} is out on F95zone; this copy is {game.update!.installed}.{" "}
@@ -756,7 +760,7 @@ export function GamePage({
           {!launches.length && <p className="text-muted-foreground">Not launched yet.</p>}
           <Trace>
             {launches.slice(0, 10).map((launch) => {
-              const Icon = launchIcons[launch.outcome];
+              const icon = launchIcons[launch.outcome];
               return (
                 <TraceCollapsible key={launch.id}>
                   <TraceCollapsibleTrigger>
@@ -770,7 +774,7 @@ export function GamePage({
                       }
                     >
                       <TraceIcon>
-                        <Icon />
+                        <HugeiconsIcon icon={icon} />
                       </TraceIcon>
                       <TraceTitle>{launchTitle(launch)}</TraceTitle>
                       <TraceDescription>
@@ -889,7 +893,7 @@ export function GamePage({
                   })
                 }
               >
-                <FolderOpenIcon />
+                <HugeiconsIcon icon={FolderOpenIcon} />
                 Choose file…
               </Button>
               <Button type="submit" disabled={busy || !artworkUrl.trim()}>

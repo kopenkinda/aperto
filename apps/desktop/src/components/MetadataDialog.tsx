@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { SearchInput } from "./SearchInput";
-import { CheckIcon } from "lucide-react";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { Tick02Icon } from "@hugeicons/core-free-icons";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -165,7 +166,9 @@ export function MetadataDialog({
                     </span>
                   )}
                 </span>
-                {selected && <CheckIcon className="mr-1 size-4 text-primary" />}
+                {selected && (
+                  <HugeiconsIcon icon={Tick02Icon} className="mr-1 size-4 text-primary" />
+                )}
               </button>
             );
           })}

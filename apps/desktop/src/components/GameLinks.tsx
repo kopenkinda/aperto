@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { ExternalLinkIcon, Link2Icon, PlusIcon } from "lucide-react";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { Link01Icon, LinkSquare02Icon, PlusSignIcon } from "@hugeicons/core-free-icons";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { request } from "../desktop";
@@ -38,7 +39,7 @@ export function GameLinks({
               title={`Find ${game.name} on ${metadataSites[site]}`}
               onClick={() => setFinding(site)}
             >
-              <PlusIcon />
+              <HugeiconsIcon icon={PlusSignIcon} />
               {metadataSites[site]}
             </Button>
           );
@@ -51,7 +52,7 @@ export function GameLinks({
             <PopoverTrigger
               render={
                 <Button variant="outline" size="xs" className="font-normal">
-                  <Link2Icon />
+                  <HugeiconsIcon icon={Link01Icon} />
                   {metadataSites[site]}
                 </Button>
               }
@@ -79,7 +80,7 @@ export function GameLinks({
                     void run(() => request({ action: "openSource", id: game.id, site }));
                   }}
                 >
-                  <ExternalLinkIcon />
+                  <HugeiconsIcon icon={LinkSquare02Icon} />
                   Open
                 </Button>
                 <Button

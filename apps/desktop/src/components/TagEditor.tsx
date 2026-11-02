@@ -1,5 +1,6 @@
 import { useId, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
-import { CheckIcon, ChevronDownIcon, PlusIcon } from "lucide-react";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { ArrowDown01Icon, PlusSignIcon, Tick02Icon } from "@hugeicons/core-free-icons";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { normalizeTags, type TagColor } from "../model";
@@ -117,7 +118,7 @@ export function TagEditor({
             +{hidden.count}
           </span>
         )}
-        <ChevronDownIcon className="size-4 shrink-0 text-muted-foreground" />
+        <HugeiconsIcon icon={ArrowDown01Icon} className="size-4 shrink-0 text-muted-foreground" />
       </PopoverTrigger>
       <PopoverContent
         align="start"
@@ -167,14 +168,17 @@ export function TagEditor({
                 >
                   {create ? (
                     <>
-                      <PlusIcon className="size-3.5 text-muted-foreground" />
+                      <HugeiconsIcon
+                        icon={PlusSignIcon}
+                        className="size-3.5 text-muted-foreground"
+                      />
                       Add &ldquo;{tag}&rdquo;
                     </>
                   ) : (
                     <>
                       <TagDot color={colors[tag]} />
                       <span className="flex-1 truncate">{tag}</span>
-                      {on && <CheckIcon className="size-3.5 text-primary" />}
+                      {on && <HugeiconsIcon icon={Tick02Icon} className="size-3.5 text-primary" />}
                     </>
                   )}
                 </li>

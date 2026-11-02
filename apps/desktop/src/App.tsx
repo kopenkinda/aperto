@@ -1,17 +1,18 @@
 import { Fragment, useEffect, useState, type ReactNode } from "react";
 import { SearchInput } from "@/components/SearchInput";
+import { HugeiconsIcon } from "@hugeicons/react";
 import {
-  ArrowUpCircleIcon,
   ArrowUpDownIcon,
-  CheckIcon,
-  DownloadIcon,
+  Cancel01Icon,
+  CircleArrowUp01Icon,
+  Download04Icon,
+  FilterHorizontalIcon,
   FolderOpenIcon,
-  ListFilterIcon,
-  PlusIcon,
-  RefreshCwIcon,
-  SettingsIcon,
-  XIcon,
-} from "lucide-react";
+  PlusSignIcon,
+  RefreshIcon,
+  Settings02Icon,
+  Tick02Icon,
+} from "@hugeicons/core-free-icons";
 import { ApertoMark } from "@/components/ApertoMark";
 import { ItchLibrary } from "@/components/Itch";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -170,7 +171,7 @@ export function App() {
                   >
                     {tag && <TagDot color={snapshot?.tagColors?.[tag]} />}
                     {label}
-                    <XIcon className="size-3 text-muted-foreground" />
+                    <HugeiconsIcon icon={Cancel01Icon} className="size-3 text-muted-foreground" />
                   </button>
                 </li>
               ))}
@@ -225,7 +226,8 @@ export function App() {
                   </span>
                   <span className="min-w-0 flex-1 truncate">{item.name}</span>
                   {updateAvailable(item) && (
-                    <ArrowUpCircleIcon
+                    <HugeiconsIcon
+                      icon={CircleArrowUp01Icon}
                       className="size-3.5 shrink-0 text-blue-500"
                       aria-label={`Update available: ${item.update!.latest}`}
                     />
@@ -283,7 +285,7 @@ export function App() {
                 disabled={snapshot.scanning}
                 onClick={() => act({ action: "scan" })}
               >
-                {snapshot.scanning ? <Spinner /> : <RefreshCwIcon />}
+                {snapshot.scanning ? <Spinner /> : <HugeiconsIcon icon={RefreshIcon} />}
               </Button>
             )}
             {snapshot?.itchUser && (
@@ -294,7 +296,7 @@ export function App() {
                 title="Your itch.io games"
                 onClick={() => setItchOpen(true)}
               >
-                <DownloadIcon />
+                <HugeiconsIcon icon={Download04Icon} />
               </Button>
             )}
             <Button
@@ -305,7 +307,7 @@ export function App() {
               disabled={busy}
               onClick={() => act({ action: "addGames" })}
             >
-              <PlusIcon />
+              <HugeiconsIcon icon={PlusSignIcon} />
             </Button>
             <Button
               variant="ghost"
@@ -314,7 +316,7 @@ export function App() {
               title="Settings"
               onClick={() => setSettingsOpen(true)}
             >
-              <SettingsIcon />
+              <HugeiconsIcon icon={Settings02Icon} />
             </Button>
           </div>
         </footer>
@@ -346,7 +348,7 @@ export function App() {
               disabled={busy || snapshot.scanning}
               onClick={() => act({ action: snapshot.gamesFolder ? "scan" : "chooseGamesFolder" })}
             >
-              {snapshot.scanning ? <Spinner /> : <FolderOpenIcon />}
+              {snapshot.scanning ? <Spinner /> : <HugeiconsIcon icon={FolderOpenIcon} />}
               {snapshot.gamesFolder ? "Scan again" : "Choose folder"}
             </Button>
           </div>
@@ -386,7 +388,7 @@ export function App() {
                 aria-label="Dismiss"
                 onClick={() => setError(null)}
               >
-                <XIcon />
+                <HugeiconsIcon icon={Cancel01Icon} />
               </Button>
             </AlertAction>
           </Alert>
@@ -463,7 +465,7 @@ function ScanSummary({ scan, onDismiss }: { scan: ScanReport; onDismiss: () => v
       )}
       <AlertAction>
         <Button variant="ghost" size="icon-xs" aria-label="Dismiss" onClick={onDismiss}>
-          <XIcon />
+          <HugeiconsIcon icon={Cancel01Icon} />
         </Button>
       </AlertAction>
     </Alert>
@@ -528,7 +530,7 @@ function LibraryFilters({
           />
         }
       >
-        <ListFilterIcon />
+        <HugeiconsIcon icon={FilterHorizontalIcon} />
         {count > 0 && (
           <span className="absolute -top-1 -right-1 grid h-4 min-w-4 place-items-center rounded-full bg-primary px-1 text-[10px] leading-none font-semibold text-primary-foreground">
             {count}
@@ -549,14 +551,15 @@ function LibraryFilters({
                 // Choosing the current order again reverses it; another order starts in its default direction.
                 onClick={() => onSort({ order, reversed: sort.order === order && !sort.reversed })}
               >
-                <CheckIcon
+                <HugeiconsIcon
+                  icon={Tick02Icon}
                   className={cn("size-4 text-primary", sort.order !== order && "invisible")}
                 />
                 <span className="flex-1">{sortOrders[order]}</span>
                 {sort.order === order && (
                   <span className="flex items-center gap-0.5 text-xs text-muted-foreground">
                     {sortDirections[order][Number(sort.reversed)]}
-                    <ArrowUpDownIcon className="size-3" />
+                    <HugeiconsIcon icon={ArrowUpDownIcon} className="size-3" />
                   </span>
                 )}
               </button>

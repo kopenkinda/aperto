@@ -1,6 +1,12 @@
 import { useState } from "react";
 import { SearchInput } from "./SearchInput";
-import { BanIcon, EllipsisIcon, SparklesIcon, Trash2Icon } from "lucide-react";
+import { HugeiconsIcon } from "@hugeicons/react";
+import {
+  Delete02Icon,
+  MoreHorizontalIcon,
+  SparklesIcon,
+  UnavailableIcon,
+} from "@hugeicons/core-free-icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -92,7 +98,7 @@ export function TagManager({
           disabled={tagging || (!unlinked && !bannerless)}
           onClick={autoTag}
         >
-          {tagging ? <Spinner /> : <SparklesIcon />}
+          {tagging ? <Spinner /> : <HugeiconsIcon icon={SparklesIcon} />}
           {unlinked
             ? `Find tags for ${unlinked} ${unlinked === 1 ? "game" : "games"}`
             : bannerless
@@ -205,7 +211,7 @@ function TagRow({
             />
           }
         >
-          <EllipsisIcon />
+          <HugeiconsIcon icon={MoreHorizontalIcon} />
         </PopoverTrigger>
         <PopoverContent align="end" className="w-60 gap-3">
           <form
@@ -271,7 +277,7 @@ function TagRow({
                   onBlock();
                 }}
               >
-                <BanIcon />
+                <HugeiconsIcon icon={UnavailableIcon} />
                 Block
               </Button>
               <Button
@@ -280,7 +286,7 @@ function TagRow({
                 className="text-destructive"
                 onClick={() => setConfirming(true)}
               >
-                <Trash2Icon />
+                <HugeiconsIcon icon={Delete02Icon} />
                 Delete
               </Button>
             </div>
