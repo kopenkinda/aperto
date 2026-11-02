@@ -201,6 +201,8 @@ export const LibrarySchema = Schema.Struct({
   itchUser: Schema.optionalKey(Schema.Struct({ id: Schema.String, name: Schema.String })),
   /** The Steam account, whose store sign-in cookies Aperto keeps in its own session. */
   steamUser: Schema.optionalKey(Schema.Struct({ id: Schema.String, name: Schema.String })),
+  /** The DLsite account, whose sign-in cookies Aperto keeps in its own session. */
+  dlsiteUser: Schema.optionalKey(Schema.Struct({ id: Schema.String, name: Schema.String })),
   /** The GOG account, whose refresh token is kept in the Keychain. */
   gogUser: Schema.optionalKey(Schema.Struct({ id: Schema.String, name: Schema.String })),
   /** Colors chosen for tags, by tag. Older libraries omit it. */
@@ -299,11 +301,11 @@ export type MetadataMatch = {
 export type Agent = { id: string; name: string };
 export type Platform = "mac" | "windows" | "linux" | "web";
 /** Stores Aperto signs in to and downloads owned games from. */
-export const storeSites = ["steam", "gog", "itch"] as const;
+export const storeSites = ["steam", "gog", "itch", "dlsite"] as const;
 export type StoreSite = (typeof storeSites)[number];
 /** The account a store is signed in with, if any. */
 export const storeUser = (
-  library: Pick<Library, "steamUser" | "gogUser" | "itchUser">,
+  library: Pick<Library, "steamUser" | "gogUser" | "itchUser" | "dlsiteUser">,
   site: StoreSite,
 ) => library[`${site}User`];
 const StoreSchema = Schema.Literals(storeSites);
@@ -442,6 +444,9 @@ export const CommandSchema = Schema.Union([
   /** Signs in to the Steam store on its own login page, in a window Aperto opens. */
   Schema.Struct({ action: Schema.Literal("steamSignIn") }),
   Schema.Struct({ action: Schema.Literal("steamSignOut") }),
+  /** Signs in to DLsite on its own login page, in a window Aperto opens. */
+  Schema.Struct({ action: Schema.Literal("dlsiteSignIn") }),
+  Schema.Struct({ action: Schema.Literal("dlsiteSignOut") }),
   /** Signs in to GOG on its own login page, in a window Aperto opens. */
   Schema.Struct({ action: Schema.Literal("gogSignIn") }),
   Schema.Struct({ action: Schema.Literal("gogSignOut") }),

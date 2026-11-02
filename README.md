@@ -63,6 +63,7 @@ Sign in under Settings, Accounts, then open your games from there or from the + 
 - **Steam** signs in on Steam's own page. Install hands the game to Mac Steam when it has a Mac version, and to the Steam in a CrossOver bottle otherwise. The game joins the library when Steam finishes.
 - **GOG** signs in on GOG's own page. Aperto unpacks Mac installers without running them and runs Windows installers silently in the default CrossOver bottle. Either way the game lands in the games folder.
 - **itch.io** signs in with an API key from its API keys page. Aperto downloads the Mac build when there is one, else the Windows or web build.
+- **DLsite** appears with Adult sexual content on, and signs in on DLsite's own page. Aperto lists the games among your purchases and downloads them into the games folder. Large works come in parts; joining them needs 7-Zip from Homebrew (`brew install sevenzip`).
 
 Aperto links each downloaded game to its store page and adds the page's tags and banner. With Adult sexual content off, the Steam list leaves out games Steam marks as having it. GOG and itch.io do not mark adult games reliably, so their lists show everything.
 

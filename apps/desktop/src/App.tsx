@@ -389,26 +389,28 @@ export function App() {
                   <HugeiconsIcon icon={FolderAddIcon} className="size-4" />
                   From a folder…
                 </button>
-                {storeSites.map((site) => {
-                  const signedIn = !!snapshot && !!storeUser(snapshot, site);
-                  return (
-                    <button
-                      key={site}
-                      type="button"
-                      className={menuItem}
-                      onClick={() => {
-                        setAddOpen(false);
-                        if (signedIn) setStore(site);
-                        else openSettings("accounts");
-                      }}
-                    >
-                      <SiteLogo site={site} className="size-4" />
-                      {signedIn
-                        ? `From ${metadataSites[site]}…`
-                        : `Sign in to ${metadataSites[site]}…`}
-                    </button>
-                  );
-                })}
+                {storeSites
+                  .filter((site) => site !== "dlsite" || snapshot?.adultContent)
+                  .map((site) => {
+                    const signedIn = !!snapshot && !!storeUser(snapshot, site);
+                    return (
+                      <button
+                        key={site}
+                        type="button"
+                        className={menuItem}
+                        onClick={() => {
+                          setAddOpen(false);
+                          if (signedIn) setStore(site);
+                          else openSettings("accounts");
+                        }}
+                      >
+                        <SiteLogo site={site} className="size-4" />
+                        {signedIn
+                          ? `From ${metadataSites[site]}…`
+                          : `Sign in to ${metadataSites[site]}…`}
+                      </button>
+                    );
+                  })}
               </PopoverContent>
             </Popover>
             <Button

@@ -42,6 +42,14 @@ import { inspectRoot, nameManifest, readObject } from "./detection";
 import { detectGame, findGames, fingerprint, versionedName, versionsIn, within } from "./discovery";
 import { iconToPng, macSteamLibraries } from "./mac";
 import { createShortcut } from "./shortcuts";
+import {
+  dlsiteDownload,
+  dlsiteLoginUrl,
+  dlsiteOwnedGames,
+  dlsitePurchases,
+  dlsiteSession,
+  unpackParts,
+} from "./dlsite";
 import { diskUsage, findComponents, listComponents, removeComponent } from "./components";
 import {
   gogDownload,
@@ -384,6 +392,28 @@ export class DesktopLibrary {
       delete this.owned.steam;
       await this.store.update((state) => {
         const { steamUser: _, ...rest } = state;
+        return rest;
+      });
+      return this.snapshot();
+    }
+    if (command.action === "dlsiteSignIn") {
+      const signedIn = async () =>
+        (await this.native.sessionResponse(dlsiteSession, dlsitePurchases).catch(() => null))?.ok ??
+        false;
+      await this.native.signInWindow({ url: dlsiteLoginUrl, partition: dlsiteSession, signedIn });
+      if (!(await signedIn())) return this.snapshot();
+      delete this.owned.dlsite;
+      await this.store.update((state) => ({
+        ...state,
+        dlsiteUser: { id: "dlsite", name: "your DLsite account" },
+      }));
+      return this.snapshot();
+    }
+    if (command.action === "dlsiteSignOut") {
+      await this.native.clearSession(dlsiteSession);
+      delete this.owned.dlsite;
+      await this.store.update((state) => {
+        const { dlsiteUser: _, ...rest } = state;
         return rest;
       });
       return this.snapshot();
@@ -973,6 +1003,13 @@ export class DesktopLibrary {
   private async listOwned(site: StoreSite) {
     if (site === "gog") return gogOwnedGames(await this.gogAccess());
     if (site === "itch") return ownedGames(await this.itchKey());
+    if (site === "dlsite") {
+      if (!this.store.value.dlsiteUser || !this.store.value.adultContent)
+        throw new Error("Turn on adult sexual content and sign in to DLsite in Settings first.");
+      return dlsiteOwnedGames((url, signal) =>
+        this.native.sessionResponse(dlsiteSession, url, signal),
+      );
+    }
     if (!this.store.value.steamUser) throw new Error("Sign in to Steam in Settings first.");
     const ids = ownedAppIds(await this.native.sessionFetch(steamSession, steamUserData));
     if (!ids) throw new Error("Steam signed Aperto out. Sign in again in Settings.");
@@ -1102,6 +1139,17 @@ export class DesktopLibrary {
         await downloadUpload(itchKey, game, upload, file, download.controller.signal, progress);
         step("Unpacking…");
         await unpack(file, unpacked);
+      } else if (site === "dlsite") {
+        const files = await dlsiteDownload(
+          (url, signal) => this.native.sessionResponse(dlsiteSession, url, signal),
+          game.id,
+          staging,
+          download.controller.signal,
+          progress,
+        );
+        download.controller.signal.throwIfAborted();
+        step("Unpacking…");
+        await unpackParts(files, unpacked);
       } else {
         const bottle = (await exists(crossoverWine)) ? this.store.value.defaultBottle : null;
         const installer = await gogInstaller(await this.gogAccess(), game, !!bottle);

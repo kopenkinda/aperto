@@ -222,11 +222,15 @@ async function gogDetails(slug: string): Promise<MetadataDetails> {
 /** A DLsite work number: RJ for doujin works, VJ for commercial ones, BJ for books. */
 export const dlsiteWork = /^[RVB]J\d{6,8}$/;
 /** The part of DLsite a work number belongs to, which its API and pages are under. */
-const dlsiteFloor = (work: string) =>
+export const dlsiteFloor = (work: string) =>
   work.startsWith("VJ") ? "pro" : work.startsWith("BJ") ? "books" : "maniax";
 
-type DlsiteProduct = {
+export type DlsiteProduct = {
   workno: string;
+  /** Three letters for the kind of work: RPG, ACN, and the like for games, MNG for manga. */
+  work_type?: string;
+  /** How the work is delivered: EXE for Windows programs, HTI or HTE for browser games. */
+  file_type?: string;
   work_name?: string;
   maker_name?: string;
   genres?: { name?: string }[];
@@ -234,7 +238,7 @@ type DlsiteProduct = {
 };
 
 /** One DLsite work's details in English where DLsite has them; null when it is not found. */
-async function dlsiteProduct(work: string): Promise<DlsiteProduct | null> {
+export async function dlsiteProduct(work: string): Promise<DlsiteProduct | null> {
   if (!dlsiteWork.test(work)) return null;
   const body = await json(
     `https://www.dlsite.com/${dlsiteFloor(work)}/api/=/product.json?workno=${work}&locale=en_US`,

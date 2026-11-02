@@ -135,6 +135,11 @@ const accountHints = {
     signedIn:
       "Installing asks Steam to install the game: Steam for Mac when the game has a Mac version, else the Steam in a CrossOver bottle. It joins the library when Steam finishes.",
   },
+  dlsite: {
+    signedOut: "Sign in on DLsite's own page to download the games you bought.",
+    signedIn:
+      "Games you download go into the games folder and are linked to their DLsite pages. Large works come in parts, which need 7-Zip from Homebrew to join.",
+  },
   gog: {
     signedOut: "Sign in on GOG's own page to download the games you own.",
     signedIn:
@@ -143,15 +148,16 @@ const accountHints = {
 };
 
 /**
- * A Steam or GOG account in Settings. Both sign in on the store's own login page, in a window
- * Aperto opens; Steam's session stays in Aperto's own cookies, GOG's token in the Keychain.
+ * A Steam, GOG, or DLsite account in Settings. Each signs in on the store's own login page, in a
+ * window Aperto opens; Steam's and DLsite's sessions stay in Aperto's own cookies, GOG's token in
+ * the Keychain.
  */
 export function StoreAccount({
   site,
   snapshot,
   onLibrary,
 }: {
-  site: "steam" | "gog";
+  site: "steam" | "gog" | "dlsite";
   snapshot: Snapshot;
   /** Opens the list of the account's games. */
   onLibrary: () => void;
@@ -181,9 +187,7 @@ export function StoreAccount({
           <Button
             variant="ghost"
             disabled={busy}
-            onClick={() =>
-              void run(() => request({ action: site === "steam" ? "steamSignOut" : "gogSignOut" }))
-            }
+            onClick={() => void run(() => request({ action: `${site}SignOut` }))}
           >
             Sign out
           </Button>
@@ -196,9 +200,7 @@ export function StoreAccount({
         variant="outline"
         className="self-start"
         disabled={busy}
-        onClick={() =>
-          void run(() => request({ action: site === "steam" ? "steamSignIn" : "gogSignIn" }))
-        }
+        onClick={() => void run(() => request({ action: `${site}SignIn` }))}
       >
         {busy ? <Spinner /> : <SiteLogo site={site} />}
         Sign in to {name}

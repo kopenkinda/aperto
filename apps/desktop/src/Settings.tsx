@@ -391,6 +391,15 @@ export function Settings({
               <Section title="GOG">
                 <StoreAccount site="gog" snapshot={snapshot} onLibrary={() => setStore("gog")} />
               </Section>
+              {snapshot.adultContent && (
+                <Section title="DLsite">
+                  <StoreAccount
+                    site="dlsite"
+                    snapshot={snapshot}
+                    onLibrary={() => setStore("dlsite")}
+                  />
+                </Section>
+              )}
               <Section title="itch.io">
                 <ItchAccount snapshot={snapshot} onLibrary={() => setStore("itch")} />
               </Section>
