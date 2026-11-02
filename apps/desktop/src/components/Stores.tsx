@@ -215,10 +215,16 @@ export function StoreAccount({
   );
 }
 
-/**
- * The games a store account owns, each downloadable into the games folder. Games already in the
- * library, matched by their link to the store, are marked.
- */
+/** Where a store's games go when downloaded, as said under the list's title. */
+export function storeLibraryHint(site: StoreSite | null, snapshot: Snapshot) {
+  if (site === "steam")
+    return "Steam installs the game, the Mac version when there is one; it joins the library when Steam finishes.";
+  return snapshot.gamesFolder
+    ? "Downloads the Mac version when there is one, or else the Windows one, into the games folder."
+    : "Choose a games folder in Settings to download games into.";
+}
+
+/** A store's games in a dialog of their own, for opening them outside Settings. */
 export function StoreLibrary({
   site,
   snapshot,
@@ -229,7 +235,24 @@ export function StoreLibrary({
   snapshot: Snapshot;
   onOpenChange: (open: boolean) => void;
 }) {
-  const open = site !== null;
+  return (
+    <Dialog open={site !== null} onOpenChange={onOpenChange}>
+      <DialogContent className="flex max-h-[85vh] flex-col gap-4 sm:max-w-xl">
+        <DialogHeader>
+          <DialogTitle>Your {site ? storeNames[site] : ""} games</DialogTitle>
+          <DialogDescription>{storeLibraryHint(site, snapshot)}</DialogDescription>
+        </DialogHeader>
+        <StoreGames site={site} snapshot={snapshot} />
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/**
+ * The games a store account owns, each downloadable into the games folder. Games already in the
+ * library, matched by their link to the store, are marked.
+ */
+export function StoreGames({ site, snapshot }: { site: StoreSite | null; snapshot: Snapshot }) {
   const name = site ? storeNames[site] : "";
   // Undefined while loading.
   const [games, setGames] = useState<OwnedGame[] | undefined>();
@@ -253,115 +276,100 @@ export function StoreLibrary({
   }, [site]);
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[85vh] flex-col gap-4 sm:max-w-xl">
-        <DialogHeader>
-          <DialogTitle>Your {name} games</DialogTitle>
-          <DialogDescription>
-            {site === "steam"
-              ? "Steam installs the game, the Mac version when there is one; it joins the library when Steam finishes."
-              : snapshot.gamesFolder
-                ? "Downloads the Mac version when there is one, or else the Windows one, into the games folder."
-                : "Choose a games folder in Settings to download games into."}
-          </DialogDescription>
-        </DialogHeader>
-        {/* Steam marks adult games, so they are left out; GOG and itch.io do not reliably. */}
-        {site && !snapshot.adultContent && (
-          <p className="rounded-md bg-muted/60 px-3 py-2 text-xs text-muted-foreground">
-            {site === "steam"
-              ? "Games with adult sexual content are hidden while it is off in Settings."
-              : `Adult sexual content is off, but ${name} does not mark such games in a way Aperto can rely on, so some may still appear here. What you download is up to you.`}
+    <>
+      {/* Steam marks adult games, so they are left out; GOG and itch.io do not reliably. */}
+      {site && !snapshot.adultContent && (
+        <p className="rounded-md bg-muted/60 px-3 py-2 text-xs text-muted-foreground">
+          {site === "steam"
+            ? "Games with adult sexual content are hidden while it is off in Settings."
+            : `Adult sexual content is off, but ${name} does not mark such games in a way Aperto can rely on, so some may still appear here. What you download is up to you.`}
+        </p>
+      )}
+      {error && (
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+      {!!games?.length && (
+        <SearchInput
+          aria-label={`Search your ${name} games`}
+          placeholder={`Search ${games.length} games`}
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+        />
+      )}
+      <div className="-mx-1 flex min-h-0 flex-col gap-1 overflow-y-auto px-1">
+        {games === undefined && (
+          <p className="flex items-center gap-2 text-muted-foreground">
+            <Spinner /> Reading your library…
           </p>
         )}
-        {error && (
-          <Alert variant="destructive">
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
+        {games?.length === 0 && !error && (
+          <p className="text-muted-foreground">This account owns no games on {name} yet.</p>
         )}
-        {!!games?.length && (
-          <SearchInput
-            aria-label={`Search your ${name} games`}
-            placeholder={`Search ${games.length} games`}
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-          />
-        )}
-        <div className="-mx-1 flex min-h-0 flex-col gap-1 overflow-y-auto px-1">
-          {games === undefined && (
-            <p className="flex items-center gap-2 text-muted-foreground">
-              <Spinner /> Reading your library…
-            </p>
-          )}
-          {games?.length === 0 && !error && (
-            <p className="text-muted-foreground">This account owns no games on {name} yet.</p>
-          )}
-          {shown.map((game) => {
-            const download = snapshot.storeDownloads.find(
-              (item) => item.site === game.site && item.gameId === game.gameId,
-            );
-            const owned = linked.has(game.page);
-            return (
-              <div key={game.id} className="flex items-center gap-3 rounded-lg border p-1.5">
-                <span className="h-10 w-12 shrink-0 overflow-hidden rounded bg-muted">
-                  {game.cover && <img src={game.cover} alt="" className="size-full object-cover" />}
+        {shown.map((game) => {
+          const download = snapshot.storeDownloads.find(
+            (item) => item.site === game.site && item.gameId === game.gameId,
+          );
+          const owned = linked.has(game.page);
+          return (
+            <div key={game.id} className="flex items-center gap-3 rounded-lg border p-1.5">
+              <span className="h-10 w-12 shrink-0 overflow-hidden rounded bg-muted">
+                {game.cover && <img src={game.cover} alt="" className="size-full object-cover" />}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate font-medium">{game.title}</span>
+                <span className="block truncate text-xs text-muted-foreground">
+                  {download
+                    ? download.detail
+                    : [game.author, ...game.platforms.map((item) => platformNames[item])]
+                        .filter(Boolean)
+                        .join(" · ")}
                 </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate font-medium">{game.title}</span>
-                  <span className="block truncate text-xs text-muted-foreground">
-                    {download
-                      ? download.detail
-                      : [game.author, ...game.platforms.map((item) => platformNames[item])]
-                          .filter(Boolean)
-                          .join(" · ")}
-                  </span>
+              </span>
+              {download ? (
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={`Stop downloading ${game.title}`}
+                  title="Stop"
+                  onClick={() =>
+                    void run(() =>
+                      request({
+                        action: "stopStoreDownload",
+                        site: game.site,
+                        gameId: game.gameId,
+                      }),
+                    )
+                  }
+                >
+                  <Spinner className="group-hover/button:hidden" />
+                  <HugeiconsIcon icon={Cancel01Icon} className="hidden group-hover/button:block" />
+                </Button>
+              ) : owned ? (
+                <span className="flex items-center gap-1 pr-2 text-xs text-muted-foreground">
+                  <HugeiconsIcon icon={Tick02Icon} className="size-3.5" />
+                  In library
                 </span>
-                {download ? (
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label={`Stop downloading ${game.title}`}
-                    title="Stop"
-                    onClick={() =>
-                      void run(() =>
-                        request({
-                          action: "stopStoreDownload",
-                          site: game.site,
-                          gameId: game.gameId,
-                        }),
-                      )
-                    }
-                  >
-                    <Spinner className="group-hover/button:hidden" />
-                    <HugeiconsIcon
-                      icon={Cancel01Icon}
-                      className="hidden group-hover/button:block"
-                    />
-                  </Button>
-                ) : owned ? (
-                  <span className="flex items-center gap-1 pr-2 text-xs text-muted-foreground">
-                    <HugeiconsIcon icon={Tick02Icon} className="size-3.5" />
-                    In library
-                  </span>
-                ) : (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={game.site !== "steam" && !snapshot.gamesFolder}
-                    onClick={() =>
-                      void run(() =>
-                        request({ action: "downloadOwned", site: game.site, id: game.id }),
-                      )
-                    }
-                  >
-                    <HugeiconsIcon icon={Download04Icon} />
-                    {game.site === "steam" ? "Install" : "Download"}
-                  </Button>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </DialogContent>
-    </Dialog>
+              ) : (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={game.site !== "steam" && !snapshot.gamesFolder}
+                  onClick={() =>
+                    void run(() =>
+                      request({ action: "downloadOwned", site: game.site, id: game.id }),
+                    )
+                  }
+                >
+                  <HugeiconsIcon icon={Download04Icon} />
+                  {game.site === "steam" ? "Install" : "Download"}
+                </Button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </>
   );
 }
