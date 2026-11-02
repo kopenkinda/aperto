@@ -669,6 +669,7 @@ export class DesktopLibrary {
               command.agent,
               folder,
               this.agentContext(game, folder),
+              command.launchId === undefined ? undefined : this.fixTask(command.launchId),
             ),
           );
           break;
@@ -1255,6 +1256,24 @@ export class DesktopLibrary {
     if (!wanted && !(await originallyHas(this.store, game, pixelFixPlugin)))
       await rm(file, { force: true });
     return next;
+  }
+
+  /**
+   * Asks a coding agent to find out why a launch failed and fix it, with what ran, the error, and
+   * the end of the output, which is usually where the error is.
+   */
+  private fixTask(launchId: string) {
+    const launch = this.store.value.launches.find((item) => item.id === launchId);
+    if (!launch) throw new Error("This launch is no longer in the history.");
+    const log = launch.log.trim();
+    return [
+      `This game failed to launch on ${new Date(launch.startedAt).toLocaleString()}, with ${launch.runtime}${launch.sandboxed ? " in Aperto's sandbox" : ""}. ${launch.detail}`,
+      launch.flags.length ? `Arguments:\n${launch.flags.join("\n")}` : "",
+      log ? `End of its output:\n${log.slice(-6000)}` : "It printed no output.",
+      "Find out why it failed and fix it if you can, then tell me what you changed and how to try again. Ask me before deleting or replacing game files.",
+    ]
+      .filter(Boolean)
+      .join("\n\n");
   }
 
   /**

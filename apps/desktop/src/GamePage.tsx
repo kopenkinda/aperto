@@ -72,6 +72,7 @@ import {
   tagCounts,
   type Command,
   type Engine,
+  type Agent,
   type Game,
   type Launch,
   type Snapshot,
@@ -136,6 +137,58 @@ export function playable(game: Game, snapshot: Snapshot) {
   return kind === "windows"
     ? snapshot.bottles !== null && bottleOf(game, snapshot) !== null
     : game.runtime !== null;
+}
+
+/**
+ * Opens a coding agent on a failed launch, asked to fix it: the first agent found, or another
+ * from the list beside it.
+ */
+function AskAgent({ agents, onAsk }: { agents: Agent[]; onAsk: (agent: string) => void }) {
+  const [first, ...others] = agents;
+  if (!first) return null;
+  return (
+    <div className="flex self-start">
+      <Button
+        variant="outline"
+        size="sm"
+        className={cn(others.length && "rounded-r-none")}
+        onClick={() => onAsk(first.id)}
+      >
+        <AgentLogo id={first.id} className="size-3.5" />
+        Ask {first.name} to fix
+      </Button>
+      {others.length > 0 && (
+        <Popover>
+          <PopoverTrigger
+            render={
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-6 rounded-l-none border-l-0 px-0"
+                aria-label="Ask another coding agent"
+                title="Ask another coding agent"
+              >
+                <HugeiconsIcon icon={ArrowDown01Icon} />
+              </Button>
+            }
+          />
+          <PopoverContent align="start" className="w-52 gap-0 p-1">
+            {others.map((agent) => (
+              <button
+                key={agent.id}
+                type="button"
+                className="flex items-center gap-2 rounded-md px-2 py-1.5 text-left outline-none hover:bg-accent focus-visible:bg-accent"
+                onClick={() => onAsk(agent.id)}
+              >
+                <AgentLogo id={agent.id} />
+                Ask {agent.name}
+              </button>
+            ))}
+          </PopoverContent>
+        </Popover>
+      )}
+    </div>
+  );
 }
 
 function Fact({ label, children }: { label: string; children: ReactNode }) {
@@ -917,6 +970,21 @@ export function GamePage({
                     <pre className="max-h-60 overflow-auto rounded-md bg-muted p-2 text-[11px] break-all whitespace-pre-wrap text-foreground">
                       {[...launch.flags, "", launch.log || "No output captured."].join("\n")}
                     </pre>
+                    {launch.outcome === "failed" && snapshot.agents.length > 0 && (
+                      <AskAgent
+                        agents={snapshot.agents}
+                        onAsk={(agent) =>
+                          void run(() =>
+                            request({
+                              action: "openAgent",
+                              id: game.id,
+                              agent,
+                              launchId: launch.id,
+                            }),
+                          )
+                        }
+                      />
+                    )}
                   </TraceCollapsibleContent>
                 </TraceCollapsible>
               );

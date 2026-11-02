@@ -11,31 +11,56 @@ const execute = promisify(execFile);
 /**
  * Coding agents Aperto can start in a game's folder, and how each takes Aperto's notes about the
  * game: as added system instructions where the agent has a flag for them, else as its first
- * message, which asks it to wait for the user.
+ * message. A task, such as fixing a failed launch, is the first message; without one, the agent is
+ * asked to wait for the user.
  */
-const known: (Agent & { args: (context: string) => string[] })[] = [
+const known: (Agent & { args: (context: string, task?: string) => string[] })[] = [
   {
     id: "claude",
     name: "Claude Code",
-    args: (context) => ["--append-system-prompt", context],
+    args: (context, task) => ["--append-system-prompt", context, ...(task ? [task] : [])],
   },
   {
     id: "codex",
     name: "Codex",
-    args: (context) => ["-c", `developer_instructions=${JSON.stringify(context)}`],
+    args: (context, task) => [
+      "-c",
+      `developer_instructions=${JSON.stringify(context)}`,
+      ...(task ? [task] : []),
+    ],
   },
-  { id: "pi", name: "Pi", args: (context) => ["--append-system-prompt", context] },
-  { id: "opencode", name: "OpenCode", args: (context) => ["--prompt", firstMessage(context)] },
-  { id: "gemini", name: "Gemini CLI", args: (context) => ["-i", firstMessage(context)] },
-  { id: "qwen", name: "Qwen Code", args: (context) => ["-i", firstMessage(context)] },
-  { id: "copilot", name: "GitHub Copilot", args: (context) => ["-i", firstMessage(context)] },
-  { id: "cursor-agent", name: "Cursor Agent", args: (context) => [firstMessage(context)] },
+  {
+    id: "pi",
+    name: "Pi",
+    args: (context, task) => ["--append-system-prompt", context, ...(task ? [task] : [])],
+  },
+  {
+    id: "opencode",
+    name: "OpenCode",
+    args: (context, task) => ["--prompt", firstMessage(context, task)],
+  },
+  {
+    id: "gemini",
+    name: "Gemini CLI",
+    args: (context, task) => ["-i", firstMessage(context, task)],
+  },
+  { id: "qwen", name: "Qwen Code", args: (context, task) => ["-i", firstMessage(context, task)] },
+  {
+    id: "copilot",
+    name: "GitHub Copilot",
+    args: (context, task) => ["-i", firstMessage(context, task)],
+  },
+  {
+    id: "cursor-agent",
+    name: "Cursor Agent",
+    args: (context, task) => [firstMessage(context, task)],
+  },
   { id: "amp", name: "Amp", args: () => [] },
   { id: "aider", name: "Aider", args: () => [] },
 ];
 
-const firstMessage = (context: string) =>
-  `${context}\n\nReply only with a one-line summary of the game, then wait for my request.`;
+const firstMessage = (context: string, task?: string) =>
+  `${context}\n\n${task ?? "Reply only with a one-line summary of the game, then wait for my request."}`;
 
 /**
  * The user's login shell, which knows the PATH and shell functions their terminal has. fish takes
@@ -77,7 +102,8 @@ export function installedAgents(): Promise<Agent[]> {
 const quote = (value: string) => `'${value.replace(/'/g, `'\\''`)}'`;
 
 /**
- * Writes a script that starts the agent in `folder` with Aperto's notes, for a terminal to open.
+ * Writes a script that starts the agent in `folder` with Aperto's notes and an optional first
+ * task, for a terminal to open.
  * The agent runs in the user's interactive login shell, so shell functions that wrap it still
  * apply, and a shell stays open in the folder after it exits. The script deletes itself.
  */
@@ -86,12 +112,13 @@ export async function agentScript(
   agentId: string,
   folder: string,
   context: string,
+  task?: string,
 ) {
   const agent = known.find((item) => item.id === agentId);
   if (!agent) throw new Error("Aperto does not know this coding agent.");
   const script = path.join(directory, "agent-launch", `${randomUUID()}.command`);
   await mkdir(path.dirname(script), { recursive: true });
-  const command = [agent.id, ...agent.args(context)].map(quote).join(" ");
+  const command = [agent.id, ...agent.args(context, task)].map(quote).join(" ");
   await writeFile(
     script,
     `#!/bin/sh

@@ -446,7 +446,13 @@ export const CommandSchema = Schema.Union([
   Schema.Struct({ action: Schema.Literal("reveal"), ...id }),
   Schema.Struct({ action: Schema.Literal("openTerminal"), ...id }),
   /** Opens a coding agent in the game's folder, told where the game is and how it runs. */
-  Schema.Struct({ action: Schema.Literal("openAgent"), ...id, agent: Schema.String }),
+  Schema.Struct({
+    action: Schema.Literal("openAgent"),
+    ...id,
+    agent: Schema.String,
+    /** A failed launch the agent is asked to find the cause of and fix. */
+    launchId: Schema.optionalKey(Schema.String),
+  }),
   Schema.Struct({ action: Schema.Literal("revealPluginBackup"), ...id }),
 ]);
 export type Command = typeof CommandSchema.Type;
