@@ -63,7 +63,7 @@ Sign in under Settings, Accounts, then open your games from there or from the + 
 - **GOG** signs in on GOG's own page. Aperto unpacks Mac installers without running them and runs Windows installers silently in the default CrossOver bottle. Either way the game lands in the games folder.
 - **itch.io** signs in with an API key from its API keys page. Aperto downloads the Mac build when there is one, else the Windows or web build.
 
-Aperto links each downloaded game to its store page and adds the page's tags and banner.
+Aperto links each downloaded game to its store page and adds the page's tags and banner. With Adult content off, the Steam list leaves out games Steam marks as adult. GOG and itch.io do not mark adult games reliably, so their lists show everything.
 
 ## Coding agents
 
@@ -71,11 +71,11 @@ If you have Claude Code, Codex, OpenCode, Gemini CLI, or another supported codin
 
 ## Links, tags, and updates
 
-A game's page links it to Steam, GOG, itch.io, F95zone, and DLsite. Linking a game adds that page's tags, and its banner where the site has one. Settings chooses which sites show, and can link every game whose title matches exactly, or add back the tags of every linked game's pages.
+A game's page links it to Steam, GOG, and itch.io, and to F95zone and DLsite once you turn on Adult content in Settings. Linking a game adds that page's tags, and its banner where the site has one. Settings chooses which sites show, and can link every game whose title matches exactly, or add back the tags of every linked game's pages.
 
 In Settings, rename, recolor, merge, or delete tags across the library. Blocked tags are removed from every game and never added again; one click blocks every tag only one game has.
 
-Twice a day, Aperto compares each game's version, read from its folder name, with its F95zone thread. Outdated games get a marker in the list and a link to the thread.
+With Adult content on, Aperto compares each game's version twice a day, read from its folder name, with its F95zone thread. Outdated games get a marker in the list and a link to the thread.
 
 ## Build and sign
 
