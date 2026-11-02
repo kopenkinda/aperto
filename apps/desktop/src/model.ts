@@ -176,6 +176,8 @@ export type Snapshot = Library & {
   checkingUpdates: { checked: number; total: number } | null;
   /** CrossOver bottles, or null when CrossOver is not installed. */
   bottles: string[] | null;
+  /** Coding agents the user's shell can run, which open in a game's folder from its page. */
+  agents: Agent[];
   /** Supported terminals installed on this Mac, the automatic choice first. */
   terminals: { id: string; name: string }[];
 };
@@ -233,6 +235,8 @@ export type MetadataMatch = {
    */
   banner: string | null;
 };
+/** A coding agent's command and name, such as `claude` for Claude Code. */
+export type Agent = { id: string; name: string };
 export type ItchPlatform = "mac" | "windows" | "linux" | "web";
 /** A game the itch.io account bought or claimed. */
 export type ItchGame = {
@@ -408,6 +412,8 @@ export const CommandSchema = Schema.Union([
   Schema.Struct({ action: Schema.Literal("stop"), ...id }),
   Schema.Struct({ action: Schema.Literal("reveal"), ...id }),
   Schema.Struct({ action: Schema.Literal("openTerminal"), ...id }),
+  /** Opens a coding agent in the game's folder, told where the game is and how it runs. */
+  Schema.Struct({ action: Schema.Literal("openAgent"), ...id, agent: Schema.String }),
   Schema.Struct({ action: Schema.Literal("revealPluginBackup"), ...id }),
 ]);
 export type Command = typeof CommandSchema.Type;

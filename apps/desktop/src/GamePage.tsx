@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 import {
   AlertCircleIcon,
+  ArrowDown01Icon,
   Cancel01Icon,
   CancelCircleIcon,
   CircleArrowUp01Icon,
@@ -14,7 +15,10 @@ import {
   StopIcon,
 } from "@hugeicons/core-free-icons";
 import { Artwork } from "@/components/Artwork";
+import { cn } from "@/lib/utils";
+import { AgentLogo } from "@/components/logos";
 import { GameLinks } from "@/components/GameLinks";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { PluginsSection } from "@/components/PluginsSection";
 import { Field, Note, SettingsCard, useSaved } from "@/components/settings";
 import { Label } from "@/components/ui/label";
@@ -369,15 +373,58 @@ export function GamePage({
             <HugeiconsIcon icon={FolderOpenIcon} />
           </Button>
           {terminal && (
-            <Button
-              variant="outline"
-              size="icon-lg"
-              aria-label={`Open in ${terminal.name}`}
-              title={`Open in ${terminal.name}`}
-              onClick={() => void run(() => request({ action: "openTerminal", id: game.id }))}
-            >
-              <HugeiconsIcon icon={ComputerTerminal01Icon} />
-            </Button>
+            <div className="flex">
+              <Button
+                variant="outline"
+                size="icon-lg"
+                className={cn(snapshot.agents.length && "rounded-r-none")}
+                aria-label={`Open in ${terminal.name}`}
+                title={`Open in ${terminal.name}`}
+                onClick={() => void run(() => request({ action: "openTerminal", id: game.id }))}
+              >
+                <HugeiconsIcon icon={ComputerTerminal01Icon} />
+              </Button>
+              {snapshot.agents.length > 0 && (
+                <Popover>
+                  <PopoverTrigger
+                    render={
+                      <Button
+                        variant="outline"
+                        size="lg"
+                        className="w-6 rounded-l-none border-l-0 px-0"
+                        aria-label="Open a coding agent"
+                        title="Open a coding agent in the game's folder"
+                      >
+                        <HugeiconsIcon icon={ArrowDown01Icon} />
+                      </Button>
+                    }
+                  />
+                  <PopoverContent align="end" className="w-60 gap-0 p-1">
+                    <p className="px-2 py-1.5 text-xs text-muted-foreground">
+                      Open in {terminal.name} with
+                    </p>
+                    {snapshot.agents.map((agent) => (
+                      <button
+                        key={agent.id}
+                        type="button"
+                        className="flex items-center gap-2 rounded-md px-2 py-1.5 text-left outline-none hover:bg-accent focus-visible:bg-accent"
+                        onClick={() =>
+                          void run(() =>
+                            request({ action: "openAgent", id: game.id, agent: agent.id }),
+                          )
+                        }
+                      >
+                        <AgentLogo id={agent.id} />
+                        {agent.name}
+                      </button>
+                    ))}
+                    <p className="px-2 pt-1.5 pb-1 text-xs text-muted-foreground">
+                      The agent is told where the game is and how Aperto runs it.
+                    </p>
+                  </PopoverContent>
+                </Popover>
+              )}
+            </div>
           )}
           <Button
             variant="destructive"

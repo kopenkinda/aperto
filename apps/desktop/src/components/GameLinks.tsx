@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { Link01Icon, LinkSquare02Icon, PlusSignIcon } from "@hugeicons/core-free-icons";
+import { LinkSquare02Icon, PlusSignIcon } from "@hugeicons/core-free-icons";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { request } from "../desktop";
 import { metadataSites, type Game, type MetadataSite } from "../model";
+import { SiteLogo } from "./logos";
 import { MetadataDialog } from "./MetadataDialog";
 
 /**
@@ -52,7 +53,7 @@ export function GameLinks({
             <PopoverTrigger
               render={
                 <Button variant="outline" size="xs" className="font-normal">
-                  <HugeiconsIcon icon={Link01Icon} />
+                  <SiteLogo site={site} />
                   {metadataSites[site]}
                 </Button>
               }

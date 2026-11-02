@@ -14,6 +14,7 @@ import {
   searchName,
   sourceUrl,
   titleMatches,
+  type Agent,
   type AutoTagReport,
   launchSeconds,
   playCount,
@@ -41,7 +42,8 @@ import { findF95Thread, metadataDetails, searchF95, searchMetadata } from "./met
 import { mkxpLaunch } from "./mkxp";
 import { renpyLaunch } from "./renpy";
 import { sandboxed, type SandboxAccess } from "./sandbox";
-import { installedTerminals, openInTerminal, terminalFor } from "./terminals";
+import { agentScript, installedAgents } from "./agents";
+import { installedTerminals, openInTerminal, runInTerminal, terminalFor } from "./terminals";
 import { bottlesDirectory, crossoverWine, listBottles, setRetinaMode, wineArgs } from "./windows";
 import {
   changePlugins,
@@ -138,8 +140,26 @@ export class DesktopLibrary {
       lastScan: this.lastScan,
       checkingUpdates: this.updateProgress,
       bottles: (await exists(crossoverWine)) ? await listBottles() : null,
+      agents: this.agents(),
       terminals: await installedTerminals(),
     };
+  }
+
+  private foundAgents: Agent[] = [];
+  /**
+   * The coding agents found so far. Asking the user's shell takes a moment, so the snapshot shows
+   * the last answer and updates once a new one arrives.
+   */
+  private agents() {
+    void installedAgents().then((agents) => {
+      if (
+        agents.map((agent) => agent.id).join() === this.foundAgents.map((agent) => agent.id).join()
+      )
+        return;
+      this.foundAgents = agents;
+      this.changed();
+    });
+    return this.foundAgents;
   }
 
   /** Normalized tags without the blocked ones, which never go on a game. */
@@ -624,6 +644,21 @@ export class DesktopLibrary {
           await openInTerminal(
             terminal.id,
             gameKind(game) === "mac" ? path.dirname(game.root) : game.root,
+          );
+          break;
+        }
+        case "openAgent": {
+          const game = this.game(command.id);
+          const terminal = await terminalFor(this.store.value.terminal);
+          const folder = gameKind(game) === "mac" ? path.dirname(game.root) : game.root;
+          await runInTerminal(
+            terminal.id,
+            await agentScript(
+              this.store.directory,
+              command.agent,
+              folder,
+              this.agentContext(game, folder),
+            ),
           );
           break;
         }
@@ -1194,6 +1229,55 @@ export class DesktopLibrary {
     if (!wanted && !(await originallyHas(this.store, game, pixelFixPlugin)))
       await rm(file, { force: true });
     return next;
+  }
+
+  /**
+   * What a coding agent opened on a game is told first: where the game is, what kind it is, and
+   * how Aperto starts it, so it can read logs and change files without asking.
+   */
+  private agentContext(game: Game, folder: string) {
+    const kind = gameKind(game);
+    const sandbox = sandboxable(game)
+      ? game.sandbox !== false
+        ? "on: no internet, no other programs, writes only to the game folder and its data"
+        : "off"
+      : null;
+    const how = game.steam
+      ? `Windows game installed with Steam in the CrossOver bottle "${game.steam.bottle}", started through that bottle's Steam.`
+      : kind === "windows"
+        ? `Windows game run with CrossOver's wine in the bottle "${game.bottle ?? this.store.value.defaultBottle ?? "(none chosen)"}", like Run Command: ${game.executable}`
+        : kind === "mac"
+          ? `Mac app, opened with \`open -W -n ${game.executable}\`.`
+          : kind === "renpy"
+            ? `Ren'Py game, run with Aperto's own Ren'Py runtime from the launcher script ${game.executable}. Saves are also in ~/Library/RenPy.`
+            : kind === "rgss"
+              ? "RPG Maker XP–VX Ace game, run natively with mkxp-z."
+              : `NW.js game (RPG Maker MV/MZ or similar), run with NW.js ${game.runtime ?? "(no runtime assigned)"} as \`nw --user-data-dir=${ownedPath(this.store.directory, "browser-data", game.id)} ${game.root}\`. Browser data, including localStorage saves, is in that user data folder.`;
+    const last = this.store.value.launches.find((launch) => launch.gameId === game.id);
+    const links = linkedSites(game).map(
+      (site) => `${metadataSites[site]}: ${sourceUrl(site, game.links![site]!.id)}`,
+    );
+    return [
+      `You are helping with a game in the user's Aperto library. Aperto is a macOS app that launches games made for other platforms.`,
+      `- Game: ${game.name}`,
+      `- Working directory: ${folder}`,
+      ...(game.root !== folder ? [`- Game root: ${game.root}`] : []),
+      `- How it runs: ${how}`,
+      ...(sandbox ? [`- Aperto's sandbox: ${sandbox}`] : []),
+      ...(game.flags.length ? [`- Launch flags: ${game.flags.join(" ")}`] : []),
+      ...(game.update
+        ? [
+            `- Version: this copy ${game.update.installed ?? "unknown"}, latest on F95zone ${game.update.latest}`,
+          ]
+        : []),
+      ...(last
+        ? [
+            `- Last launch: ${last.outcome}, ${last.startedAt}${last.detail ? `: ${last.detail}` : ""}`,
+          ]
+        : []),
+      ...(links.length ? [`- Pages: ${links.join(", ")}`] : []),
+      `- Running now: ${this.running.has(game.id) ? "yes; ask the user to close it in Aperto before changing its files" : "no"}`,
+    ].join("\n");
   }
 
   private bottleFor(game: Game) {

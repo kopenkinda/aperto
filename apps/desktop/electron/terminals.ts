@@ -40,3 +40,15 @@ export async function terminalFor(chosen: string | null | undefined) {
 export async function openInTerminal(id: string, folder: string) {
   await execute("/usr/bin/open", ["-b", id, folder]);
 }
+
+// Terminals that run a `.command` script opened with them; Warp only opens folders.
+const runsScripts = new Set([
+  "com.mitchellh.ghostty",
+  "com.googlecode.iterm2",
+  "com.apple.Terminal",
+]);
+
+/** Runs a script in the terminal, or in Terminal when the chosen one cannot run scripts. */
+export async function runInTerminal(id: string, script: string) {
+  await execute("/usr/bin/open", ["-b", runsScripts.has(id) ? id : "com.apple.Terminal", script]);
+}
