@@ -11,3 +11,6 @@ __pycache__/
 .env.*
 !.env.example
 .build/
+
+# Local scratch work, such as the launch video and README banner sources.
+.scratch/
