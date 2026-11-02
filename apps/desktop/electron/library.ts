@@ -311,6 +311,11 @@ export class DesktopLibrary {
       }));
       return this.snapshot();
     }
+    if (command.action === "setHiddenAgents") {
+      const agents = [...new Set(command.agents)];
+      await this.store.update((state) => ({ ...state, hiddenAgents: agents }));
+      return this.snapshot();
+    }
     if (command.action === "setAdultContent") {
       const on = command.on;
       await this.store.update((state) => ({ ...state, adultContent: on }));

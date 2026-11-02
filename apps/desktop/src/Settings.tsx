@@ -38,7 +38,7 @@ import {
 import { request, useTask } from "./desktop";
 import { Field, Section } from "@/components/settings";
 import { ItchAccount, StoreAccount, StoreLibrary } from "@/components/Stores";
-import { SiteLogo } from "@/components/logos";
+import { AgentLogo, SiteLogo } from "@/components/logos";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
 import { TagManager } from "@/components/TagManager";
@@ -437,6 +437,39 @@ export function Settings({
                         ))}
                       </SelectContent>
                     </Select>
+                  )}
+                </Field>
+                <Field
+                  label="Coding agents"
+                  hint={
+                    snapshot.agents.length
+                      ? "Offered beside the terminal button on game pages and on failed launches. Untick one to hide it."
+                      : "None found. Install Claude Code, Codex, OpenCode, or another supported agent to open it in a game's folder."
+                  }
+                >
+                  {snapshot.agents.length > 0 && (
+                    <div className="flex min-h-8 flex-wrap items-center gap-4">
+                      {snapshot.agents.map((agent) => (
+                        <label key={agent.id} className="flex items-center gap-2">
+                          <Checkbox
+                            checked={!snapshot.hiddenAgents?.includes(agent.id)}
+                            onCheckedChange={(on) => {
+                              const hidden = snapshot.hiddenAgents ?? [];
+                              void run(() =>
+                                request({
+                                  action: "setHiddenAgents",
+                                  agents: on
+                                    ? hidden.filter((id) => id !== agent.id)
+                                    : [...hidden, agent.id],
+                                }),
+                              );
+                            }}
+                          />
+                          <AgentLogo id={agent.id} />
+                          {agent.name}
+                        </label>
+                      ))}
+                    </div>
                   )}
                 </Field>
                 <Field

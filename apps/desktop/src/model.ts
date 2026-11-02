@@ -193,6 +193,8 @@ export const LibrarySchema = Schema.Struct({
    * Unset shows only Steam; an empty list hides links.
    */
   linkSites: Schema.optionalKey(Schema.Array(SiteSchema)),
+  /** Coding agents left out of game pages, by command. */
+  hiddenAgents: Schema.optionalKey(Schema.Array(Schema.String)),
   /** Shows F95zone and DLsite links, and checks F95zone for updates. Unset means off. */
   adultContent: Schema.optionalKey(Schema.Boolean),
   /** The itch.io account signed in with an API key, which is kept in the Keychain. */
@@ -208,6 +210,9 @@ export type Library = typeof LibrarySchema.Type;
 /** The sites shown on game pages, in a fixed order whatever order they were chosen in. */
 export const shownSites = (library: Pick<Library, "linkSites" | "adultContent">) =>
   availableSites(library).filter((site) => (library.linkSites ?? ["steam"]).includes(site));
+/** The installed coding agents that game pages offer, without those hidden in Settings. */
+export const shownAgents = (snapshot: Pick<Snapshot, "agents" | "hiddenAgents">) =>
+  snapshot.agents.filter((agent) => !snapshot.hiddenAgents?.includes(agent.id));
 export type Snapshot = Library & {
   missing: string[];
   /** Games removed from the library whose folders are still on disk, which can be restored. */
@@ -428,6 +433,7 @@ export const CommandSchema = Schema.Union([
   }),
   Schema.Struct({ action: Schema.Literal("setLinkSites"), sites: Schema.Array(SiteSchema) }),
   Schema.Struct({ action: Schema.Literal("setAdultContent"), on: Schema.Boolean }),
+  Schema.Struct({ action: Schema.Literal("setHiddenAgents"), agents: Schema.Array(Schema.String) }),
   /** Signs in to itch.io with an API key from the account's API keys page. */
   Schema.Struct({ action: Schema.Literal("itchSignIn"), key: Schema.String }),
   Schema.Struct({ action: Schema.Literal("itchSignOut") }),

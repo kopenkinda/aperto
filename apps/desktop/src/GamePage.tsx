@@ -63,6 +63,7 @@ import {
   compareVersions,
   gameKind,
   steamApp,
+  shownAgents,
   launchOptions,
   updateAvailable,
   sandboxable,
@@ -289,6 +290,7 @@ export function GamePage({
   const [artworkUrl, setArtworkUrl] = useState("");
   const { run, busy, error, setError } = useTask();
   const running = snapshot.running.includes(game.id);
+  const agents = shownAgents(snapshot);
   const steam = steamApp(game) !== null;
   const missing = snapshot.missing.includes(game.id);
   const launches = snapshot.launches.filter((launch) => launch.gameId === game.id);
@@ -498,14 +500,14 @@ export function GamePage({
               <Button
                 variant="outline"
                 size="icon-lg"
-                className={cn(snapshot.agents.length && "rounded-r-none")}
+                className={cn(agents.length && "rounded-r-none")}
                 aria-label={`Open in ${terminal.name}`}
                 title={`Open in ${terminal.name}`}
                 onClick={() => void run(() => request({ action: "openTerminal", id: game.id }))}
               >
                 <HugeiconsIcon icon={ComputerTerminal01Icon} />
               </Button>
-              {snapshot.agents.length > 0 && (
+              {agents.length > 0 && (
                 <Popover>
                   <PopoverTrigger
                     render={
@@ -524,7 +526,7 @@ export function GamePage({
                     <p className="px-2 py-1.5 text-xs text-muted-foreground">
                       Open in {terminal.name} with
                     </p>
-                    {snapshot.agents.map((agent) => (
+                    {agents.map((agent) => (
                       <button
                         key={agent.id}
                         type="button"
@@ -1019,9 +1021,9 @@ export function GamePage({
                     <pre className="max-h-60 overflow-auto rounded-md bg-muted p-2 text-[11px] break-all whitespace-pre-wrap text-foreground">
                       {[...launch.flags, "", launch.log || "No output captured."].join("\n")}
                     </pre>
-                    {launch.outcome === "failed" && snapshot.agents.length > 0 && (
+                    {launch.outcome === "failed" && agents.length > 0 && (
                       <AskAgent
-                        agents={snapshot.agents}
+                        agents={agents}
                         onAsk={(agent) =>
                           void run(() =>
                             request({

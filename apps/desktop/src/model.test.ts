@@ -3,6 +3,7 @@ import {
   availableSites,
   compareGameVersions,
   linkedSites,
+  shownAgents,
   shownSites,
   steamApp,
   updateAvailable,
@@ -288,5 +289,16 @@ describe("adult content", () => {
     const game = { links: { f95: { id: "1", title: "A" }, steam: { id: "2", title: "A" } } };
     expect(linkedSites(game, {})).toEqual(["steam"]);
     expect(linkedSites(game, { adultContent: true })).toEqual(["steam", "f95"]);
+  });
+});
+
+describe("shownAgents", () => {
+  it("leaves out the coding agents hidden in Settings", () => {
+    const agents = [
+      { id: "claude", name: "Claude Code" },
+      { id: "pi", name: "Pi" },
+    ];
+    expect(shownAgents({ agents })).toEqual(agents);
+    expect(shownAgents({ agents, hiddenAgents: ["pi"] })).toEqual([agents[0]]);
   });
 });
