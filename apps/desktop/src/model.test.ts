@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  availableSites,
   compareGameVersions,
+  linkedSites,
+  shownSites,
   steamApp,
   updateAvailable,
   searchName,
@@ -273,5 +276,17 @@ describe("steamApp", () => {
         steam: { appId: "20", bottle: "Steam", installdir: "Space", client: "steam.exe" },
       }),
     ).toBe("20");
+  });
+});
+
+describe("adult content", () => {
+  it("hides F95zone and DLsite until it is on, keeping the saved choice", () => {
+    const library = { linkSites: ["f95", "steam", "dlsite"] as const };
+    expect(availableSites({})).toEqual(["steam", "gog", "itch"]);
+    expect(shownSites(library)).toEqual(["steam"]);
+    expect(shownSites({ ...library, adultContent: true })).toEqual(["f95", "steam", "dlsite"]);
+    const game = { links: { f95: { id: "1", title: "A" }, steam: { id: "2", title: "A" } } };
+    expect(linkedSites(game, {})).toEqual(["steam"]);
+    expect(linkedSites(game, { adultContent: true })).toEqual(["steam", "f95"]);
   });
 });

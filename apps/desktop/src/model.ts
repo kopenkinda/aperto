@@ -80,9 +80,22 @@ export const GameSchema = Schema.Struct({
   sandbox: Schema.optionalKey(Schema.Boolean),
 });
 export type Game = typeof GameSchema.Type;
-/** The sites a game is linked to, in the order banners are taken from them: Steam's are largest. */
-export const linkedSites = (game: Pick<Game, "links">) =>
-  (["steam", "gog", "f95", "dlsite", "itch"] as const).filter((site) => game.links?.[site]);
+/** Sites for adult games, which only show with adult content turned on in Settings. */
+export const adultSites: readonly MetadataSite[] = ["f95", "dlsite"];
+/** The sites Aperto can link to, adult ones only with adult content on. */
+export const availableSites = (library: Pick<Library, "adultContent">) =>
+  (Object.keys(metadataSites) as MetadataSite[]).filter(
+    (site) => library.adultContent || !adultSites.includes(site),
+  );
+/**
+ * The sites a game is linked to, in the order banners are taken from them: Steam's are largest.
+ * Given the library, adult sites are left out unless adult content is on.
+ */
+export const linkedSites = (game: Pick<Game, "links">, library?: Pick<Library, "adultContent">) =>
+  (["steam", "gog", "f95", "dlsite", "itch"] as const).filter(
+    (site) =>
+      game.links?.[site] && (!library || library.adultContent || !adultSites.includes(site)),
+  );
 
 /**
  * Brings a library written by an older Aperto up to date before it is decoded: the single
@@ -180,6 +193,8 @@ export const LibrarySchema = Schema.Struct({
    * Unset shows only Steam; an empty list hides links.
    */
   linkSites: Schema.optionalKey(Schema.Array(SiteSchema)),
+  /** Shows F95zone and DLsite links, and checks F95zone for updates. Unset means off. */
+  adultContent: Schema.optionalKey(Schema.Boolean),
   /** The itch.io account signed in with an API key, which is kept in the Keychain. */
   itchUser: Schema.optionalKey(Schema.Struct({ id: Schema.String, name: Schema.String })),
   /** The Steam account, whose store sign-in cookies Aperto keeps in its own session. */
@@ -191,10 +206,8 @@ export const LibrarySchema = Schema.Struct({
 });
 export type Library = typeof LibrarySchema.Type;
 /** The sites shown on game pages, in a fixed order whatever order they were chosen in. */
-export const shownSites = (library: Pick<Library, "linkSites">) =>
-  (Object.keys(metadataSites) as MetadataSite[]).filter((site) =>
-    (library.linkSites ?? ["steam"]).includes(site),
-  );
+export const shownSites = (library: Pick<Library, "linkSites" | "adultContent">) =>
+  availableSites(library).filter((site) => (library.linkSites ?? ["steam"]).includes(site));
 export type Snapshot = Library & {
   missing: string[];
   /** Games removed from the library whose folders are still on disk, which can be restored. */
@@ -414,6 +427,7 @@ export const CommandSchema = Schema.Union([
     site: SiteSchema,
   }),
   Schema.Struct({ action: Schema.Literal("setLinkSites"), sites: Schema.Array(SiteSchema) }),
+  Schema.Struct({ action: Schema.Literal("setAdultContent"), on: Schema.Boolean }),
   /** Signs in to itch.io with an API key from the account's API keys page. */
   Schema.Struct({ action: Schema.Literal("itchSignIn"), key: Schema.String }),
   Schema.Struct({ action: Schema.Literal("itchSignOut") }),

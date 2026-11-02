@@ -27,10 +27,10 @@ import {
   compareVersions,
   formatSize,
   metadataSites,
+  availableSites,
   shownSites,
   updateAvailable,
   type Component,
-  type MetadataSite,
   type StoreSite,
   type Release,
   type Snapshot,
@@ -40,6 +40,7 @@ import { Field, Section } from "@/components/settings";
 import { ItchAccount, StoreAccount, StoreLibrary } from "@/components/Stores";
 import { SiteLogo } from "@/components/logos";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
 import { TagManager } from "@/components/TagManager";
 
 const relative = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
@@ -131,6 +132,7 @@ export function Settings({
   const [checking, setChecking] = useState(false);
   const [store, setStore] = useState<StoreSite | null>(null);
   const linkSites = shownSites(snapshot);
+  const chosenSites = snapshot.linkSites ?? ["steam"];
   const linked = snapshot.games.filter((game) => game.update).length;
   const outdated = snapshot.games.filter(updateAvailable);
 
@@ -283,45 +285,47 @@ export function Settings({
                 </Section>
               )}
 
-              <Section title="Updates">
-                <Field
-                  label="F95zone"
-                  hint={`Aperto compares the version in each game's folder name with its F95zone thread twice a day, while it runs. Games tagged from Steam are found on F95zone by their exact title. ${
-                    snapshot.updatesCheckedAt
-                      ? `Last checked ${ago(snapshot.updatesCheckedAt)}.`
-                      : "Not checked yet."
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <Button
-                      variant="outline"
-                      disabled={checking || !!snapshot.checkingUpdates}
-                      onClick={() => {
-                        setChecking(true);
-                        void run(() => request({ action: "checkUpdates" })).finally(() =>
-                          setChecking(false),
-                        );
-                      }}
-                    >
-                      {checking || snapshot.checkingUpdates ? (
-                        <Spinner />
-                      ) : (
-                        <HugeiconsIcon icon={RefreshIcon} />
-                      )}
-                      Check now
-                    </Button>
-                    <span className="text-muted-foreground">
-                      {snapshot.checkingUpdates
-                        ? `Checking ${snapshot.checkingUpdates.checked + 1} of ${snapshot.checkingUpdates.total}…`
-                        : !linked
-                          ? "No game has been found on F95zone yet."
-                          : outdated.length
-                            ? `${outdated.length} ${outdated.length === 1 ? "update" : "updates"} available`
-                            : "Everything is up to date."}
-                    </span>
-                  </div>
-                </Field>
-              </Section>
+              {snapshot.adultContent && (
+                <Section title="Updates">
+                  <Field
+                    label="F95zone"
+                    hint={`Aperto compares the version in each game's folder name with its F95zone thread twice a day, while it runs. Games tagged from Steam are found on F95zone by their exact title. ${
+                      snapshot.updatesCheckedAt
+                        ? `Last checked ${ago(snapshot.updatesCheckedAt)}.`
+                        : "Not checked yet."
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <Button
+                        variant="outline"
+                        disabled={checking || !!snapshot.checkingUpdates}
+                        onClick={() => {
+                          setChecking(true);
+                          void run(() => request({ action: "checkUpdates" })).finally(() =>
+                            setChecking(false),
+                          );
+                        }}
+                      >
+                        {checking || snapshot.checkingUpdates ? (
+                          <Spinner />
+                        ) : (
+                          <HugeiconsIcon icon={RefreshIcon} />
+                        )}
+                        Check now
+                      </Button>
+                      <span className="text-muted-foreground">
+                        {snapshot.checkingUpdates
+                          ? `Checking ${snapshot.checkingUpdates.checked + 1} of ${snapshot.checkingUpdates.total}…`
+                          : !linked
+                            ? "No game has been found on F95zone yet."
+                            : outdated.length
+                              ? `${outdated.length} ${outdated.length === 1 ? "update" : "updates"} available`
+                              : "Everything is up to date."}
+                      </span>
+                    </div>
+                  </Field>
+                </Section>
+              )}
             </>
           )}
           {page === "links" && (
@@ -332,7 +336,7 @@ export function Settings({
                   hint="Shown on each game's page, where linking a game adds its tags and banner. Finding tags for every game searches only these sites. Untick all to hide links."
                 >
                   <div className="flex min-h-8 flex-wrap items-center gap-4">
-                    {(Object.keys(metadataSites) as MetadataSite[]).map((site) => (
+                    {availableSites(snapshot).map((site) => (
                       <label key={site} className="flex items-center gap-2">
                         <Checkbox
                           checked={linkSites.includes(site)}
@@ -340,9 +344,10 @@ export function Settings({
                             void run(() =>
                               request({
                                 action: "setLinkSites",
+                                // The saved choice, so hidden adult sites keep theirs.
                                 sites: on
-                                  ? [...linkSites, site]
-                                  : linkSites.filter((item) => item !== site),
+                                  ? [...chosenSites, site]
+                                  : chosenSites.filter((item) => item !== site),
                               }),
                             )
                           }
@@ -352,6 +357,20 @@ export function Settings({
                       </label>
                     ))}
                   </div>
+                </Field>
+                <Field
+                  label="Adult content"
+                  htmlFor="adult-content"
+                  hint="Shows F95zone and DLsite links, and checks F95zone for game updates."
+                >
+                  <Switch
+                    id="adult-content"
+                    className="mt-1.5"
+                    checked={!!snapshot.adultContent}
+                    onCheckedChange={(on) =>
+                      void run(() => request({ action: "setAdultContent", on }))
+                    }
+                  />
                 </Field>
               </Section>
 

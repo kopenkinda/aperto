@@ -45,14 +45,20 @@ type StoreItem = {
   type?: number;
   visible?: boolean;
   platforms?: { windows?: boolean; mac?: boolean; steamos_linux?: boolean };
+  content_descriptorids?: number[];
   assets?: { asset_url_format?: string; header?: string; small_capsule?: string };
 };
 
+// Steam's content descriptors for adult sexual content: 3 is adult only, 4 is frequent nudity or
+// sexual content. 1, some nudity, is common in mainstream games and does not count.
+const adultDescriptors = [3, 4];
+
 /**
  * Owned apps as games, with names, platforms, and capsule art from Steam's public store API,
- * a hundred at a time. Soundtracks, tools, and other apps that are not games are left out.
+ * a hundred at a time. Soundtracks, tools, and other apps that are not games are left out, and
+ * so are adult games unless `adult` is on.
  */
-export async function steamOwnedGames(appIds: number[]): Promise<OwnedGame[]> {
+export async function steamOwnedGames(appIds: number[], adult = true): Promise<OwnedGame[]> {
   const games: OwnedGame[] = [];
   for (let start = 0; start < appIds.length; start += 100) {
     const url = new URL("https://api.steampowered.com/IStoreBrowseService/GetItems/v1/");
@@ -71,6 +77,7 @@ export async function steamOwnedGames(appIds: number[]): Promise<OwnedGame[]> {
       const id = item.appid ?? item.id;
       // Type 0 is a game; DLC, soundtracks, and software have other types.
       if (!id || !item.name || item.type !== 0) continue;
+      if (!adult && item.content_descriptorids?.some((d) => adultDescriptors.includes(d))) continue;
       const art = item.assets?.small_capsule ?? item.assets?.header;
       games.push({
         site: "steam",

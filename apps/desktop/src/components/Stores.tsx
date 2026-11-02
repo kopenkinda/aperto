@@ -255,6 +255,14 @@ export function StoreLibrary({
                 : "Choose a games folder in Settings to download games into."}
           </DialogDescription>
         </DialogHeader>
+        {/* Steam marks adult games, so they are left out; GOG and itch.io do not reliably. */}
+        {site && !snapshot.adultContent && (
+          <p className="rounded-md bg-muted/60 px-3 py-2 text-xs text-muted-foreground">
+            {site === "steam"
+              ? "Adult games are hidden while adult content is off in Settings."
+              : `Adult content is off, but ${name} does not mark adult games in a way Aperto can rely on, so some may still appear here. What you download is up to you.`}
+          </p>
+        )}
         {error && (
           <Alert variant="destructive">
             <AlertDescription>{error}</AlertDescription>

@@ -307,8 +307,16 @@ export class DesktopLibrary {
       const sites = command.sites;
       await this.store.update((state) => ({
         ...state,
-        linkSites: shownSites({ linkSites: sites }),
+        linkSites: shownSites({ linkSites: sites, adultContent: true }),
       }));
+      return this.snapshot();
+    }
+    if (command.action === "setAdultContent") {
+      const on = command.on;
+      await this.store.update((state) => ({ ...state, adultContent: on }));
+      // Steam's owned list leaves adult games out while adult content is off.
+      delete this.owned.steam;
+      if (on) this.checkUpdatesIfStale();
       return this.snapshot();
     }
     if (command.action === "itchSignIn") {
@@ -838,8 +846,10 @@ export class DesktopLibrary {
    * Reads each game's newest version from its F95zone thread, and records it with the version of
    * this copy. A game not linked to F95zone yet is looked up by its title, which must match
    * exactly, and linked to the thread found. One request at a time, with progress in the snapshot.
+   * Nothing is checked unless adult content is on.
    */
   checkUpdates(): Promise<void> {
+    if (!this.store.value.adultContent) return Promise.resolve();
     this.updating ??= (async () => {
       const games = this.store.value.games.filter((game) => !game.removed);
       for (const [index, game] of games.entries()) {
@@ -878,6 +888,8 @@ export class DesktopLibrary {
 
   /** Checks for updates in the background when the last check is over 12 hours old. */
   checkUpdatesIfStale() {
+    // Updates come from F95zone, which only adult content turns on.
+    if (!this.store.value.adultContent) return;
     const last = this.store.value.updatesCheckedAt;
     if (last && Date.now() - Date.parse(last) < 12 * 3_600_000) return;
     void this.checkUpdates().catch((error) => console.error("Update check failed:", error));
@@ -920,7 +932,7 @@ export class DesktopLibrary {
     if (!this.store.value.steamUser) throw new Error("Sign in to Steam in Settings first.");
     const ids = ownedAppIds(await this.native.sessionFetch(steamSession, steamUserData));
     if (!ids) throw new Error("Steam signed Aperto out. Sign in again in Settings.");
-    return steamOwnedGames(ids);
+    return steamOwnedGames(ids, !!this.store.value.adultContent);
   }
 
   /**
@@ -1118,7 +1130,7 @@ export class DesktopLibrary {
         if (game.removed) continue;
         const found: string[] = [];
         let failed = false;
-        for (const site of linkedSites(game)) {
+        for (const site of linkedSites(game, this.store.value)) {
           const details = await metadataDetails(site, game.links![site]!.id).catch(() => null);
           if (details) found.push(...details.tags);
           else failed = true;
@@ -1156,7 +1168,7 @@ export class DesktopLibrary {
       const report: AutoTagReport = { tagged: [], unmatched: [], banners: [] };
       for (const game of this.store.value.games) {
         if (game.removed) continue;
-        const sites = linkedSites(game);
+        const sites = linkedSites(game, this.store.value);
         if (sites.length) {
           if (!game.tags.length) {
             const site = (["f95", "steam", "gog", "dlsite", "itch"] as const).find((item) =>

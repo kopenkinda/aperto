@@ -16,7 +16,7 @@ describe("Steam store", () => {
     expect(steamIdFromCookie("76561197960287930%7C%7CeyJhbGciOi")).toBe("76561197960287930");
   });
 
-  it("names owned games with their platforms and art, leaving out apps that are not games", async () => {
+  it("names owned games with their platforms and art, leaving out apps that are not games, and adult games when asked", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(
@@ -34,13 +34,15 @@ describe("Steam store", () => {
                   },
                   { appid: 10, name: "Alpha", type: 0, platforms: { windows: true, mac: true } },
                   { appid: 30, name: "Alpha Soundtrack", type: 4 },
+                  { appid: 40, name: "Beta Date", type: 0, content_descriptorids: [1, 3, 4] },
                 ],
               },
             }),
           ),
       ),
     );
-    const games = await steamOwnedGames([10, 20, 30]);
+    expect((await steamOwnedGames([10, 20, 30, 40])).map((game) => game.id)).toContain("40");
+    const games = await steamOwnedGames([10, 20, 30, 40], false);
     expect(
       games.map(({ id, title, platforms, cover }) => ({ id, title, platforms, cover })),
     ).toEqual([
