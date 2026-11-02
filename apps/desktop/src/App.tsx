@@ -26,7 +26,7 @@ import { cn } from "@/lib/utils";
 import { TagFilter } from "@/components/TagFilter";
 import { TagDot } from "@/components/tag-colors";
 import { GamePage, playable } from "./GamePage";
-import { Settings } from "./Settings";
+import { Settings, type SettingsPage } from "./Settings";
 import { request, useTask } from "./desktop";
 import {
   filterCount,
@@ -63,6 +63,11 @@ export function App() {
   const [search, setSearch] = useState("");
   const [filters, setFilters] = useState<Filters>(noFilters);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsPage, setSettingsPage] = useState<SettingsPage>("library");
+  const openSettings = (page?: SettingsPage) => {
+    if (page) setSettingsPage(page);
+    setSettingsOpen(true);
+  };
   const [store, setStore] = useState<StoreSite | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [dismissedScan, setDismissedScan] = useState<string | null>(null);
@@ -337,7 +342,7 @@ export function App() {
                       onClick={() => {
                         setAddOpen(false);
                         if (signedIn) setStore(site);
-                        else setSettingsOpen(true);
+                        else openSettings("accounts");
                       }}
                     >
                       <SiteLogo site={site} className="size-4" />
@@ -354,7 +359,7 @@ export function App() {
               size="icon-sm"
               aria-label="Settings"
               title="Settings"
-              onClick={() => setSettingsOpen(true)}
+              onClick={() => openSettings()}
             >
               <HugeiconsIcon icon={Settings02Icon} />
             </Button>
@@ -399,7 +404,7 @@ export function App() {
             key={game.id}
             game={game}
             snapshot={snapshot}
-            onSettings={() => setSettingsOpen(true)}
+            onSettings={() => openSettings("runtimes")}
             onTag={(tag) => {
               setSearch("");
               setFilters({ ...noFilters, tags: [tag] });
@@ -443,7 +448,13 @@ export function App() {
       </div>
 
       {snapshot && (
-        <Settings open={settingsOpen} onOpenChange={setSettingsOpen} snapshot={snapshot} />
+        <Settings
+          open={settingsOpen}
+          onOpenChange={setSettingsOpen}
+          page={settingsPage}
+          onPageChange={setSettingsPage}
+          snapshot={snapshot}
+        />
       )}
       {snapshot && (
         <StoreLibrary
