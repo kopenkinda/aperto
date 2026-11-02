@@ -10,6 +10,7 @@ import gemini from "@/assets/logos/gemini.svg";
 import opencode from "@/assets/logos/opencode.svg";
 import pi from "@/assets/logos/pi.svg";
 import qwen from "@/assets/logos/qwen.svg";
+import dlsiteFavicon from "@/assets/favicons/dlsite.png";
 import f95Favicon from "@/assets/favicons/f95.png";
 import gogFavicon from "@/assets/favicons/gog.png";
 import itchFavicon from "@/assets/favicons/itch.png";
@@ -31,6 +32,7 @@ const favicons: Record<MetadataSite, string> = {
   f95: f95Favicon,
   steam: steamFavicon,
   gog: gogFavicon,
+  dlsite: dlsiteFavicon,
   itch: itchFavicon,
 };
 

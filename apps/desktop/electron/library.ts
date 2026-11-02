@@ -1108,7 +1108,7 @@ export class DesktopLibrary {
         const sites = linkedSites(game);
         if (sites.length) {
           if (!game.tags.length) {
-            const site = (["f95", "steam", "gog", "itch"] as const).find((item) =>
+            const site = (["f95", "steam", "gog", "dlsite", "itch"] as const).find((item) =>
               sites.includes(item),
             )!;
             const details = await metadataDetails(site, game.links![site]!.id).catch(() => null);

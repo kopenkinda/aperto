@@ -4,10 +4,11 @@ export const metadataSites = {
   f95: "F95zone",
   steam: "Steam",
   gog: "GOG",
+  dlsite: "DLsite",
   itch: "itch.io",
 } as const;
 export type MetadataSite = keyof typeof metadataSites;
-const SiteSchema = Schema.Literals(["f95", "steam", "gog", "itch"]);
+const SiteSchema = Schema.Literals(["f95", "steam", "gog", "dlsite", "itch"]);
 export const SteamInstallSchema = Schema.Struct({
   appId: Schema.String,
   bottle: Schema.String,
@@ -63,6 +64,7 @@ export const GameSchema = Schema.Struct({
       f95: Schema.optionalKey(LinkSchema),
       steam: Schema.optionalKey(LinkSchema),
       gog: Schema.optionalKey(LinkSchema),
+      dlsite: Schema.optionalKey(LinkSchema),
       itch: Schema.optionalKey(LinkSchema),
     }),
   ),
@@ -80,7 +82,7 @@ export const GameSchema = Schema.Struct({
 export type Game = typeof GameSchema.Type;
 /** The sites a game is linked to, in the order banners are taken from them: Steam's are largest. */
 export const linkedSites = (game: Pick<Game, "links">) =>
-  (["steam", "gog", "f95", "itch"] as const).filter((site) => game.links?.[site]);
+  (["steam", "gog", "f95", "dlsite", "itch"] as const).filter((site) => game.links?.[site]);
 
 /**
  * Brings a library written by an older Aperto up to date before it is decoded: the single
@@ -309,7 +311,9 @@ export const sourceUrl = (site: MetadataSite, id: string) =>
       ? `https://store.steampowered.com/app/${id}/`
       : site === "gog"
         ? `https://www.gog.com/en/game/${id}`
-        : `https://${id}`;
+        : site === "dlsite"
+          ? `https://www.dlsite.com/${id.startsWith("VJ") ? "pro" : id.startsWith("BJ") ? "books" : "maniax"}/work/=/product_id/${id}.html`
+          : `https://${id}`;
 export type MetadataDetails = { tags: string[]; banner: string | null };
 export type AutoTagReport = { tagged: string[]; unmatched: string[]; banners: string[] };
 /** Games that got tags back, with how many each got, and games whose pages could not be read. */
@@ -363,7 +367,7 @@ export const CommandSchema = Schema.Union([
   Schema.Struct({ action: Schema.Literal("deleteTag"), tag: Schema.String }),
   /** Replaces the blocked tags and removes them from every game. */
   Schema.Struct({ action: Schema.Literal("setBlockedTags"), tags: Schema.Array(Schema.String) }),
-  /** Searches F95zone, Steam, GOG, and itch.io, or only `site`, for a game, by its name unless a query is given. */
+  /** Searches F95zone, Steam, GOG, DLsite, and itch.io, or only `site`, for a game, by its name unless a query is given. */
   Schema.Struct({
     action: Schema.Literal("findMetadata"),
     ...id,

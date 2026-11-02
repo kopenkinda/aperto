@@ -219,6 +219,82 @@ async function gogDetails(slug: string): Promise<MetadataDetails> {
   };
 }
 
+/** A DLsite work number: RJ for doujin works, VJ for commercial ones, BJ for books. */
+export const dlsiteWork = /^[RVB]J\d{6,8}$/;
+/** The part of DLsite a work number belongs to, which its API and pages are under. */
+const dlsiteFloor = (work: string) =>
+  work.startsWith("VJ") ? "pro" : work.startsWith("BJ") ? "books" : "maniax";
+
+type DlsiteProduct = {
+  workno: string;
+  work_name?: string;
+  maker_name?: string;
+  genres?: { name?: string }[];
+  image_main?: { url?: string };
+};
+
+/** One DLsite work's details in English where DLsite has them; null when it is not found. */
+async function dlsiteProduct(work: string): Promise<DlsiteProduct | null> {
+  if (!dlsiteWork.test(work)) return null;
+  const body = await json(
+    `https://www.dlsite.com/${dlsiteFloor(work)}/api/=/product.json?workno=${work}&locale=en_US`,
+  );
+  return (Array.isArray(body) ? (body[0] as DlsiteProduct | undefined) : undefined) ?? null;
+}
+
+/**
+ * DLsite's doujin and commercial works matching a query. The store search answers with its
+ * results page, from which the work numbers are read, then each work's details.
+ */
+async function searchDlsite(query: string): Promise<MetadataMatch[]> {
+  const keyword = encodeURIComponent(query.trim().replace(/\s+/g, "+")).replace(/%2B/g, "+");
+  const pages = await Promise.all(
+    ["maniax", "pro"].map((floor) =>
+      json(`https://www.dlsite.com/${floor}/fsr/ajax/=/language/jp/keyword/${keyword}/`),
+    ),
+  );
+  const works = [
+    ...new Set(
+      pages.flatMap((page) => [
+        ...String((page as { search_result?: string } | null)?.search_result ?? "").matchAll(
+          /data-list_item_product_id="([RVB]J\d{6,8})"/g,
+        ),
+      ]),
+    ),
+  ]
+    .map((match) => match[1]!)
+    .slice(0, 6);
+  const products = await Promise.all(works.map((work) => dlsiteProduct(work).catch(() => null)));
+  return products.flatMap((product) =>
+    product?.work_name
+      ? [
+          {
+            site: "dlsite" as const,
+            id: product.workno,
+            title: decode(product.work_name),
+            detail: product.maker_name ? decode(product.maker_name) : "",
+            version: null,
+            cover: product.image_main?.url ? `https:${product.image_main.url}` : null,
+            banner: null,
+          },
+        ]
+      : [],
+  );
+}
+
+/** A DLsite work's genres as tags. Its main image is a cover, not a wide banner. */
+async function dlsiteDetails(work: string): Promise<MetadataDetails> {
+  if (!dlsiteWork.test(work)) throw new Error("Invalid game reference.");
+  const product = await dlsiteProduct(work);
+  if (!product) throw new Error("DLsite could not be reached or no longer lists this work.");
+  return {
+    tags: normalizeTags(
+      (product.genres ?? []).flatMap((genre) => (genre.name ? [genre.name] : [])),
+    ),
+    banner: null,
+  };
+}
+
 /**
  * F95zone threads matching a query. A word spelled differently there finds nothing, so the main
  * title alone is tried when the whole query finds nothing.
@@ -243,10 +319,11 @@ const searches: Record<MetadataSite, (query: string) => Promise<MetadataMatch[]>
   f95: searchF95,
   steam: searchSteam,
   gog: searchGog,
+  dlsite: searchDlsite,
   itch: searchItch,
 };
 
-/** Games on F95zone, Steam, GOG, and itch.io, or only `site`, whose titles match the query, in that order. */
+/** Games on F95zone, Steam, GOG, DLsite, and itch.io, or only `site`, whose titles match the query, in that order. */
 export async function searchMetadata(query: string, site?: MetadataSite): Promise<MetadataMatch[]> {
   if (!query.trim()) return [];
   const sites = site ? [site] : (Object.keys(searches) as MetadataSite[]);
@@ -278,6 +355,7 @@ function steamTags() {
 export async function metadataDetails(site: MetadataSite, id: string): Promise<MetadataDetails> {
   if (site === "itch") return itchDetails(id);
   if (site === "gog") return gogDetails(id);
+  if (site === "dlsite") return dlsiteDetails(id);
   if (!/^\d+$/.test(id)) throw new Error("Invalid game reference.");
   if (site === "f95") {
     const response = await fetch(`https://f95zone.to/threads/${id}/`, {
