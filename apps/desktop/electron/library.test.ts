@@ -162,10 +162,7 @@ describe("import and persistence", () => {
     const game = await importGame();
     await library.handle({ action: "setTags", id: game.id, tags: ["rpg"] });
     await library.handle({ action: "remove", id: game.id, deleteData: false });
-    const removed = (await library.snapshot()).removedGames;
-    expect(removed.map(({ id, present }) => ({ id, present }))).toEqual([
-      { id: game.id, present: true },
-    ]);
+    expect((await library.snapshot()).removedGames.map(({ id }) => id)).toEqual([game.id]);
     await library.handle({ action: "restoreGame", id: game.id });
     const snapshot = await library.snapshot();
     expect(snapshot.games.map(({ id, tags }) => ({ id, tags }))).toEqual([

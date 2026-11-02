@@ -167,16 +167,15 @@ export class DesktopLibrary {
         ),
       )
     ).filter((id): id is string => id !== null);
-    const removedGames = await Promise.all(
-      state.games
-        .filter((game) => game.removed)
-        .map(async (game) => ({
-          id: game.id,
-          name: game.name,
-          folder: game.folder,
-          artwork: game.artwork,
-          present: await exists(game.root),
-        })),
+    // Games deleted from disk, by Aperto or otherwise, are not listed; there is nothing to restore.
+    const removedGames = (
+      await Promise.all(
+        state.games
+          .filter((game) => game.removed)
+          .map(async (game) => ((await exists(game.root)) ? game : null)),
+      )
+    ).flatMap((game) =>
+      game ? [{ id: game.id, name: game.name, folder: game.folder, artwork: game.artwork }] : [],
     );
     return {
       removedGames,

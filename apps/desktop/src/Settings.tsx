@@ -252,30 +252,24 @@ export function Settings({
                               className="block truncate text-xs text-muted-foreground"
                               title={game.folder}
                             >
-                              {game.present ? game.folder : "Folder deleted"}
+                              {game.folder}
                             </span>
                           </span>
-                          {game.present && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              disabled={busy}
-                              onClick={() =>
-                                void run(() => request({ action: "restoreGame", id: game.id }))
-                              }
-                            >
-                              Restore
-                            </Button>
-                          )}
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={busy}
+                            onClick={() =>
+                              void run(() => request({ action: "restoreGame", id: game.id }))
+                            }
+                          >
+                            Restore
+                          </Button>
                           <Button
                             variant="ghost"
                             size="icon-sm"
                             aria-label={`Forget ${game.name}`}
-                            title={
-                              game.present
-                                ? "Forget for good; the next scan adds the folder as a new game"
-                                : "Forget for good"
-                            }
+                            title="Forget for good; the next scan adds the folder as a new game"
                             disabled={busy}
                             onClick={() =>
                               void run(() => request({ action: "forgetGame", id: game.id }))

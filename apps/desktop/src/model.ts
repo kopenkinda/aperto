@@ -197,14 +197,8 @@ export const shownSites = (library: Pick<Library, "linkSites">) =>
   );
 export type Snapshot = Library & {
   missing: string[];
-  /** Games removed from the library, which can be restored while their folders exist. */
-  removedGames: {
-    id: string;
-    name: string;
-    folder: string;
-    artwork: string | null;
-    present: boolean;
-  }[];
+  /** Games removed from the library whose folders are still on disk, which can be restored. */
+  removedGames: { id: string; name: string; folder: string; artwork: string | null }[];
   running: string[];
   downloads: { version: string; detail: string }[];
   scanning: boolean;
