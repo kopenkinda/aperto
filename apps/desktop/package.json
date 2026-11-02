@@ -82,6 +82,14 @@
     "linux": {
       "target": "AppImage",
       "category": "Utility"
-    }
+    },
+    "protocols": [
+      {
+        "name": "Aperto",
+        "schemes": [
+          "aperto"
+        ]
+      }
+    ]
   }
 }

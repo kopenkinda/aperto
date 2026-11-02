@@ -7,11 +7,13 @@ import {
   Cancel01Icon,
   CircleArrowUp01Icon,
   ComputerTerminal01Icon,
+  DashboardSquareAddIcon,
   Delete02Icon,
   Download04Icon,
   FilterHorizontalIcon,
   FolderAddIcon,
   FolderOpenIcon,
+  Link01Icon,
   PlayIcon,
   PlusSignIcon,
   RefreshIcon,
@@ -592,6 +594,17 @@ function GameMenu({
           </ContextMenuSubContent>
         </ContextMenuSub>
       )}
+      <ContextMenuSeparator />
+      <ContextMenuItem onClick={() => act({ action: "createShortcut", id: game.id })}>
+        <HugeiconsIcon icon={DashboardSquareAddIcon} />
+        Create Shortcut
+      </ContextMenuItem>
+      <ContextMenuItem
+        onClick={() => void navigator.clipboard.writeText(`aperto://play/${game.id}`)}
+      >
+        <HugeiconsIcon icon={Link01Icon} />
+        Copy Link
+      </ContextMenuItem>
       <ContextMenuSeparator />
       <ContextMenuItem disabled={running} onClick={() => onDelete("remove")}>
         <HugeiconsIcon icon={Cancel01Icon} />

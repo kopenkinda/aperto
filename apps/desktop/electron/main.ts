@@ -18,6 +18,7 @@ import { CommandSchema } from "../src/model";
 import { DesktopLibrary } from "./library";
 import { exists, imageScheme, LibraryStore, message } from "./storage";
 import { applicationGames, macSteamGames } from "./mac";
+import { linkScheme, parseLink } from "./shortcuts";
 import { bottleSteamGames, crossoverWine } from "./windows";
 
 app.setName("Aperto");
@@ -79,6 +80,29 @@ const createWindow = () => {
 
 if (!app.requestSingleInstanceLock()) app.quit();
 else {
+  // aperto:// links, from shortcuts, Spotlight, or other apps. Ones that arrive before the
+  // library has loaded wait for it.
+  app.setAsDefaultProtocolClient(linkScheme);
+  const pendingLinks: string[] = [];
+  let ready = false;
+  const openLink = (url: string) => {
+    const link = parseLink(url);
+    if (!link) return;
+    if (!ready) return void pendingLinks.push(url);
+    if (startupError) return;
+    void library.handle({ action: "launch", id: link.id }).catch((error: unknown) => {
+      const game = library.store.value.games.find((item) => item.id === link.id);
+      void dialog.showMessageBox({
+        type: "warning",
+        message: game ? `${game.name} could not start.` : "That game is no longer in Aperto.",
+        ...(game ? { detail: message(error) } : {}),
+      });
+    });
+  };
+  app.on("open-url", (event, url) => {
+    event.preventDefault();
+    openLink(url);
+  });
   app.on("second-instance", () => {
     const window = BrowserWindow.getAllWindows()[0] ?? createWindow();
     if (window.isMinimized()) window.restore();
@@ -220,6 +244,8 @@ else {
         .catch((error) => console.error("Scan failed:", error));
       library.checkUpdatesIfStale();
     }
+    ready = true;
+    for (const url of pendingLinks.splice(0)) openLink(url);
     const request = Effect.fn("desktop.request")((input: unknown) =>
       Schema.decodeUnknownEffect(CommandSchema)(input).pipe(
         Effect.flatMap((command) =>

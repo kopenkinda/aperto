@@ -13,6 +13,7 @@ A game library and launcher for Apple silicon Macs. Point it at a folder and it 
 - Select a game and press Play, or double-click it in the list. Return plays or stops the selected game.
 - Search names, or tags with `tag:horror` or `tag:"rpg maker"`. The tag button beside the search includes or excludes tags; the filter button sorts and filters by type and status.
 - Star a game to keep it in Favorites at the top of the list.
+- Right-click a game in the list for its actions. Create Shortcut makes a small app in `~/Applications/Aperto Games` that starts the game, so Spotlight, Raycast, Launchpad, and the Dock can too. Copy Link copies its `aperto://play/…` address, which starts it from anywhere that opens links.
 - Hover a game's header to change its icon or banner. A Windows game's icon comes from its `.exe`.
 - The trash button removes a game from the library, keeping its folder, or deletes it from disk. Shift-click deletes it from disk straight away. A game Steam installed is uninstalled through Steam. Removed games whose folders still exist can be restored in Settings, under Library.
 

@@ -515,6 +515,8 @@ export const CommandSchema = Schema.Union([
   Schema.Struct({ action: Schema.Literal("stop"), ...id }),
   Schema.Struct({ action: Schema.Literal("reveal"), ...id }),
   Schema.Struct({ action: Schema.Literal("openTerminal"), ...id }),
+  /** Makes an app in ~/Applications/Aperto Games that starts the game, and shows it in Finder. */
+  Schema.Struct({ action: Schema.Literal("createShortcut"), ...id }),
   /** Opens a coding agent in the game's folder, told where the game is and how it runs. */
   Schema.Struct({
     action: Schema.Literal("openAgent"),

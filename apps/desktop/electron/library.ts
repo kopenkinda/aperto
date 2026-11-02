@@ -40,6 +40,7 @@ import { extractExeIcon } from "./exe-icon";
 import { inspectRoot, nameManifest, readObject } from "./detection";
 import { detectGame, findGames, fingerprint, versionedName, versionsIn, within } from "./discovery";
 import { iconToPng, macSteamLibraries } from "./mac";
+import { createShortcut } from "./shortcuts";
 import { diskUsage, findComponents, listComponents, removeComponent } from "./components";
 import {
   gogDownload,
@@ -618,6 +619,13 @@ export class DesktopLibrary {
             ...current,
             banner: null,
           }));
+          break;
+        }
+        case "createShortcut": {
+          const game = this.game(command.id);
+          const icon = game.artwork ? this.store.imageFile(game.artwork) : null;
+          const app = await createShortcut(game, icon && (await exists(icon)) ? icon : null);
+          this.native.reveal(app);
           break;
         }
         case "folderToTrash":
