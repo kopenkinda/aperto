@@ -2,11 +2,13 @@ import type { ReactNode } from "react";
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 import {
   ArrowRight01Icon,
+  CommandLineIcon,
   DashboardSquareAddIcon,
   Delete02Icon,
   GithubIcon,
   Notification03Icon,
   Shield01Icon,
+  StarIcon,
   Tag01Icon,
 } from "@hugeicons/core-free-icons";
 import { ApertoMark } from "./ApertoMark";
@@ -34,7 +36,7 @@ export function App() {
           id="stores"
           eyebrow="Stores"
           title="Install what you already own."
-          body="Sign in to Steam, Epic Games, GOG, or itch.io on their own pages, then install from the + menu. GOG's Mac installers are unpacked without an administrator; Windows ones install straight into a CrossOver bottle. A ring in the sidebar shows every download at once."
+          body="Sign in to Steam, Epic Games, GOG, or itch.io on their own pages, then pick a game in Add games. GOG's Mac installers are unpacked without an administrator, and Windows ones install straight into a CrossOver bottle. Epic games install through Legendary, which Aperto downloads for you. A ring in the sidebar shows every download at once."
           shot={{ src: "gog-library", x: 50, y: 50, zoom: 1.45 }}
           flip
         />
@@ -340,6 +342,16 @@ const extras: { icon: IconSvgElement; title: string; body: string }[] = [
     icon: Notification03Icon,
     title: "Notifications",
     body: "Hear when a download or Steam install finishes, or a game you follow has an update.",
+  },
+  {
+    icon: StarIcon,
+    title: "CrossOver ratings",
+    body: "Games that run through CrossOver, and store games with no Mac version, show CodeWeavers' rating of how well they run.",
+  },
+  {
+    icon: CommandLineIcon,
+    title: "Hooks",
+    body: "Run your own shell commands when Aperto opens or quits and when a game starts or ends, to turn on a Focus mode, for example.",
   },
   {
     icon: Tag01Icon,
