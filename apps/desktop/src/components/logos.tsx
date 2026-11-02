@@ -11,6 +11,7 @@ import opencode from "@/assets/logos/opencode.svg";
 import pi from "@/assets/logos/pi.svg";
 import qwen from "@/assets/logos/qwen.svg";
 import f95Favicon from "@/assets/favicons/f95.png";
+import gogFavicon from "@/assets/favicons/gog.png";
 import itchFavicon from "@/assets/favicons/itch.png";
 import steamFavicon from "@/assets/favicons/steam.png";
 
@@ -29,6 +30,7 @@ const agents: Record<string, string> = {
 const favicons: Record<MetadataSite, string> = {
   f95: f95Favicon,
   steam: steamFavicon,
+  gog: gogFavicon,
   itch: itchFavicon,
 };
 

@@ -141,6 +141,84 @@ async function searchItch(query: string): Promise<MetadataMatch[]> {
     .slice(0, 6);
 }
 
+/** A game's slug in GOG's store addresses, which is how links to GOG keep a game. */
+export const gogSlug = /^[a-z0-9_]+$/;
+
+type GogProduct = {
+  id: string;
+  slug: string;
+  title: string;
+  productType?: string;
+  developers?: string[];
+  coverHorizontal?: string | null;
+  genres?: { name: string }[];
+  tags?: { name: string }[];
+};
+
+/** Games, packs, and DLC in GOG's public catalog whose titles match a query, best match first. */
+async function gogCatalog(query: string): Promise<GogProduct[]> {
+  const url = new URL("https://catalog.gog.com/v1/catalog");
+  url.searchParams.set("limit", "12");
+  url.searchParams.set("query", `like:${query}`);
+  url.searchParams.set("productType", "in:game,pack,dlc");
+  url.searchParams.set("locale", "en-US");
+  const body = (await json(url.toString())) as { products?: GogProduct[] } | null;
+  return (body?.products ?? []).filter((product) => gogSlug.test(product.slug));
+}
+
+async function searchGog(query: string): Promise<MetadataMatch[]> {
+  return (await gogCatalog(query))
+    .filter((product) => product.productType !== "dlc")
+    .slice(0, 6)
+    .map((product) => ({
+      site: "gog" as const,
+      id: product.slug,
+      title: product.title,
+      detail: product.developers?.join(", ") ?? "",
+      version: null,
+      cover: product.coverHorizontal ?? null,
+      banner: null,
+    }));
+}
+
+/**
+ * A GOG game's genres and tags and its wide background. The catalog, which has all of a game's
+ * tags, cannot find one by slug, and an old slug can outlive its title, so the store page gives
+ * the game's id and title to search the catalog with; its own five tags are the fallback.
+ */
+async function gogDetails(slug: string): Promise<MetadataDetails> {
+  if (!gogSlug.test(slug)) throw new Error("Invalid game reference.");
+  const response = await fetch(`https://www.gog.com/en/game/${slug}`, {
+    headers,
+    signal: AbortSignal.timeout(20_000),
+  }).catch(() => null);
+  if (!response?.ok) throw new Error("GOG could not be reached. Try again.");
+  const page = await response.text();
+  const pageTags = [
+    ...page.matchAll(
+      /class="details__link details__link--tag"><span class="details__link-text">([^<]+)</g,
+    ),
+  ].map((match) => decode(match[1]!.trim()));
+  const id = /card-product="(\d+)"/.exec(page)?.[1];
+  const product = id
+    ? ((await json(`https://api.gog.com/v2/games/${id}?locale=en-US`)) as {
+        _links?: Record<string, { href?: string } | undefined>;
+        _embedded?: { product?: { title?: string } };
+      } | null)
+    : null;
+  const title = product?._embedded?.product?.title;
+  const listed = title ? (await gogCatalog(title)).find((item) => item.id === id) : undefined;
+  const tags = [...(listed?.genres ?? []), ...(listed?.tags ?? [])].map((tag) => tag.name);
+  return {
+    tags: normalizeTags(tags.length ? tags : pageTags),
+    banner:
+      product?._links?.galaxyBackgroundImage?.href ??
+      product?._links?.backgroundImage?.href ??
+      /<meta property="og:image" content="([^"]+)"/.exec(page)?.[1] ??
+      null,
+  };
+}
+
 /**
  * F95zone threads matching a query. A word spelled differently there finds nothing, so the main
  * title alone is tried when the whole query finds nothing.
@@ -164,10 +242,11 @@ export async function findF95Thread(id: string, title: string) {
 const searches: Record<MetadataSite, (query: string) => Promise<MetadataMatch[]>> = {
   f95: searchF95,
   steam: searchSteam,
+  gog: searchGog,
   itch: searchItch,
 };
 
-/** Games on F95zone, Steam, and itch.io, or only `site`, whose titles match the query, in that order. */
+/** Games on F95zone, Steam, GOG, and itch.io, or only `site`, whose titles match the query, in that order. */
 export async function searchMetadata(query: string, site?: MetadataSite): Promise<MetadataMatch[]> {
   if (!query.trim()) return [];
   const sites = site ? [site] : (Object.keys(searches) as MetadataSite[]);
@@ -198,6 +277,7 @@ function steamTags() {
  */
 export async function metadataDetails(site: MetadataSite, id: string): Promise<MetadataDetails> {
   if (site === "itch") return itchDetails(id);
+  if (site === "gog") return gogDetails(id);
   if (!/^\d+$/.test(id)) throw new Error("Invalid game reference.");
   if (site === "f95") {
     const response = await fetch(`https://f95zone.to/threads/${id}/`, {
