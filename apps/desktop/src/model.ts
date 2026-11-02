@@ -80,7 +80,7 @@ export const GameSchema = Schema.Struct({
   sandbox: Schema.optionalKey(Schema.Boolean),
 });
 export type Game = typeof GameSchema.Type;
-/** Sites for adult games, which only show with adult content turned on in Settings. */
+/** Sites for adult games, which only show with adult sexual content turned on in Settings. */
 export const adultSites: readonly MetadataSite[] = ["f95", "dlsite"];
 /** The sites Aperto can link to, adult ones only with adult content on. */
 export const availableSites = (library: Pick<Library, "adultContent">) =>

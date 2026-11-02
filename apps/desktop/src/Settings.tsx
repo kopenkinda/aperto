@@ -359,7 +359,7 @@ export function Settings({
                   </div>
                 </Field>
                 <Field
-                  label="Adult content"
+                  label="Adult sexual content"
                   htmlFor="adult-content"
                   hint="Shows F95zone and DLsite links, and checks F95zone for game updates."
                 >

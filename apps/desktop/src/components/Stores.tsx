@@ -259,8 +259,8 @@ export function StoreLibrary({
         {site && !snapshot.adultContent && (
           <p className="rounded-md bg-muted/60 px-3 py-2 text-xs text-muted-foreground">
             {site === "steam"
-              ? "Adult games are hidden while adult content is off in Settings."
-              : `Adult content is off, but ${name} does not mark adult games in a way Aperto can rely on, so some may still appear here. What you download is up to you.`}
+              ? "Games with adult sexual content are hidden while it is off in Settings."
+              : `Adult sexual content is off, but ${name} does not mark such games in a way Aperto can rely on, so some may still appear here. What you download is up to you.`}
           </p>
         )}
         {error && (
