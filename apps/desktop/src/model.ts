@@ -89,11 +89,12 @@ export const availableSites = (library: Pick<Library, "adultContent">) =>
     (site) => library.adultContent || !adultSites.includes(site),
   );
 /**
- * The sites a game is linked to, in the order banners are taken from them: Steam's are largest.
- * Given the library, adult sites are left out unless adult content is on.
+ * The sites a game is linked to, in the order they show, which is also the order its banner and
+ * first tags are taken from them. Given the library, adult sites are left out unless adult content
+ * is on.
  */
 export const linkedSites = (game: Pick<Game, "links">, library?: Pick<Library, "adultContent">) =>
-  (["steam", "gog", "f95", "dlsite", "itch"] as const).filter(
+  (Object.keys(metadataSites) as MetadataSite[]).filter(
     (site) =>
       game.links?.[site] && (!library || library.adultContent || !adultSites.includes(site)),
   );
