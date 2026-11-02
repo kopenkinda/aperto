@@ -197,6 +197,14 @@ export const shownSites = (library: Pick<Library, "linkSites">) =>
   );
 export type Snapshot = Library & {
   missing: string[];
+  /** Games removed from the library, which can be restored while their folders exist. */
+  removedGames: {
+    id: string;
+    name: string;
+    folder: string;
+    artwork: string | null;
+    present: boolean;
+  }[];
   running: string[];
   downloads: { version: string; detail: string }[];
   scanning: boolean;
@@ -445,6 +453,10 @@ export const CommandSchema = Schema.Union([
     /** Also moves the game's folder to the Trash. */
     trashFolder: Schema.optionalKey(Schema.Boolean),
   }),
+  /** Puts a game removed from the library back, with its settings, tags, and history. */
+  Schema.Struct({ action: Schema.Literal("restoreGame"), ...id }),
+  /** Forgets a removed game for good, so a later scan adds its folder as a new game. */
+  Schema.Struct({ action: Schema.Literal("forgetGame"), ...id }),
   /** The folder that removing the game with `trashFolder` would move to the Trash. */
   Schema.Struct({ action: Schema.Literal("folderToTrash"), ...id }),
   Schema.Struct({ action: Schema.Literal("relink"), ...id }),

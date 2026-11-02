@@ -158,6 +158,24 @@ describe("import and persistence", () => {
     expect(reopened.value.games[0]?.tags).toEqual(["adventure"]);
     expect(reopened.value.games[0]?.favorite).toBe(true);
   });
+  it("lists removed games, restores them with their settings, and forgets them for good", async () => {
+    const game = await importGame();
+    await library.handle({ action: "setTags", id: game.id, tags: ["rpg"] });
+    await library.handle({ action: "remove", id: game.id, deleteData: false });
+    const removed = (await library.snapshot()).removedGames;
+    expect(removed.map(({ id, present }) => ({ id, present }))).toEqual([
+      { id: game.id, present: true },
+    ]);
+    await library.handle({ action: "restoreGame", id: game.id });
+    const snapshot = await library.snapshot();
+    expect(snapshot.games.map(({ id, tags }) => ({ id, tags }))).toEqual([
+      { id: game.id, tags: ["rpg"] },
+    ]);
+    expect(snapshot.removedGames).toEqual([]);
+    await library.handle({ action: "remove", id: game.id, deleteData: false });
+    await library.handle({ action: "forgetGame", id: game.id });
+    expect(store.value.games).toEqual([]);
+  });
   it("deletes browser data only when selected and never removes original saves or plugin backups", async () => {
     const game = await importGame();
     const browserData = ownedPath(store.directory, "browser-data", game.id);

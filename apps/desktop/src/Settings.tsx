@@ -234,6 +234,61 @@ export function Settings({
                 </Field>
               </Section>
 
+              {snapshot.removedGames.length > 0 && (
+                <Section title="Removed games">
+                  <ul className="max-h-72 overflow-y-auto">
+                    {[...snapshot.removedGames]
+                      .sort((a, b) => a.name.localeCompare(b.name))
+                      .map((game) => (
+                        <li key={game.id} className="flex items-center gap-3 py-1.5 pr-2 pl-4">
+                          <span className="size-6 shrink-0 overflow-hidden rounded bg-muted">
+                            {game.artwork && (
+                              <img src={game.artwork} alt="" className="size-full object-cover" />
+                            )}
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate">{game.name}</span>
+                            <span
+                              className="block truncate text-xs text-muted-foreground"
+                              title={game.folder}
+                            >
+                              {game.present ? game.folder : "Folder deleted"}
+                            </span>
+                          </span>
+                          {game.present && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled={busy}
+                              onClick={() =>
+                                void run(() => request({ action: "restoreGame", id: game.id }))
+                              }
+                            >
+                              Restore
+                            </Button>
+                          )}
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            aria-label={`Forget ${game.name}`}
+                            title={
+                              game.present
+                                ? "Forget for good; the next scan adds the folder as a new game"
+                                : "Forget for good"
+                            }
+                            disabled={busy}
+                            onClick={() =>
+                              void run(() => request({ action: "forgetGame", id: game.id }))
+                            }
+                          >
+                            <HugeiconsIcon icon={Cancel01Icon} />
+                          </Button>
+                        </li>
+                      ))}
+                  </ul>
+                </Section>
+              )}
+
               <Section title="Updates">
                 <Field
                   label="F95zone"

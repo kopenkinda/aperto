@@ -274,6 +274,12 @@ export function GamePage({
   };
   const [engine, setEngine] = useState<Engine | null>(null);
   const [confirm, setConfirm] = useState<"remove" | "trash" | null>(null);
+  const [deleteMenu, setDeleteMenu] = useState(false);
+  const trash = () =>
+    void run(async () => {
+      setTrashFolder(await request({ action: "folderToTrash", id: game.id }));
+      setConfirm("trash");
+    });
   // The folder a Shift-click removal moves to the Trash, shown in the dialog before it happens.
   const [trashFolder, setTrashFolder] = useState<string | null>(null);
   const [deleteData, setDeleteData] = useState(false);
@@ -539,22 +545,61 @@ export function GamePage({
               )}
             </div>
           )}
-          <Button
-            variant="destructive"
-            size="icon-lg"
-            aria-label="Remove from library"
-            title={"Remove from library\nShift-click to also move its folder to the Trash"}
-            disabled={busy || running}
-            onClick={(event) => {
-              if (!event.shiftKey) return setConfirm("remove");
-              void run(async () => {
-                setTrashFolder(await request({ action: "folderToTrash", id: game.id }));
-                setConfirm("trash");
-              });
-            }}
-          >
-            <HugeiconsIcon icon={Delete02Icon} />
-          </Button>
+          <Popover open={deleteMenu} onOpenChange={setDeleteMenu}>
+            <PopoverTrigger
+              onClick={(event) => {
+                if (!event.shiftKey) return;
+                // Shift skips the menu and goes straight to deleting from disk.
+                event.preventBaseUIHandler();
+                trash();
+              }}
+              render={
+                <Button
+                  variant="destructive"
+                  size="icon-lg"
+                  aria-label="Delete"
+                  title={"Delete\nShift-click to delete from disk"}
+                  disabled={busy || running}
+                >
+                  <HugeiconsIcon icon={Delete02Icon} />
+                </Button>
+              }
+            />
+            <PopoverContent align="end" className="w-64 gap-0 p-1">
+              {(
+                [
+                  {
+                    label: "Remove from library",
+                    hint: "Keeps the folder. Restore it later in Settings.",
+                    icon: Cancel01Icon,
+                    pick: () => setConfirm("remove"),
+                  },
+                  {
+                    label: "Delete from disk",
+                    hint: "Moves the folder to the Trash.",
+                    icon: Delete02Icon,
+                    pick: trash,
+                  },
+                ] as const
+              ).map((option) => (
+                <button
+                  key={option.label}
+                  type="button"
+                  className="flex items-start gap-2.5 rounded-md px-2 py-1.5 text-left outline-none hover:bg-accent focus-visible:bg-accent"
+                  onClick={() => {
+                    setDeleteMenu(false);
+                    option.pick();
+                  }}
+                >
+                  <HugeiconsIcon icon={option.icon} className="mt-0.5 size-4" />
+                  <span className="flex flex-col">
+                    {option.label}
+                    <span className="text-xs text-muted-foreground">{option.hint}</span>
+                  </span>
+                </button>
+              ))}
+            </PopoverContent>
+          </Popover>
         </div>
       </div>
 
@@ -1098,7 +1143,7 @@ export function GamePage({
             <DialogDescription>
               {confirm === "trash"
                 ? "Aperto removes the game and moves its folder to the Trash, with any saves kept inside it. You can put it back from the Trash until it is emptied."
-                : "The game folder stays where it is, and later scans will not add it back. Add the folder by hand to bring it back."}
+                : "The game folder stays where it is, and later scans will not add it back. Restore it in Settings, under Library."}
             </DialogDescription>
           </DialogHeader>
           {confirm === "trash" && trashFolder && (

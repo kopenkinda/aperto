@@ -167,7 +167,19 @@ export class DesktopLibrary {
         ),
       )
     ).filter((id): id is string => id !== null);
+    const removedGames = await Promise.all(
+      state.games
+        .filter((game) => game.removed)
+        .map(async (game) => ({
+          id: game.id,
+          name: game.name,
+          folder: game.folder,
+          artwork: game.artwork,
+          present: await exists(game.root),
+        })),
+    );
     return {
+      removedGames,
       ...state,
       games,
       missing,
@@ -589,6 +601,27 @@ export class DesktopLibrary {
         }
         case "folderToTrash":
           return await this.folderToTrash(this.game(command.id));
+        case "restoreGame": {
+          const game = this.store.value.games.find((item) => item.id === command.id);
+          if (!game?.removed) throw new Error("This game is not in the removed games.");
+          if (!(await exists(game.root)))
+            throw new Error(`${game.name}'s folder is gone, so it cannot come back.`);
+          if (this.store.value.games.some((item) => !item.removed && item.root === game.root))
+            throw new Error(`${game.name}'s folder is in the library again as another game.`);
+          await this.store.update((state) => ({
+            ...state,
+            games: state.games.map((item) =>
+              item.id === game.id ? { ...item, removed: false } : item,
+            ),
+          }));
+          break;
+        }
+        case "forgetGame":
+          await this.store.update((state) => ({
+            ...state,
+            games: state.games.filter((item) => !(item.id === command.id && item.removed)),
+          }));
+          break;
         case "remove": {
           const game = this.game(command.id);
           this.idle(game.id);
