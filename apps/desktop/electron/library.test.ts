@@ -48,6 +48,7 @@ beforeEach(async () => {
       trash: async () => {},
       openExternal: () => {},
       secret: async () => null,
+      signInWindow: async () => null,
       installedGames: async () => [],
     },
     () => {},
@@ -248,6 +249,7 @@ describe("games folder discovery", () => {
         trash: async () => {},
         openExternal: () => {},
         secret: async () => null,
+        signInWindow: async () => null,
         installedGames: async () => [
           {
             kind: "mac",
@@ -345,6 +347,7 @@ describe("Windows games", () => {
         trash: async (file) => void trashed.push(file),
         openExternal: () => {},
         secret: async () => null,
+        signInWindow: async () => null,
         installedGames: async () => [],
       },
       () => {},
@@ -670,6 +673,7 @@ describe("custom artwork", () => {
         trash: async () => {},
         openExternal: () => {},
         secret: async () => null,
+        signInWindow: async () => null,
         installedGames: async () => [],
       },
       () => {},

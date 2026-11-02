@@ -57,7 +57,8 @@ describe("itch.io", () => {
     });
     expect(await ownedGames("key")).toEqual([
       {
-        keyId: "11",
+        site: "itch",
+        id: "11",
         gameId: "1",
         title: "Lust Quest",
         page: "dev.itch.io/lust-quest",
@@ -70,7 +71,8 @@ describe("itch.io", () => {
 
   it("downloads the Mac build first, then Windows, and skips demos", async () => {
     const game = {
-      keyId: "11",
+      site: "itch" as const,
+      id: "11",
       gameId: "1",
       title: "Lust Quest",
       page: "dev.itch.io/lust-quest",

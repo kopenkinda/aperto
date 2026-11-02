@@ -18,11 +18,18 @@ import {
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { request, useTask } from "../desktop";
-import { type ItchGame, type ItchPlatform, type Snapshot } from "../model";
+import {
+  metadataSites,
+  type OwnedGame,
+  type Platform,
+  type Snapshot,
+  type StoreSite,
+} from "../model";
 import { Field } from "./settings";
 import { SearchInput } from "./SearchInput";
+import { SiteLogo } from "./logos";
 
-const platformNames: Record<ItchPlatform, string> = {
+const platformNames: Record<Platform, string> = {
   mac: "Mac",
   windows: "Windows",
   linux: "Linux",
@@ -122,45 +129,101 @@ export function ItchAccount({
 }
 
 /**
- * The games the itch.io account owns, each downloadable into the games folder. Games already in
- * the library, matched by their itch.io link, are marked.
+ * The GOG account in Settings. GOG signs in on its own login page, in a window Aperto opens; the
+ * token that keeps Aperto signed in stays in the Keychain.
  */
-export function ItchLibrary({
+export function GogAccount({ snapshot, onLibrary }: { snapshot: Snapshot; onLibrary: () => void }) {
+  const { run, busy, error } = useTask();
+  if (snapshot.gogUser)
+    return (
+      <Field
+        label="Account"
+        hint={
+          error ??
+          (snapshot.gamesFolder
+            ? "Games you download go into the games folder and are linked to their GOG pages. Mac installers are unpacked; Windows ones install in the default CrossOver bottle."
+            : "Choose a games folder above to download games into.")
+        }
+      >
+        <div className="flex items-center gap-2">
+          <span className="flex-1 truncate">
+            Signed in as <span className="font-medium">{snapshot.gogUser.name}</span>
+          </span>
+          <Button variant="outline" onClick={onLibrary}>
+            <HugeiconsIcon icon={Download04Icon} />
+            Your games
+          </Button>
+          <Button
+            variant="ghost"
+            disabled={busy}
+            onClick={() => void run(() => request({ action: "gogSignOut" }))}
+          >
+            Sign out
+          </Button>
+        </div>
+      </Field>
+    );
+  return (
+    <Field
+      label="Account"
+      hint={error ?? "Sign in on GOG's own page to download the games you own."}
+    >
+      <Button
+        variant="outline"
+        className="self-start"
+        disabled={busy}
+        onClick={() => void run(() => request({ action: "gogSignIn" }))}
+      >
+        {busy ? <Spinner /> : <SiteLogo site="gog" />}
+        Sign in to GOG
+      </Button>
+    </Field>
+  );
+}
+
+/**
+ * The games a store account owns, each downloadable into the games folder. Games already in the
+ * library, matched by their link to the store, are marked.
+ */
+export function StoreLibrary({
+  site,
   snapshot,
-  open,
   onOpenChange,
 }: {
+  /** The store whose games show, or null when closed. */
+  site: StoreSite | null;
   snapshot: Snapshot;
-  open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  const open = site !== null;
+  const name = site ? metadataSites[site] : "";
   // Undefined while loading.
-  const [games, setGames] = useState<ItchGame[] | undefined>();
+  const [games, setGames] = useState<OwnedGame[] | undefined>();
   const [query, setQuery] = useState("");
   const { run, error } = useTask();
-  const linked = new Set(snapshot.games.map((game) => game.links?.itch?.id));
+  const linked = new Set(snapshot.games.map((game) => site && game.links?.[site]?.id));
   const shown = (games ?? []).filter((game) =>
     game.title.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()),
   );
 
   useEffect(() => {
-    if (!open) return;
+    if (!site) return;
     setGames(undefined);
     setQuery("");
-    void run(async () => setGames(await request({ action: "itchGames" }))).then(
+    void run(async () => setGames(await request({ action: "ownedGames", site }))).then(
       // A failed load shows its error instead of searching forever.
       (done) => done === undefined && setGames((current) => current ?? []),
     );
-  }, [open]);
+  }, [site]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="flex max-h-[85vh] flex-col gap-4 sm:max-w-xl">
         <DialogHeader>
-          <DialogTitle>Your itch.io games</DialogTitle>
+          <DialogTitle>Your {name} games</DialogTitle>
           <DialogDescription>
             {snapshot.gamesFolder
-              ? "Downloads the Mac build when there is one, or else the Windows build, into the games folder."
+              ? "Downloads the Mac version when there is one, or else the Windows one, into the games folder."
               : "Choose a games folder in Settings to download games into."}
           </DialogDescription>
         </DialogHeader>
@@ -171,7 +234,7 @@ export function ItchLibrary({
         )}
         {!!games?.length && (
           <SearchInput
-            aria-label="Search your itch.io games"
+            aria-label={`Search your ${name} games`}
             placeholder={`Search ${games.length} games`}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
@@ -184,13 +247,15 @@ export function ItchLibrary({
             </p>
           )}
           {games?.length === 0 && !error && (
-            <p className="text-muted-foreground">This account owns no games on itch.io yet.</p>
+            <p className="text-muted-foreground">This account owns no games on {name} yet.</p>
           )}
           {shown.map((game) => {
-            const download = snapshot.itchDownloads.find((item) => item.gameId === game.gameId);
+            const download = snapshot.storeDownloads.find(
+              (item) => item.site === game.site && item.gameId === game.gameId,
+            );
             const owned = linked.has(game.page);
             return (
-              <div key={game.keyId} className="flex items-center gap-3 rounded-lg border p-1.5">
+              <div key={game.id} className="flex items-center gap-3 rounded-lg border p-1.5">
                 <span className="h-10 w-12 shrink-0 overflow-hidden rounded bg-muted">
                   {game.cover && <img src={game.cover} alt="" className="size-full object-cover" />}
                 </span>
@@ -211,7 +276,13 @@ export function ItchLibrary({
                     aria-label={`Stop downloading ${game.title}`}
                     title="Stop"
                     onClick={() =>
-                      void run(() => request({ action: "itchCancel", gameId: game.gameId }))
+                      void run(() =>
+                        request({
+                          action: "stopStoreDownload",
+                          site: game.site,
+                          gameId: game.gameId,
+                        }),
+                      )
                     }
                   >
                     <Spinner className="group-hover/button:hidden" />
@@ -231,7 +302,9 @@ export function ItchLibrary({
                     size="sm"
                     disabled={!snapshot.gamesFolder}
                     onClick={() =>
-                      void run(() => request({ action: "itchDownload", keyId: game.keyId }))
+                      void run(() =>
+                        request({ action: "downloadOwned", site: game.site, id: game.id }),
+                      )
                     }
                   >
                     <HugeiconsIcon icon={Download04Icon} />

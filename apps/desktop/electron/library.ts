@@ -29,7 +29,8 @@ import {
   type ScanReport,
   type Engine,
   formatSize,
-  type ItchGame,
+  type OwnedGame,
+  type StoreSite,
   type RefillReport,
   type SteamInstall,
   type Snapshot,
@@ -40,6 +41,18 @@ import { inspectRoot, nameManifest, readObject } from "./detection";
 import { detectGame, findGames, fingerprint, versionedName, versionsIn, within } from "./discovery";
 import { iconToPng } from "./mac";
 import { diskUsage, findComponents, listComponents, removeComponent } from "./components";
+import {
+  gogDownload,
+  gogInstall,
+  gogInstaller,
+  gogLoginUrl,
+  gogOwnedGames,
+  gogProfile,
+  gogRedirect,
+  gogToken,
+  sizeOf,
+  type GogTokens,
+} from "./gog";
 import { chooseUpload, downloadUpload, itchProfile, ownedGames, unpack } from "./itch";
 import { findF95Thread, metadataDetails, searchF95, searchMetadata } from "./metadata";
 import { mkxpLaunch } from "./mkxp";
@@ -72,6 +85,11 @@ export type NativeActions = {
   trash: (file: string) => Promise<void>;
   /** Opens a web page in the default browser. */
   openExternal: (url: string) => void;
+  /**
+   * Opens a store's login page in a window and resolves with the address it sends the browser to
+   * once signed in, which starts with `redirect`; null when the window is closed first.
+   */
+  signInWindow: (url: string, redirect: string) => Promise<string | null>;
   /** Secrets such as the itch.io API key, kept encrypted with the Keychain. Null removes one. */
   secret: (name: string, value?: string | null) => Promise<string | null>;
   /**
@@ -134,8 +152,9 @@ export class DesktopLibrary {
         version,
         detail: item.detail,
       })),
-      itchDownloads: [...this.itchDownloads].map(([gameId, item]) => ({
-        gameId,
+      storeDownloads: [...this.storeDownloads.values()].map((item) => ({
+        site: item.site,
+        gameId: item.gameId,
         title: item.title,
         detail: item.detail,
         progress: item.progress,
@@ -254,13 +273,13 @@ export class DesktopLibrary {
         throw new Error("Paste the API key from itch.io's API keys page.");
       const user = await itchProfile(key);
       await this.native.secret("itch", key);
-      this.itchOwned = null;
+      delete this.owned.itch;
       await this.store.update((state) => ({ ...state, itchUser: user }));
       return this.snapshot();
     }
     if (command.action === "itchSignOut") {
       await this.native.secret("itch", null);
-      this.itchOwned = null;
+      delete this.owned.itch;
       await this.store.update((state) => {
         const { itchUser: _, ...rest } = state;
         return rest;
@@ -271,16 +290,38 @@ export class DesktopLibrary {
       this.native.openExternal("https://itch.io/user/settings/api-keys");
       return this.snapshot();
     }
-    if (command.action === "itchGames") {
-      this.itchOwned = await ownedGames(await this.itchKey());
-      return this.itchOwned;
-    }
-    if (command.action === "itchDownload") {
-      await this.downloadItch(command.keyId);
+    if (command.action === "gogSignIn") {
+      const redirect = await this.native.signInWindow(gogLoginUrl, gogRedirect);
+      const code = redirect && new URL(redirect).searchParams.get("code");
+      if (!code) return this.snapshot();
+      const tokens = await gogToken({ code });
+      const user = await gogProfile(tokens.access);
+      await this.native.secret("gog", tokens.refresh);
+      this.gogTokens = tokens;
+      delete this.owned.gog;
+      await this.store.update((state) => ({ ...state, gogUser: user }));
       return this.snapshot();
     }
-    if (command.action === "itchCancel") {
-      this.itchDownloads.get(command.gameId)?.controller.abort();
+    if (command.action === "gogSignOut") {
+      await this.native.secret("gog", null);
+      this.gogTokens = null;
+      delete this.owned.gog;
+      await this.store.update((state) => {
+        const { gogUser: _, ...rest } = state;
+        return rest;
+      });
+      return this.snapshot();
+    }
+    if (command.action === "ownedGames") {
+      this.owned[command.site] = await this.listOwned(command.site);
+      return this.owned[command.site];
+    }
+    if (command.action === "downloadOwned") {
+      await this.downloadOwned(command.site, command.id);
+      return this.snapshot();
+    }
+    if (command.action === "stopStoreDownload") {
+      this.storeDownloads.get(`${command.site}:${command.gameId}`)?.controller.abort();
       return this.snapshot();
     }
     if (command.action === "applyMetadata") {
@@ -743,10 +784,19 @@ export class DesktopLibrary {
     void this.checkUpdates().catch((error) => console.error("Update check failed:", error));
   }
 
-  private itchOwned: ItchGame[] | null = null;
-  private readonly itchDownloads = new Map<
+  /** Each store's owned games, as last listed, so a download need not list them again. */
+  private owned: Partial<Record<StoreSite, OwnedGame[]>> = {};
+  private gogTokens: GogTokens | null = null;
+  private readonly storeDownloads = new Map<
     string,
-    { title: string; detail: string; progress: number | null; controller: AbortController }
+    {
+      site: StoreSite;
+      gameId: string;
+      title: string;
+      detail: string;
+      progress: number | null;
+      controller: AbortController;
+    }
   >();
 
   private async itchKey() {
@@ -755,56 +805,94 @@ export class DesktopLibrary {
     return key;
   }
 
+  /** A GOG access token, refreshed with the refresh token in the Keychain when it runs out. */
+  private async gogAccess() {
+    if (this.gogTokens && this.gogTokens.expiresAt > Date.now()) return this.gogTokens.access;
+    const refresh = this.store.value.gogUser ? await this.native.secret("gog") : null;
+    if (!refresh) throw new Error("Sign in to GOG in Settings first.");
+    this.gogTokens = await gogToken({ refresh });
+    await this.native.secret("gog", this.gogTokens.refresh);
+    return this.gogTokens.access;
+  }
+
+  private async listOwned(site: StoreSite) {
+    return site === "gog"
+      ? gogOwnedGames(await this.gogAccess())
+      : ownedGames(await this.itchKey());
+  }
+
   /**
-   * Downloads an owned itch.io game into a new folder in the games folder, then scans the folder
-   * and links each game found in it to its itch.io page, with the page's tags and banner. The
-   * download unpacks beside Aperto's data first, so a scan never sees half a game.
+   * Downloads an owned game into a new folder in the games folder, then scans the folder and links
+   * each game found in it to its store page, with the page's tags and banner. The download
+   * unpacks or installs beside Aperto's data first, so a scan never sees half a game.
    */
-  private async downloadItch(keyId: string) {
-    const key = await this.itchKey();
-    const find = (games: ItchGame[] | null) => games?.find((item) => item.keyId === keyId);
-    const game = find(this.itchOwned) ?? find((this.itchOwned = await ownedGames(key)));
-    if (!game) throw new Error("This game is no longer in your itch.io library.");
+  private async downloadOwned(site: StoreSite, id: string) {
+    const find = (games?: OwnedGame[]) => games?.find((item) => item.id === id);
+    const game = find(this.owned[site]) ?? find((this.owned[site] = await this.listOwned(site)));
+    if (!game) throw new Error(`This game is no longer in your ${metadataSites[site]} library.`);
     const folder = this.store.value.gamesFolder;
     if (!folder)
-      throw new Error("Choose a games folder in Settings first; itch.io games download there.");
-    if (this.itchDownloads.has(game.gameId))
-      throw new Error(`${game.title} is already downloading.`);
+      throw new Error("Choose a games folder in Settings first; downloaded games go there.");
+    const key = `${site}:${game.gameId}`;
+    if (this.storeDownloads.has(key)) throw new Error(`${game.title} is already downloading.`);
     const download = {
+      site,
+      gameId: game.gameId,
       title: game.title,
       detail: "Starting…",
       progress: null as number | null,
       controller: new AbortController(),
     };
-    this.itchDownloads.set(game.gameId, download);
+    this.storeDownloads.set(key, download);
     this.changed();
     const staging = path.join(this.store.directory, "downloads", randomUUID());
-    try {
-      await mkdir(staging, { recursive: true });
-      const upload = await chooseUpload(key, game);
-      const file = path.join(staging, path.basename(upload.filename) || "download");
-      let reported = 0;
-      await downloadUpload(
-        key,
-        game,
-        upload,
-        file,
-        download.controller.signal,
-        (received, total) => {
-          if (received - reported < 1024 ** 2) return;
-          reported = received;
-          download.progress = total ? received / total : null;
-          download.detail = total
-            ? `${formatSize(received)} of ${formatSize(total)}`
-            : formatSize(received);
-          this.changed();
-        },
-      );
-      download.detail = "Unpacking…";
+    let reported = 0;
+    const progress = (received: number, total: number | null) => {
+      if (received - reported < 1024 ** 2) return;
+      reported = received;
+      download.progress = total ? Math.min(received / total, 1) : null;
+      download.detail = total
+        ? `${formatSize(received)} of ${formatSize(total)}`
+        : formatSize(received);
+      this.changed();
+    };
+    const step = (detail: string) => {
+      download.detail = detail;
       download.progress = null;
       this.changed();
+    };
+    try {
+      await mkdir(staging, { recursive: true });
       const unpacked = path.join(staging, "game");
-      await unpack(file, unpacked);
+      if (site === "itch") {
+        const itchKey = await this.itchKey();
+        const upload = await chooseUpload(itchKey, game);
+        const file = path.join(staging, path.basename(upload.filename) || "download");
+        await downloadUpload(itchKey, game, upload, file, download.controller.signal, progress);
+        step("Unpacking…");
+        await unpack(file, unpacked);
+      } else {
+        const bottle = (await exists(crossoverWine)) ? this.store.value.defaultBottle : null;
+        const installer = await gogInstaller(await this.gogAccess(), game, !!bottle);
+        const total = installer.files.reduce((sum, file) => sum + sizeOf(file.size), 0) || null;
+        const files: string[] = [];
+        let done = 0;
+        for (const file of installer.files) {
+          files.push(
+            await gogDownload(
+              await this.gogAccess(),
+              file,
+              staging,
+              download.controller.signal,
+              (received) => progress(done + received, total),
+            ),
+          );
+          done = reported;
+        }
+        download.controller.signal.throwIfAborted();
+        step(installer.platform === "mac" ? "Unpacking…" : "Installing in CrossOver…");
+        await gogInstall(installer.platform, files, unpacked, bottle ?? null);
+      }
       download.controller.signal.throwIfAborted();
       let destination = path.join(folder, folderName(game.title));
       for (let copy = 2; await exists(destination); copy++)
@@ -825,7 +913,7 @@ export class DesktopLibrary {
           `${game.title} downloaded to ${destination}, but Aperto found no game it can run in it.`,
         );
       }
-      const details = await metadataDetails("itch", game.page).catch(() => null);
+      const details = await metadataDetails(site, game.page).catch(() => null);
       for (const item of found) {
         if (!item.banner && details?.banner)
           await this.setArtwork(item, "banner", null, details.banner).catch(() => {});
@@ -833,7 +921,7 @@ export class DesktopLibrary {
           ...current,
           name: game.title.slice(0, 160),
           tags: this.allowedTags([...current.tags, ...(details?.tags ?? [])]),
-          links: { ...current.links, itch: { id: game.page, title: game.title } },
+          links: { ...current.links, [site]: { id: game.page, title: game.title } },
         }));
       }
     } catch (error) {
@@ -841,7 +929,7 @@ export class DesktopLibrary {
       if (!download.controller.signal.aborted) throw error;
     } finally {
       await rm(staging, { recursive: true, force: true });
-      this.itchDownloads.delete(game.gameId);
+      this.storeDownloads.delete(key);
       this.changed();
     }
   }

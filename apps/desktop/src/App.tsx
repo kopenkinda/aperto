@@ -15,7 +15,7 @@ import {
   Tick02Icon,
 } from "@hugeicons/core-free-icons";
 import { ApertoMark } from "@/components/ApertoMark";
-import { ItchLibrary } from "@/components/Itch";
+import { StoreLibrary } from "@/components/Stores";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -39,6 +39,9 @@ import {
   sortOrders,
   statusFilters,
   formatSize,
+  metadataSites,
+  storeSites,
+  type StoreSite,
   tagCounts,
   updateAvailable,
   type Command,
@@ -59,7 +62,7 @@ export function App() {
   const [search, setSearch] = useState("");
   const [filters, setFilters] = useState<Filters>(noFilters);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [itchOpen, setItchOpen] = useState(false);
+  const [store, setStore] = useState<StoreSite | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [dismissedScan, setDismissedScan] = useState<string | null>(null);
   const { run, busy, error, setError } = useTask();
@@ -291,10 +294,10 @@ export function App() {
                 {snapshot.scanning ? <Spinner /> : <HugeiconsIcon icon={RefreshIcon} />}
               </Button>
             )}
-            {!!snapshot?.itchDownloads.length && (
+            {!!snapshot?.storeDownloads.length && (
               <DownloadsButton
-                downloads={snapshot.itchDownloads}
-                onClick={() => setItchOpen(true)}
+                downloads={snapshot.storeDownloads}
+                onClick={() => setStore(snapshot.storeDownloads[0]!.site)}
               />
             )}
             <Popover open={addOpen} onOpenChange={setAddOpen}>
@@ -323,18 +326,26 @@ export function App() {
                   <HugeiconsIcon icon={FolderAddIcon} className="size-4" />
                   From a folder…
                 </button>
-                <button
-                  type="button"
-                  className={menuItem}
-                  onClick={() => {
-                    setAddOpen(false);
-                    if (snapshot?.itchUser) setItchOpen(true);
-                    else setSettingsOpen(true);
-                  }}
-                >
-                  <SiteLogo site="itch" className="size-4" />
-                  {snapshot?.itchUser ? "From itch.io…" : "Sign in to itch.io…"}
-                </button>
+                {storeSites.map((site) => {
+                  const signedIn = !!snapshot?.[site === "gog" ? "gogUser" : "itchUser"];
+                  return (
+                    <button
+                      key={site}
+                      type="button"
+                      className={menuItem}
+                      onClick={() => {
+                        setAddOpen(false);
+                        if (signedIn) setStore(site);
+                        else setSettingsOpen(true);
+                      }}
+                    >
+                      <SiteLogo site={site} className="size-4" />
+                      {signedIn
+                        ? `From ${metadataSites[site]}…`
+                        : `Sign in to ${metadataSites[site]}…`}
+                    </button>
+                  );
+                })}
               </PopoverContent>
             </Popover>
             <Button
@@ -433,7 +444,13 @@ export function App() {
       {snapshot && (
         <Settings open={settingsOpen} onOpenChange={setSettingsOpen} snapshot={snapshot} />
       )}
-      {snapshot && <ItchLibrary snapshot={snapshot} open={itchOpen} onOpenChange={setItchOpen} />}
+      {snapshot && (
+        <StoreLibrary
+          site={store}
+          snapshot={snapshot}
+          onOpenChange={(open) => !open && setStore(null)}
+        />
+      )}
     </div>
   );
 }
@@ -442,14 +459,14 @@ const menuItem =
   "flex items-center gap-2 rounded-md px-2 py-1.5 text-left outline-none hover:bg-accent focus-visible:bg-accent";
 
 /**
- * Running itch.io downloads as a download icon ringed by how far they have got, all together.
+ * Running store downloads as a download icon ringed by how far they have got, all together.
  * The ring spins while any download's size is unknown or it is unpacking.
  */
 function DownloadsButton({
   downloads,
   onClick,
 }: {
-  downloads: Snapshot["itchDownloads"];
+  downloads: Snapshot["storeDownloads"];
   onClick: () => void;
 }) {
   const known = downloads.every((item) => item.progress !== null);

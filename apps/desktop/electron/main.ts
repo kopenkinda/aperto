@@ -135,6 +135,36 @@ else {
         },
         trash: (file) => shell.trashItem(file),
         openExternal: (url) => void shell.openExternal(url),
+        signInWindow: (url, redirect) =>
+          new Promise((resolve) => {
+            const parent = BrowserWindow.getAllWindows()[0];
+            const window = new BrowserWindow({
+              width: 480,
+              height: 720,
+              ...(parent ? { parent, modal: true } : {}),
+              title: "Sign in",
+              autoHideMenuBar: true,
+              // A session in memory only, so the store's cookies go when the window closes.
+              webPreferences: { partition: "sign-in", sandbox: true },
+            });
+            let done = false;
+            const check = (event: { preventDefault: () => void }, address: string) => {
+              if (done || !address.startsWith(redirect)) return;
+              done = true;
+              event.preventDefault();
+              resolve(address);
+              window.close();
+            };
+            // Links that open new windows, such as help pages, go to the browser.
+            window.webContents.setWindowOpenHandler(({ url: link }) => {
+              if (link.startsWith("https:")) void shell.openExternal(link);
+              return { action: "deny" };
+            });
+            window.webContents.on("will-redirect", check);
+            window.webContents.on("will-navigate", check);
+            window.on("closed", () => !done && resolve(null));
+            void window.loadURL(url);
+          }),
         async secret(name, value) {
           const file = path.join(app.getPath("userData"), "secrets", `${name}.bin`);
           if (value === null) {

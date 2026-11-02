@@ -32,12 +32,13 @@ import {
   updateAvailable,
   type Component,
   type MetadataSite,
+  type StoreSite,
   type Release,
   type Snapshot,
 } from "./model";
 import { request, useTask } from "./desktop";
 import { Field, Section } from "@/components/settings";
-import { ItchAccount, ItchLibrary } from "@/components/Itch";
+import { GogAccount, ItchAccount, StoreLibrary } from "@/components/Stores";
 import { SiteLogo } from "@/components/logos";
 import { Checkbox } from "@/components/ui/checkbox";
 import { TagManager } from "@/components/TagManager";
@@ -115,7 +116,7 @@ export function Settings({
     : "Automatic";
   const installed = [...snapshot.runtimes].sort((a, b) => compareVersions(b.version, a.version));
   const [checking, setChecking] = useState(false);
-  const [itchOpen, setItchOpen] = useState(false);
+  const [store, setStore] = useState<StoreSite | null>(null);
   const linkSites = shownSites(snapshot);
   const linked = snapshot.games.filter((game) => game.update).length;
   const outdated = snapshot.games.filter(updateAvailable);
@@ -225,10 +226,17 @@ export function Settings({
           </Field>
         </Section>
 
-        <Section title="itch.io">
-          <ItchAccount snapshot={snapshot} onLibrary={() => setItchOpen(true)} />
+        <Section title="GOG">
+          <GogAccount snapshot={snapshot} onLibrary={() => setStore("gog")} />
         </Section>
-        <ItchLibrary snapshot={snapshot} open={itchOpen} onOpenChange={setItchOpen} />
+        <Section title="itch.io">
+          <ItchAccount snapshot={snapshot} onLibrary={() => setStore("itch")} />
+        </Section>
+        <StoreLibrary
+          site={store}
+          snapshot={snapshot}
+          onOpenChange={(open) => !open && setStore(null)}
+        />
 
         <Section title="Apps">
           <Field

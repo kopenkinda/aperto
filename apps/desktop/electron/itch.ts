@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import { mkdir, mkdtemp, open, readdir, rename, rm } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
-import type { ItchGame, ItchPlatform } from "../src/model";
+import type { OwnedGame, Platform } from "../src/model";
 
 const execute = promisify(execFile);
 const api = "https://api.itch.io";
@@ -44,7 +44,7 @@ type ApiGame = {
 };
 
 /** A game's platforms, from the traits of newer API answers or the flags of older ones. */
-function platforms(item: { traits?: string[] } & Record<string, unknown>): ItchPlatform[] {
+function platforms(item: { traits?: string[] } & Record<string, unknown>): Platform[] {
   const traits = new Set(item.traits ?? []);
   const has = (name: string) => traits.has(name) || item[name] === true;
   return [
@@ -56,8 +56,8 @@ function platforms(item: { traits?: string[] } & Record<string, unknown>): ItchP
 }
 
 /** Games the account bought or claimed, newest first. Tools, books, and soundtracks are left out. */
-export async function ownedGames(key: string): Promise<ItchGame[]> {
-  const games: ItchGame[] = [];
+export async function ownedGames(key: string): Promise<OwnedGame[]> {
+  const games: OwnedGame[] = [];
   for (let page = 1; page <= 50; page++) {
     const body = await call<{
       owned_keys?: { id: number; game: ApiGame & Record<string, unknown> }[];
@@ -68,7 +68,8 @@ export async function ownedGames(key: string): Promise<ItchGame[]> {
       const game = owned.game;
       if (game.classification && game.classification !== "game") continue;
       games.push({
-        keyId: String(owned.id),
+        site: "itch",
+        id: String(owned.id),
         gameId: String(game.id),
         title: game.title,
         page: game.url.replace(/^https?:\/\//, "").replace(/\/$/, ""),
@@ -96,10 +97,10 @@ type Upload = {
  * runs in CrossOver, or else a web build, which runs like an NW.js game. Demos, soundtracks, and
  * other extras are skipped.
  */
-export async function chooseUpload(key: string, game: ItchGame): Promise<Upload> {
+export async function chooseUpload(key: string, game: OwnedGame): Promise<Upload> {
   const { uploads = [] } = await call<{ uploads?: Upload[] }>(
     key,
-    `/games/${game.gameId}/uploads?download_key_id=${game.keyId}`,
+    `/games/${game.gameId}/uploads?download_key_id=${game.id}`,
   );
   const usable = uploads.filter(
     (upload) =>
@@ -107,7 +108,7 @@ export async function chooseUpload(key: string, game: ItchGame): Promise<Upload>
       !upload.traits?.includes("demo") &&
       (!upload.type || upload.type === "default" || upload.type === "html"),
   );
-  const pick = (platform: ItchPlatform) =>
+  const pick = (platform: Platform) =>
     usable.find((upload) => platforms(upload).includes(platform));
   const upload = pick("mac") ?? pick("windows") ?? pick("web");
   if (!upload) throw new Error(`${game.title} has no Mac, Windows, or web download on itch.io.`);
@@ -117,16 +118,16 @@ export async function chooseUpload(key: string, game: ItchGame): Promise<Upload>
 /** Downloads an upload to `file`, reporting the bytes received. */
 export async function downloadUpload(
   key: string,
-  game: ItchGame,
+  game: OwnedGame,
   upload: Upload,
   file: string,
   signal: AbortSignal,
   progress: (received: number, total: number | null) => void,
 ) {
-  const response = await fetch(
-    `${api}/uploads/${upload.id}/download?download_key_id=${game.keyId}`,
-    { headers: { Authorization: `Bearer ${key}` }, signal },
-  ).catch((error: unknown) => {
+  const response = await fetch(`${api}/uploads/${upload.id}/download?download_key_id=${game.id}`, {
+    headers: { Authorization: `Bearer ${key}` },
+    signal,
+  }).catch((error: unknown) => {
     if (signal.aborted) throw error;
     return null;
   });
