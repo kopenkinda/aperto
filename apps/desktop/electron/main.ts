@@ -174,10 +174,12 @@ else {
         signInWindow: ({ url, redirect, partition, signedIn }) =>
           new Promise((resolve) => {
             const parent = BrowserWindow.getAllWindows()[0];
+            // A child window rather than a sheet, which on macOS has no close button: the store's
+            // page can then always be left with the close button or Escape.
             const window = new BrowserWindow({
               width: 480,
               height: 720,
-              ...(parent ? { parent, modal: true } : {}),
+              ...(parent ? { parent } : {}),
               title: "Sign in",
               autoHideMenuBar: true,
               // Without a partition to keep, a session in memory only, so the store's cookies go
@@ -205,6 +207,12 @@ else {
             window.webContents.setWindowOpenHandler(({ url: link }) => {
               if (link.startsWith("https:")) void shell.openExternal(link);
               return { action: "deny" };
+            });
+            window.webContents.on("before-input-event", (event, input) => {
+              if (input.type === "keyDown" && input.key === "Escape") {
+                event.preventDefault();
+                window.close();
+              }
             });
             window.webContents.on("will-redirect", check);
             window.webContents.on("will-navigate", check);
