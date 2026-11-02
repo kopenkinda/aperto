@@ -10,6 +10,7 @@ import {
   net,
   protocol,
   safeStorage,
+  session,
   shell,
 } from "electron";
 import { Effect, Schema } from "effect";
@@ -135,7 +136,7 @@ else {
         },
         trash: (file) => shell.trashItem(file),
         openExternal: (url) => void shell.openExternal(url),
-        signInWindow: (url, redirect) =>
+        signInWindow: (url, redirect, partition) =>
           new Promise((resolve) => {
             const parent = BrowserWindow.getAllWindows()[0];
             const window = new BrowserWindow({
@@ -144,8 +145,9 @@ else {
               ...(parent ? { parent, modal: true } : {}),
               title: "Sign in",
               autoHideMenuBar: true,
-              // A session in memory only, so the store's cookies go when the window closes.
-              webPreferences: { partition: "sign-in", sandbox: true },
+              // Without a partition to keep, a session in memory only, so the store's cookies go
+              // when the window closes.
+              webPreferences: { partition: partition ?? "sign-in", sandbox: true },
             });
             let done = false;
             const check = (event: { preventDefault: () => void }, address: string) => {
@@ -165,6 +167,16 @@ else {
             window.on("closed", () => !done && resolve(null));
             void window.loadURL(url);
           }),
+        async sessionFetch(partition, url) {
+          const response = await session
+            .fromPartition(partition)
+            .fetch(url, { signal: AbortSignal.timeout(30_000) })
+            .catch(() => null);
+          return response?.ok ? response.text() : null;
+        },
+        sessionCookie: async (partition, url, name) =>
+          (await session.fromPartition(partition).cookies.get({ url, name }))[0]?.value ?? null,
+        clearSession: (partition) => session.fromPartition(partition).clearStorageData(),
         async secret(name, value) {
           const file = path.join(app.getPath("userData"), "secrets", `${name}.bin`);
           if (value === null) {

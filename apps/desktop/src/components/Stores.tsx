@@ -24,6 +24,7 @@ import {
   type Platform,
   type Snapshot,
   type StoreSite,
+  storeUser,
 } from "../model";
 import { Field } from "./settings";
 import { SearchInput } from "./SearchInput";
@@ -128,26 +129,50 @@ export function ItchAccount({
   );
 }
 
+const accountHints = {
+  steam: {
+    signedOut: "Sign in on Steam's own page to install the games you own from here.",
+    signedIn:
+      "Installing asks Steam to install the game: Steam for Mac when the game has a Mac version, else the Steam in a CrossOver bottle. It joins the library when Steam finishes.",
+  },
+  gog: {
+    signedOut: "Sign in on GOG's own page to download the games you own.",
+    signedIn:
+      "Games you download go into the games folder and are linked to their GOG pages. Mac installers are unpacked; Windows ones install in the default CrossOver bottle.",
+  },
+};
+
 /**
- * The GOG account in Settings. GOG signs in on its own login page, in a window Aperto opens; the
- * token that keeps Aperto signed in stays in the Keychain.
+ * A Steam or GOG account in Settings. Both sign in on the store's own login page, in a window
+ * Aperto opens; Steam's session stays in Aperto's own cookies, GOG's token in the Keychain.
  */
-export function GogAccount({ snapshot, onLibrary }: { snapshot: Snapshot; onLibrary: () => void }) {
+export function StoreAccount({
+  site,
+  snapshot,
+  onLibrary,
+}: {
+  site: "steam" | "gog";
+  snapshot: Snapshot;
+  /** Opens the list of the account's games. */
+  onLibrary: () => void;
+}) {
   const { run, busy, error } = useTask();
-  if (snapshot.gogUser)
+  const user = storeUser(snapshot, site);
+  const name = metadataSites[site];
+  if (user)
     return (
       <Field
         label="Account"
         hint={
           error ??
-          (snapshot.gamesFolder
-            ? "Games you download go into the games folder and are linked to their GOG pages. Mac installers are unpacked; Windows ones install in the default CrossOver bottle."
+          (site === "steam" || snapshot.gamesFolder
+            ? accountHints[site].signedIn
             : "Choose a games folder above to download games into.")
         }
       >
         <div className="flex items-center gap-2">
           <span className="flex-1 truncate">
-            Signed in as <span className="font-medium">{snapshot.gogUser.name}</span>
+            Signed in as <span className="font-medium">{user.name}</span>
           </span>
           <Button variant="outline" onClick={onLibrary}>
             <HugeiconsIcon icon={Download04Icon} />
@@ -156,7 +181,9 @@ export function GogAccount({ snapshot, onLibrary }: { snapshot: Snapshot; onLibr
           <Button
             variant="ghost"
             disabled={busy}
-            onClick={() => void run(() => request({ action: "gogSignOut" }))}
+            onClick={() =>
+              void run(() => request({ action: site === "steam" ? "steamSignOut" : "gogSignOut" }))
+            }
           >
             Sign out
           </Button>
@@ -164,18 +191,17 @@ export function GogAccount({ snapshot, onLibrary }: { snapshot: Snapshot; onLibr
       </Field>
     );
   return (
-    <Field
-      label="Account"
-      hint={error ?? "Sign in on GOG's own page to download the games you own."}
-    >
+    <Field label="Account" hint={error ?? accountHints[site].signedOut}>
       <Button
         variant="outline"
         className="self-start"
         disabled={busy}
-        onClick={() => void run(() => request({ action: "gogSignIn" }))}
+        onClick={() =>
+          void run(() => request({ action: site === "steam" ? "steamSignIn" : "gogSignIn" }))
+        }
       >
-        {busy ? <Spinner /> : <SiteLogo site="gog" />}
-        Sign in to GOG
+        {busy ? <Spinner /> : <SiteLogo site={site} />}
+        Sign in to {name}
       </Button>
     </Field>
   );
@@ -222,9 +248,11 @@ export function StoreLibrary({
         <DialogHeader>
           <DialogTitle>Your {name} games</DialogTitle>
           <DialogDescription>
-            {snapshot.gamesFolder
-              ? "Downloads the Mac version when there is one, or else the Windows one, into the games folder."
-              : "Choose a games folder in Settings to download games into."}
+            {site === "steam"
+              ? "Steam installs the game, the Mac version when there is one; it joins the library when Steam finishes."
+              : snapshot.gamesFolder
+                ? "Downloads the Mac version when there is one, or else the Windows one, into the games folder."
+                : "Choose a games folder in Settings to download games into."}
           </DialogDescription>
         </DialogHeader>
         {error && (
@@ -300,7 +328,7 @@ export function StoreLibrary({
                   <Button
                     variant="outline"
                     size="sm"
-                    disabled={!snapshot.gamesFolder}
+                    disabled={game.site !== "steam" && !snapshot.gamesFolder}
                     onClick={() =>
                       void run(() =>
                         request({ action: "downloadOwned", site: game.site, id: game.id }),
@@ -308,7 +336,7 @@ export function StoreLibrary({
                     }
                   >
                     <HugeiconsIcon icon={Download04Icon} />
-                    Download
+                    {game.site === "steam" ? "Install" : "Download"}
                   </Button>
                 )}
               </div>

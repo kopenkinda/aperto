@@ -301,12 +301,9 @@ export async function steamApps(libraries: Iterable<string>) {
   return apps;
 }
 
-/**
- * Games installed with Steam inside CrossOver bottles, read from each library's app manifests.
- * They launch through that bottle's Steam, so DRM and updates keep working.
- */
-export async function bottleSteamGames(): Promise<Candidate[]> {
-  const games: Candidate[] = [];
+/** The Steam clients installed in CrossOver bottles, each with its `steam.exe` and libraries. */
+export async function bottleSteamClients() {
+  const clients: { bottle: string; client: string; libraries: string[] }[] = [];
   for (const bottle of await listBottles()) {
     const drive = path.join(bottlesDirectory, bottle, "drive_c");
     for (const programs of ["Program Files (x86)", "Program Files"]) {
@@ -321,24 +318,31 @@ export async function bottleSteamGames(): Promise<Candidate[]> {
         const library = await bottlePath(bottle, location);
         if (library) libraries.add(library);
       }
-      for (const app of await steamApps(libraries)) {
-        const executable = await mainExecutable(app.folder, app.name);
-        games.push({
-          kind: "windows",
-          folder: app.folder,
-          root: app.folder,
-          executable,
-          name: app.name,
-          confirmed: true,
-          artwork: executable,
-          steam: {
-            appId: app.appId,
-            bottle,
-            installdir: app.installdir,
-            client: path.join(client, "steam.exe"),
-          },
-        });
-      }
+      clients.push({ bottle, client: path.join(client, "steam.exe"), libraries: [...libraries] });
+    }
+  }
+  return clients;
+}
+
+/**
+ * Games installed with Steam inside CrossOver bottles, read from each library's app manifests.
+ * They launch through that bottle's Steam, so DRM and updates keep working.
+ */
+export async function bottleSteamGames(): Promise<Candidate[]> {
+  const games: Candidate[] = [];
+  for (const { bottle, client, libraries } of await bottleSteamClients()) {
+    for (const app of await steamApps(libraries)) {
+      const executable = await mainExecutable(app.folder, app.name);
+      games.push({
+        kind: "windows",
+        folder: app.folder,
+        root: app.folder,
+        executable,
+        name: app.name,
+        confirmed: true,
+        artwork: executable,
+        steam: { appId: app.appId, bottle, installdir: app.installdir, client },
+      });
     }
   }
   return games;

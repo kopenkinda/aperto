@@ -38,7 +38,7 @@ import {
 } from "./model";
 import { request, useTask } from "./desktop";
 import { Field, Section } from "@/components/settings";
-import { GogAccount, ItchAccount, StoreLibrary } from "@/components/Stores";
+import { ItchAccount, StoreAccount, StoreLibrary } from "@/components/Stores";
 import { SiteLogo } from "@/components/logos";
 import { Checkbox } from "@/components/ui/checkbox";
 import { TagManager } from "@/components/TagManager";
@@ -226,8 +226,11 @@ export function Settings({
           </Field>
         </Section>
 
+        <Section title="Steam">
+          <StoreAccount site="steam" snapshot={snapshot} onLibrary={() => setStore("steam")} />
+        </Section>
         <Section title="GOG">
-          <GogAccount snapshot={snapshot} onLibrary={() => setStore("gog")} />
+          <StoreAccount site="gog" snapshot={snapshot} onLibrary={() => setStore("gog")} />
         </Section>
         <Section title="itch.io">
           <ItchAccount snapshot={snapshot} onLibrary={() => setStore("itch")} />

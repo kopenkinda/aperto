@@ -39,7 +39,7 @@ import { downloadImage, readableImage } from "./artwork";
 import { extractExeIcon } from "./exe-icon";
 import { inspectRoot, nameManifest, readObject } from "./detection";
 import { detectGame, findGames, fingerprint, versionedName, versionsIn, within } from "./discovery";
-import { iconToPng } from "./mac";
+import { iconToPng, macSteamLibraries } from "./mac";
 import { diskUsage, findComponents, listComponents, removeComponent } from "./components";
 import {
   gogDownload,
@@ -54,13 +54,31 @@ import {
   type GogTokens,
 } from "./gog";
 import { chooseUpload, downloadUpload, itchProfile, ownedGames, unpack } from "./itch";
+import {
+  ownedAppIds,
+  steamIdFromCookie,
+  steamInstallState,
+  steamLoginUrl,
+  steamOwnedGames,
+  steamPersona,
+  steamRedirect,
+  steamSession,
+  steamUserData,
+} from "./steam";
 import { findF95Thread, metadataDetails, searchF95, searchMetadata } from "./metadata";
 import { mkxpLaunch } from "./mkxp";
 import { renpyLaunch } from "./renpy";
 import { sandboxed, type SandboxAccess } from "./sandbox";
 import { agentScript, installedAgents } from "./agents";
 import { installedTerminals, openInTerminal, runInTerminal, terminalFor } from "./terminals";
-import { bottlesDirectory, crossoverWine, listBottles, setRetinaMode, wineArgs } from "./windows";
+import {
+  bottleSteamClients,
+  bottlesDirectory,
+  crossoverWine,
+  listBottles,
+  setRetinaMode,
+  wineArgs,
+} from "./windows";
 import {
   changePlugins,
   cheatMenuPlugin,
@@ -87,9 +105,15 @@ export type NativeActions = {
   openExternal: (url: string) => void;
   /**
    * Opens a store's login page in a window and resolves with the address it sends the browser to
-   * once signed in, which starts with `redirect`; null when the window is closed first.
+   * once signed in, which starts with `redirect`; null when the window is closed first. With a
+   * partition, the session's cookies are kept for later requests.
    */
-  signInWindow: (url: string, redirect: string) => Promise<string | null>;
+  signInWindow: (url: string, redirect: string, partition?: string) => Promise<string | null>;
+  /** Fetches a page with the cookies of a session a sign-in window kept; null when it fails. */
+  sessionFetch: (partition: string, url: string) => Promise<string | null>;
+  sessionCookie: (partition: string, url: string, name: string) => Promise<string | null>;
+  /** Signs a kept session out by clearing its cookies and storage. */
+  clearSession: (partition: string) => Promise<void>;
   /** Secrets such as the itch.io API key, kept encrypted with the Keychain. Null removes one. */
   secret: (name: string, value?: string | null) => Promise<string | null>;
   /**
@@ -288,6 +312,30 @@ export class DesktopLibrary {
     }
     if (command.action === "itchKeysPage") {
       this.native.openExternal("https://itch.io/user/settings/api-keys");
+      return this.snapshot();
+    }
+    if (command.action === "steamSignIn") {
+      const done = await this.native.signInWindow(steamLoginUrl, steamRedirect, steamSession);
+      if (!done) return this.snapshot();
+      const cookie = await this.native.sessionCookie(
+        steamSession,
+        "https://store.steampowered.com",
+        "steamLoginSecure",
+      );
+      const id = cookie && steamIdFromCookie(cookie);
+      if (!id) throw new Error("Steam did not finish signing in. Try again.");
+      const name = (await steamPersona(id)) ?? "your Steam account";
+      delete this.owned.steam;
+      await this.store.update((state) => ({ ...state, steamUser: { id, name } }));
+      return this.snapshot();
+    }
+    if (command.action === "steamSignOut") {
+      await this.native.clearSession(steamSession);
+      delete this.owned.steam;
+      await this.store.update((state) => {
+        const { steamUser: _, ...rest } = state;
+        return rest;
+      });
       return this.snapshot();
     }
     if (command.action === "gogSignIn") {
@@ -816,9 +864,72 @@ export class DesktopLibrary {
   }
 
   private async listOwned(site: StoreSite) {
-    return site === "gog"
-      ? gogOwnedGames(await this.gogAccess())
-      : ownedGames(await this.itchKey());
+    if (site === "gog") return gogOwnedGames(await this.gogAccess());
+    if (site === "itch") return ownedGames(await this.itchKey());
+    if (!this.store.value.steamUser) throw new Error("Sign in to Steam in Settings first.");
+    const ids = ownedAppIds(await this.native.sessionFetch(steamSession, steamUserData));
+    if (!ids) throw new Error("Steam signed Aperto out. Sign in again in Settings.");
+    return steamOwnedGames(ids);
+  }
+
+  /**
+   * Asks a Steam client to install an owned game: Mac Steam for a game with a Mac version, else
+   * the Steam in a CrossOver bottle, the default bottle's first. Steam shows its own install
+   * dialog; the game's manifest then reports progress, and a scan adds the game when it is done.
+   * Stopping only stops following the install, which goes on in Steam.
+   */
+  private async installWithSteam(
+    game: OwnedGame,
+    download: { detail: string; progress: number | null; controller: AbortController },
+  ) {
+    const signal = download.controller.signal;
+    const macSteam =
+      (await exists("/Applications/Steam.app")) ||
+      (await exists(path.join(homedir(), "Applications", "Steam.app")));
+    let libraries: string[];
+    if (game.platforms.includes("mac") && macSteam) {
+      libraries = await macSteamLibraries();
+      await execute("/usr/bin/open", ["-g", `steam://install/${game.id}`]);
+    } else {
+      const clients = (await exists(crossoverWine)) ? await bottleSteamClients() : [];
+      const client =
+        clients.find((item) => item.bottle === this.store.value.defaultBottle) ?? clients[0];
+      if (!game.platforms.includes("windows") || !client)
+        throw new Error(
+          game.platforms.includes("mac")
+            ? `Install Steam for Mac to install ${game.title}.`
+            : `${game.title} is a Windows game, which needs Steam installed in a CrossOver bottle.`,
+        );
+      libraries = client.libraries;
+      spawn(
+        crossoverWine,
+        wineArgs(client.bottle, [client.client, `steam://install/${game.id}`], "game"),
+        { stdio: "ignore", detached: true },
+      ).unref();
+    }
+    download.detail = "Confirm the install in Steam…";
+    this.changed();
+    let started = false;
+    for (let waited = 0; !signal.aborted; waited += 3000) {
+      const state = await steamInstallState(libraries, game.id);
+      if (state?.done) break;
+      if (state) {
+        started = true;
+        const progress = state.total ? Math.min(state.received / state.total, 1) : null;
+        const detail = state.total
+          ? `${formatSize(state.received)} of ${formatSize(state.total)} in Steam`
+          : "Installing in Steam…";
+        if (detail !== download.detail) {
+          download.detail = detail;
+          download.progress = progress;
+          this.changed();
+        }
+      } else if (!started && waited >= 15 * 60_000)
+        throw new Error(`Steam did not start installing ${game.title}.`);
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+    }
+    if (signal.aborted) return;
+    await this.scanGamesFolder(true);
   }
 
   /**
@@ -831,7 +942,7 @@ export class DesktopLibrary {
     const game = find(this.owned[site]) ?? find((this.owned[site] = await this.listOwned(site)));
     if (!game) throw new Error(`This game is no longer in your ${metadataSites[site]} library.`);
     const folder = this.store.value.gamesFolder;
-    if (!folder)
+    if (!folder && site !== "steam")
       throw new Error("Choose a games folder in Settings first; downloaded games go there.");
     const key = `${site}:${game.gameId}`;
     if (this.storeDownloads.has(key)) throw new Error(`${game.title} is already downloading.`);
@@ -845,6 +956,15 @@ export class DesktopLibrary {
     };
     this.storeDownloads.set(key, download);
     this.changed();
+    if (site === "steam") {
+      try {
+        return await this.installWithSteam(game, download);
+      } finally {
+        this.storeDownloads.delete(key);
+        this.changed();
+      }
+    }
+    if (!folder) return;
     const staging = path.join(this.store.directory, "downloads", randomUUID());
     let reported = 0;
     const progress = (received: number, total: number | null) => {

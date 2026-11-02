@@ -180,6 +180,8 @@ export const LibrarySchema = Schema.Struct({
   linkSites: Schema.optionalKey(Schema.Array(SiteSchema)),
   /** The itch.io account signed in with an API key, which is kept in the Keychain. */
   itchUser: Schema.optionalKey(Schema.Struct({ id: Schema.String, name: Schema.String })),
+  /** The Steam account, whose store sign-in cookies Aperto keeps in its own session. */
+  steamUser: Schema.optionalKey(Schema.Struct({ id: Schema.String, name: Schema.String })),
   /** The GOG account, whose refresh token is kept in the Keychain. */
   gogUser: Schema.optionalKey(Schema.Struct({ id: Schema.String, name: Schema.String })),
   /** Colors chosen for tags, by tag. Older libraries omit it. */
@@ -275,17 +277,25 @@ export type MetadataMatch = {
 export type Agent = { id: string; name: string };
 export type Platform = "mac" | "windows" | "linux" | "web";
 /** Stores Aperto signs in to and downloads owned games from. */
-export const storeSites = ["gog", "itch"] as const;
+export const storeSites = ["steam", "gog", "itch"] as const;
 export type StoreSite = (typeof storeSites)[number];
+/** The account a store is signed in with, if any. */
+export const storeUser = (
+  library: Pick<Library, "steamUser" | "gogUser" | "itchUser">,
+  site: StoreSite,
+) => library[`${site}User`];
 const StoreSchema = Schema.Literals(storeSites);
 /** A game a store account bought or claimed. */
 export type OwnedGame = {
   site: StoreSite;
-  /** What downloading it takes: itch.io's download key, which proves the purchase, or GOG's product ID. */
+  /**
+   * What downloading it takes: itch.io's download key, which proves the purchase, or the GOG
+   * product or Steam app ID.
+   */
   id: string;
   gameId: string;
   title: string;
-  /** The game's link ID: its itch.io page without the scheme, or its GOG store slug. */
+  /** The game's link ID: its itch.io page without the scheme, its GOG store slug, or its Steam app ID. */
   page: string;
   cover: string | null;
   author: string;
@@ -403,6 +413,9 @@ export const CommandSchema = Schema.Union([
   Schema.Struct({ action: Schema.Literal("itchSignOut") }),
   /** Opens itch.io's API keys page, where the user makes the key to sign in with. */
   Schema.Struct({ action: Schema.Literal("itchKeysPage") }),
+  /** Signs in to the Steam store on its own login page, in a window Aperto opens. */
+  Schema.Struct({ action: Schema.Literal("steamSignIn") }),
+  Schema.Struct({ action: Schema.Literal("steamSignOut") }),
   /** Signs in to GOG on its own login page, in a window Aperto opens. */
   Schema.Struct({ action: Schema.Literal("gogSignIn") }),
   Schema.Struct({ action: Schema.Literal("gogSignOut") }),

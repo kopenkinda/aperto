@@ -136,18 +136,22 @@ export const macSteamDirectory = path.join(homedir(), "Library", "Application Su
 
 const letters = (text: string) => text.toLowerCase().replace(/[^a-z0-9]+/g, "");
 
+/** The Mac Steam client's libraries: its own folder and the others it lists. */
+export async function macSteamLibraries(steam = macSteamDirectory) {
+  const folders = await readFile(path.join(steam, "steamapps", "libraryfolders.vdf"), "utf8").catch(
+    () => "",
+  );
+  return [...new Set([steam, ...(steamValues(folders).get("path") ?? [])])];
+}
+
 /**
  * Mac games installed with the Mac Steam client, in any of its libraries. Each install's app is
  * found at the top of its folder or one folder down; when there are several, the one named like
  * the game wins. They open as Mac apps and link to their Steam pages.
  */
 export async function macSteamGames(steam = macSteamDirectory): Promise<Candidate[]> {
-  const folders = await readFile(path.join(steam, "steamapps", "libraryfolders.vdf"), "utf8").catch(
-    () => "",
-  );
-  const libraries = new Set([steam, ...(steamValues(folders).get("path") ?? [])]);
   const games: Candidate[] = [];
-  for (const app of await steamApps(libraries)) {
+  for (const app of await steamApps(await macSteamLibraries(steam))) {
     const bundles: string[] = [];
     for (const entry of await readdir(app.folder, { withFileTypes: true }).catch(() => [])) {
       const location = path.join(app.folder, entry.name);

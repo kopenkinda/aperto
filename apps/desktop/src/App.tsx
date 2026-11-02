@@ -41,6 +41,7 @@ import {
   formatSize,
   metadataSites,
   storeSites,
+  storeUser,
   type StoreSite,
   tagCounts,
   updateAvailable,
@@ -327,7 +328,7 @@ export function App() {
                   From a folder…
                 </button>
                 {storeSites.map((site) => {
-                  const signedIn = !!snapshot?.[site === "gog" ? "gogUser" : "itchUser"];
+                  const signedIn = !!snapshot && !!storeUser(snapshot, site);
                   return (
                     <button
                       key={site}
