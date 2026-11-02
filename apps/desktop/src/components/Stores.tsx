@@ -8,13 +8,6 @@ import {
 } from "@hugeicons/core-free-icons";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { request, useTask } from "../desktop";
@@ -222,30 +215,6 @@ export function storeLibraryHint(site: StoreSite | null, snapshot: Snapshot) {
   return snapshot.gamesFolder
     ? "Downloads the Mac version when there is one, or else the Windows one, into the games folder."
     : "Choose a games folder in Settings to download games into.";
-}
-
-/** A store's games in a dialog of their own, for opening them outside Settings. */
-export function StoreLibrary({
-  site,
-  snapshot,
-  onOpenChange,
-}: {
-  /** The store whose games show, or null when closed. */
-  site: StoreSite | null;
-  snapshot: Snapshot;
-  onOpenChange: (open: boolean) => void;
-}) {
-  return (
-    <Dialog open={site !== null} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[85vh] flex-col gap-4 sm:max-w-xl">
-        <DialogHeader>
-          <DialogTitle>Your {site ? storeNames[site] : ""} games</DialogTitle>
-          <DialogDescription>{storeLibraryHint(site, snapshot)}</DialogDescription>
-        </DialogHeader>
-        <StoreGames site={site} snapshot={snapshot} />
-      </DialogContent>
-    </Dialog>
-  );
 }
 
 /**

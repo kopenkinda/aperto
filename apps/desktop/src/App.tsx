@@ -11,7 +11,6 @@ import {
   Delete02Icon,
   Download04Icon,
   FilterHorizontalIcon,
-  FolderAddIcon,
   FolderOpenIcon,
   Link01Icon,
   PlayIcon,
@@ -23,7 +22,7 @@ import {
   Tick02Icon,
 } from "@hugeicons/core-free-icons";
 import { ApertoMark } from "@/components/ApertoMark";
-import { StoreLibrary } from "@/components/Stores";
+import { AddGames } from "@/components/AddGames";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -58,7 +57,6 @@ import {
   statusFilters,
   formatSize,
   storeSites,
-  storeNames,
   storeUser,
   shownAgents,
   steamApp,
@@ -88,8 +86,16 @@ export function App() {
     if (page) setSettingsPage(page);
     setSettingsOpen(true);
   };
-  const [store, setStore] = useState<StoreSite | null>(null);
   const [addOpen, setAddOpen] = useState(false);
+  // The store Add games shows; until one is chosen, the first signed-in one.
+  const [chosenStore, setStore] = useState<StoreSite | null>(null);
+  const store =
+    chosenStore ??
+    (snapshot &&
+      storeSites.find(
+        (site) => storeUser(snapshot, site) && (site !== "dlsite" || snapshot.adultContent),
+      )) ??
+    "steam";
   // The game the sidebar's context menu is for. The ref is read while the menu decides to open.
   const menuTarget = useRef<string | null>(null);
   const [menuGame, setMenuGame] = useState<string | null>(null);
@@ -363,54 +369,16 @@ export function App() {
             {!!snapshot?.storeDownloads.length && (
               <DownloadsButton downloads={snapshot.storeDownloads} />
             )}
-            <Popover open={addOpen} onOpenChange={setAddOpen}>
-              <PopoverTrigger
-                render={
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label="Add games"
-                    title="Add games"
-                    disabled={busy}
-                  >
-                    <HugeiconsIcon icon={PlusSignIcon} />
-                  </Button>
-                }
-              />
-              <PopoverContent side="top" align="end" className="w-52 gap-0 p-1">
-                <button
-                  type="button"
-                  className={menuItem}
-                  onClick={() => {
-                    setAddOpen(false);
-                    act({ action: "addGames" });
-                  }}
-                >
-                  <HugeiconsIcon icon={FolderAddIcon} className="size-4" />
-                  From a folder…
-                </button>
-                {storeSites
-                  .filter((site) => site !== "dlsite" || snapshot?.adultContent)
-                  .map((site) => {
-                    const signedIn = !!snapshot && !!storeUser(snapshot, site);
-                    return (
-                      <button
-                        key={site}
-                        type="button"
-                        className={menuItem}
-                        onClick={() => {
-                          setAddOpen(false);
-                          if (signedIn) setStore(site);
-                          else openSettings("accounts");
-                        }}
-                      >
-                        <SiteLogo site={site} className="size-4" />
-                        {signedIn ? `From ${storeNames[site]}…` : `Sign in to ${storeNames[site]}…`}
-                      </button>
-                    );
-                  })}
-              </PopoverContent>
-            </Popover>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Add games"
+              title="Add games"
+              disabled={busy}
+              onClick={() => setAddOpen(true)}
+            >
+              <HugeiconsIcon icon={PlusSignIcon} />
+            </Button>
             <Button
               variant="ghost"
               size="icon-sm"
@@ -513,13 +481,21 @@ export function App() {
           page={settingsPage}
           onPageChange={setSettingsPage}
           snapshot={snapshot}
+          onStoreGames={(site) => {
+            setSettingsOpen(false);
+            setStore(site);
+            setAddOpen(true);
+          }}
         />
       )}
       {snapshot && (
-        <StoreLibrary
+        <AddGames
+          open={addOpen}
+          onOpenChange={setAddOpen}
           site={store}
+          onSiteChange={setStore}
           snapshot={snapshot}
-          onOpenChange={(open) => !open && setStore(null)}
+          onAddFolder={() => act({ action: "addGames" })}
         />
       )}
     </div>
@@ -617,9 +593,6 @@ function GameMenu({
     </ContextMenuContent>
   );
 }
-
-const menuItem =
-  "flex items-center gap-2 rounded-md px-2 py-1.5 text-left outline-none hover:bg-accent focus-visible:bg-accent";
 
 /**
  * Running store downloads as a download icon ringed by how far they have got, all together; the

@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 import {
-  ArrowLeft01Icon,
   ArrowUp02Icon,
   Cancel01Icon,
   ComputerIcon,
@@ -30,7 +29,6 @@ import {
   metadataSites,
   availableSites,
   shownSites,
-  storeNames,
   updateAvailable,
   type Component,
   type StoreSite,
@@ -39,7 +37,7 @@ import {
 } from "./model";
 import { request, useTask } from "./desktop";
 import { Field, Section } from "@/components/settings";
-import { ItchAccount, StoreAccount, StoreGames, storeLibraryHint } from "@/components/Stores";
+import { ItchAccount, StoreAccount } from "@/components/Stores";
 import { AgentLogo, SiteLogo } from "@/components/logos";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
@@ -115,12 +113,15 @@ export function Settings({
   page,
   onPageChange,
   snapshot,
+  onStoreGames,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   page: SettingsPage;
   onPageChange: (page: SettingsPage) => void;
   snapshot: Snapshot;
+  /** Leaves Settings for a store's games in the Add games dialog. */
+  onStoreGames: (site: StoreSite) => void;
 }) {
   const [releases, setReleases] = useState<Release[]>([]);
   const [version, setVersion] = useState<string | null>(null);
@@ -132,7 +133,6 @@ export function Settings({
     : "Automatic";
   const installed = [...snapshot.runtimes].sort((a, b) => compareVersions(b.version, a.version));
   const [checking, setChecking] = useState(false);
-  const [store, setStore] = useState<StoreSite | null>(null);
   const linkSites = shownSites(snapshot);
   const chosenSites = snapshot.linkSites ?? ["steam"];
   const linked = snapshot.games.filter((game) => game.update).length;
@@ -142,8 +142,7 @@ export function Settings({
     void run(async () => setComponents(await request({ action: "removeComponent", id })));
 
   useEffect(() => {
-    // Settings opens on its page, not on a store's games left open last time.
-    if (!open) return setStore(null);
+    if (!open) return;
     let active = true;
     request({ action: "components" }).then(
       (list) => active && setComponents(list),
@@ -172,10 +171,7 @@ export function Settings({
               type="button"
               aria-current={item.id === page ? "page" : undefined}
               className="flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm outline-none hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-ring/50 aria-[current=page]:bg-sidebar-accent aria-[current=page]:font-medium"
-              onClick={() => {
-                setStore(null);
-                onPageChange(item.id);
-              }}
+              onClick={() => onPageChange(item.id)}
             >
               <HugeiconsIcon icon={item.icon} className="size-4 text-muted-foreground" />
               {item.title}
@@ -183,27 +179,9 @@ export function Settings({
           ))}
         </nav>
         <div className="flex min-w-0 flex-1 flex-col gap-6 overflow-y-auto p-6">
-          {page === "accounts" && store ? (
-            <div className="flex flex-col gap-1">
-              <div className="-ml-2 flex items-center gap-1">
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label="Back to accounts"
-                  title="Back to accounts"
-                  onClick={() => setStore(null)}
-                >
-                  <HugeiconsIcon icon={ArrowLeft01Icon} />
-                </Button>
-                <h2 className="text-lg font-semibold">Your {storeNames[store]} games</h2>
-              </div>
-              <p className="text-sm text-muted-foreground">{storeLibraryHint(store, snapshot)}</p>
-            </div>
-          ) : (
-            <h2 className="text-lg font-semibold">
-              {settingsPages.find((item) => item.id === page)!.title}
-            </h2>
-          )}
+          <h2 className="text-lg font-semibold">
+            {settingsPages.find((item) => item.id === page)!.title}
+          </h2>
           {error && (
             <Alert variant="destructive">
               <AlertDescription>{error}</AlertDescription>
@@ -403,33 +381,40 @@ export function Settings({
               </Section>
             </>
           )}
-          {page === "accounts" && store && <StoreGames site={store} snapshot={snapshot} />}
-          {page === "accounts" && !store && (
+          {page === "accounts" && (
             <>
               <Section title="Steam">
                 <StoreAccount
                   site="steam"
                   snapshot={snapshot}
-                  onLibrary={() => setStore("steam")}
+                  onLibrary={() => onStoreGames("steam")}
                 />
               </Section>
               <Section title="Epic Games">
-                <StoreAccount site="epic" snapshot={snapshot} onLibrary={() => setStore("epic")} />
+                <StoreAccount
+                  site="epic"
+                  snapshot={snapshot}
+                  onLibrary={() => onStoreGames("epic")}
+                />
               </Section>
               <Section title="GOG">
-                <StoreAccount site="gog" snapshot={snapshot} onLibrary={() => setStore("gog")} />
+                <StoreAccount
+                  site="gog"
+                  snapshot={snapshot}
+                  onLibrary={() => onStoreGames("gog")}
+                />
               </Section>
               {snapshot.adultContent && (
                 <Section title="DLsite">
                   <StoreAccount
                     site="dlsite"
                     snapshot={snapshot}
-                    onLibrary={() => setStore("dlsite")}
+                    onLibrary={() => onStoreGames("dlsite")}
                   />
                 </Section>
               )}
               <Section title="itch.io">
-                <ItchAccount snapshot={snapshot} onLibrary={() => setStore("itch")} />
+                <ItchAccount snapshot={snapshot} onLibrary={() => onStoreGames("itch")} />
               </Section>
             </>
           )}
