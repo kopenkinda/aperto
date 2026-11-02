@@ -1,14 +1,15 @@
 import { Schema } from "effect";
 
+/** Sites a game can link to, in the order they show everywhere. */
 export const metadataSites = {
-  f95: "F95zone",
   steam: "Steam",
   gog: "GOG",
-  dlsite: "DLsite",
   itch: "itch.io",
+  f95: "F95zone",
+  dlsite: "DLsite",
 } as const;
 export type MetadataSite = keyof typeof metadataSites;
-const SiteSchema = Schema.Literals(["f95", "steam", "gog", "dlsite", "itch"]);
+const SiteSchema = Schema.Literals(["steam", "gog", "itch", "f95", "dlsite"]);
 export const SteamInstallSchema = Schema.Struct({
   appId: Schema.String,
   bottle: Schema.String,

@@ -285,7 +285,7 @@ describe("adult content", () => {
     const library = { linkSites: ["f95", "steam", "dlsite"] as const };
     expect(availableSites({})).toEqual(["steam", "gog", "itch"]);
     expect(shownSites(library)).toEqual(["steam"]);
-    expect(shownSites({ ...library, adultContent: true })).toEqual(["f95", "steam", "dlsite"]);
+    expect(shownSites({ ...library, adultContent: true })).toEqual(["steam", "f95", "dlsite"]);
     const game = { links: { f95: { id: "1", title: "A" }, steam: { id: "2", title: "A" } } };
     expect(linkedSites(game, {})).toEqual(["steam"]);
     expect(linkedSites(game, { adultContent: true })).toEqual(["steam", "f95"]);

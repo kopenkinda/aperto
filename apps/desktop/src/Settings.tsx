@@ -404,6 +404,9 @@ export function Settings({
                   onLibrary={() => onStoreGames("gog")}
                 />
               </Section>
+              <Section title="itch.io">
+                <ItchAccount snapshot={snapshot} onLibrary={() => onStoreGames("itch")} />
+              </Section>
               {snapshot.adultContent && (
                 <Section title="DLsite">
                   <StoreAccount
@@ -413,9 +416,6 @@ export function Settings({
                   />
                 </Section>
               )}
-              <Section title="itch.io">
-                <ItchAccount snapshot={snapshot} onLibrary={() => onStoreGames("itch")} />
-              </Section>
             </>
           )}
           {page === "apps" && (
