@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 import {
+  Alert02Icon,
   ArrowUp02Icon,
   Cancel01Icon,
+  CommandLineIcon,
   ComputerIcon,
   CpuIcon,
   Download04Icon,
@@ -12,7 +14,8 @@ import {
   Tag01Icon,
   UserCircleIcon,
 } from "@hugeicons/core-free-icons";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import {
@@ -26,12 +29,14 @@ import { Spinner } from "@/components/ui/spinner";
 import {
   compareVersions,
   formatSize,
+  hookEvents,
   metadataSites,
   availableSites,
   shownSites,
   shownStores,
   updateAvailable,
   type Component,
+  type HookEvent,
   type StoreSite,
   type Release,
   type Snapshot,
@@ -98,14 +103,54 @@ function Downloads({
   );
 }
 
-export type SettingsPage = "library" | "links" | "accounts" | "apps" | "runtimes";
+export type SettingsPage = "library" | "links" | "accounts" | "apps" | "runtimes" | "hooks";
 const settingsPages: { id: SettingsPage; title: string; icon: IconSvgElement }[] = [
   { id: "library", title: "Library", icon: LibraryIcon },
   { id: "links", title: "Links & tags", icon: Tag01Icon },
   { id: "accounts", title: "Accounts", icon: UserCircleIcon },
   { id: "apps", title: "Apps", icon: ComputerIcon },
   { id: "runtimes", title: "Runtimes", icon: CpuIcon },
+  { id: "hooks", title: "Hooks", icon: CommandLineIcon },
 ];
+
+const hookHints: Record<HookEvent, string> = {
+  appStart: "Runs in the background once Aperto has read the library.",
+  appQuit: "Runs in the background as Aperto quits, and keeps running after it has.",
+  gameStart:
+    "Runs before every game launches, which waits up to 30 seconds for it. Runs in the game's folder, with APERTO_GAME_ID, APERTO_GAME_NAME, APERTO_GAME_FOLDER, and APERTO_GAME_KIND set.",
+  gameEnd:
+    "Runs in the background after every game closes, also when it fails to start. Gets the same variables.",
+};
+
+/** One hook's shell commands, saved when the field loses focus. */
+function HookField({ event, snapshot }: { event: HookEvent; snapshot: Snapshot }) {
+  const saved = snapshot.hooks?.[event] ?? "";
+  const [script, setScript] = useState(saved);
+  const { run, error } = useTask();
+  useEffect(() => setScript(saved), [saved]);
+  return (
+    <Field label={hookEvents[event]} htmlFor={`hook-${event}`} hint={error ?? hookHints[event]}>
+      <Textarea
+        id={`hook-${event}`}
+        spellCheck={false}
+        rows={3}
+        placeholder={
+          event === "gameStart"
+            ? "osascript -e 'quit app \"Slack\"'"
+            : event === "gameEnd"
+              ? "open -a Slack"
+              : ""
+        }
+        className="min-h-20 font-mono text-xs"
+        value={script}
+        onChange={(change) => setScript(change.target.value)}
+        onBlur={() =>
+          script !== saved && void run(() => request({ action: "setHook", event, script }))
+        }
+      />
+    </Field>
+  );
+}
 
 /** Settings in pages, picked from the sidebar. */
 export function Settings({
@@ -158,8 +203,8 @@ export function Settings({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="flex h-[85vh] max-h-[720px] gap-0 overflow-hidden p-0 sm:max-w-4xl">
         <DialogDescription className="sr-only">
-          Games folder, links and tags, store accounts, apps Aperto opens, and what each kind of
-          game runs with
+          Games folder, links and tags, store accounts, apps Aperto opens, hooks, and what each kind
+          of game runs with
         </DialogDescription>
         <nav
           aria-label="Settings"
@@ -523,6 +568,29 @@ export function Settings({
                     </SelectContent>
                   </Select>
                 </Field>
+              </Section>
+            </>
+          )}
+          {page === "hooks" && (
+            <>
+              <Alert>
+                <HugeiconsIcon icon={Alert02Icon} />
+                <AlertTitle>For power users</AlertTitle>
+                <AlertDescription>
+                  These are shell commands run in your login shell with your full permissions,
+                  outside Aperto&rsquo;s sandbox, like a game&rsquo;s autoexec but for Aperto: turn
+                  on a focus mode, quit apps that get in the way, or anything else. Aperto does not
+                  check what they do. Their output is not shown; a failed start hook is noted in the
+                  game&rsquo;s launch history.
+                </AlertDescription>
+              </Alert>
+              <Section title="Aperto">
+                <HookField event="appStart" snapshot={snapshot} />
+                <HookField event="appQuit" snapshot={snapshot} />
+              </Section>
+              <Section title="Games">
+                <HookField event="gameStart" snapshot={snapshot} />
+                <HookField event="gameEnd" snapshot={snapshot} />
               </Section>
             </>
           )}

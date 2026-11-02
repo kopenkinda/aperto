@@ -9,6 +9,15 @@ export const metadataSites = {
   dlsite: "DLsite",
 } as const;
 export type MetadataSite = keyof typeof metadataSites;
+/** When a hook's commands run. */
+export const hookEvents = {
+  appStart: "Aperto opens",
+  appQuit: "Aperto quits",
+  gameStart: "A game starts",
+  gameEnd: "A game ends",
+} as const;
+export type HookEvent = keyof typeof hookEvents;
+const HookEventSchema = Schema.Literals(["appStart", "appQuit", "gameStart", "gameEnd"]);
 const SiteSchema = Schema.Literals(["steam", "gog", "itch", "f95", "dlsite"]);
 export const SteamInstallSchema = Schema.Struct({
   appId: Schema.String,
@@ -186,6 +195,15 @@ export const LibrarySchema = Schema.Struct({
   defaultBottle: Schema.optionalKey(Schema.NullOr(Schema.String)),
   /** Bundle ID of the terminal that opens game folders; unset picks one automatically. */
   terminal: Schema.optionalKey(Schema.NullOr(Schema.String)),
+  /** Shell commands run when Aperto opens or quits and when a game starts or ends. */
+  hooks: Schema.optionalKey(
+    Schema.Struct({
+      appStart: Schema.optionalKey(Schema.String),
+      appQuit: Schema.optionalKey(Schema.String),
+      gameStart: Schema.optionalKey(Schema.String),
+      gameEnd: Schema.optionalKey(Schema.String),
+    }),
+  ),
   /** When linked games were last checked for updates. */
   updatesCheckedAt: Schema.optionalKey(Schema.String),
   /** Tags removed from every game and never added again. Older libraries omit it. */
@@ -374,6 +392,12 @@ export const CommandSchema = Schema.Union([
   Schema.Struct({ action: Schema.Literal("clearGamesFolder") }),
   Schema.Struct({ action: Schema.Literal("scan") }),
   Schema.Struct({ action: Schema.Literal("setTerminal"), terminal: Schema.NullOr(Schema.String) }),
+  /** Sets the shell commands a hook runs; empty commands turn it off. */
+  Schema.Struct({
+    action: Schema.Literal("setHook"),
+    event: HookEventSchema,
+    script: Schema.String,
+  }),
   Schema.Struct({
     action: Schema.Literal("setDefaultBottle"),
     bottle: Schema.NullOr(Schema.String),

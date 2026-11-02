@@ -277,6 +277,7 @@ else {
         .then(() => library.scanGamesFolder())
         .catch((error) => console.error("Scan failed:", error));
       library.checkUpdatesIfStale();
+      library.appHook("appStart");
     }
     // A coding agent may change a game's settings in library.json; Aperto takes them up.
     if (!startupError) store.watch();
@@ -329,6 +330,12 @@ else {
         for (const download of library.runtimes.downloads.values()) download.controller.abort();
         setTimeout(() => app.quit(), 1000);
       });
+  });
+  let quitHookRan = false;
+  app.on("will-quit", () => {
+    if (quitHookRan || !library || startupError) return;
+    quitHookRan = true;
+    library.appHook("appQuit");
   });
   app.on("window-all-closed", () => {
     if (process.platform !== "darwin") app.quit();

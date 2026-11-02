@@ -40,6 +40,7 @@ import {
 } from "../src/model";
 import { downloadImage, readableImage } from "./artwork";
 import { crossoverRating } from "./crossover-rating";
+import { runHook } from "./hooks";
 import { extractExeIcon } from "./exe-icon";
 import { inspectRoot, nameManifest, readObject } from "./detection";
 import { detectGame, findGames, fingerprint, versionedName, versionsIn, within } from "./discovery";
@@ -600,6 +601,16 @@ export class DesktopLibrary {
       });
       return this.snapshot();
     }
+    if (command.action === "setHook") {
+      await this.store.update((state) => {
+        const { [command.event]: _, ...hooks } = state.hooks ?? {};
+        return {
+          ...state,
+          hooks: command.script.trim() ? { ...hooks, [command.event]: command.script } : hooks,
+        };
+      });
+      return this.snapshot();
+    }
     if (command.action === "setTerminal") {
       await this.store.update((state) => ({ ...state, terminal: command.terminal }));
       return this.snapshot();
@@ -899,9 +910,21 @@ export class DesktopLibrary {
           if (present) await rm(trash, { recursive: true, force: true });
           break;
         }
-        case "launch":
-          await this.launch(this.game(command.id), command.via);
+        case "launch": {
+          const game = this.game(command.id);
+          this.idle(game.id);
+          // The start hook finishes first, so it can set up the Mac before the game runs.
+          this.hookProblems.set(game.id, await this.runGameHook("gameStart", game));
+          try {
+            await this.launch(game, command.via);
+          } catch (error) {
+            void this.runGameHook("gameEnd", game);
+            throw error;
+          } finally {
+            this.hookProblems.delete(game.id);
+          }
           break;
+        }
         case "stop": {
           const running = this.running.get(command.id);
           if (running) {
@@ -1028,6 +1051,33 @@ export class DesktopLibrary {
   /** Legendary's config for Epic, kept apart from any other Legendary setup. */
   private get epicConfig() {
     return path.join(this.store.directory, "legendary");
+  }
+
+  /** Start hook problems for launches about to be recorded, by game. */
+  private hookProblems = new Map<string, string | null>();
+
+  /** Runs a hook for a game: the start hook waits to finish, the end hook runs on its own. */
+  private async runGameHook(event: "gameStart" | "gameEnd", game: Game) {
+    const problem = await runHook(
+      event,
+      this.store.value.hooks?.[event],
+      {
+        APERTO_GAME_ID: game.id,
+        APERTO_GAME_NAME: game.name,
+        APERTO_GAME_FOLDER: game.root,
+        APERTO_GAME_KIND: gameKind(game),
+      },
+      { wait: event === "gameStart" },
+    );
+    if (problem) console.error(problem);
+    return problem;
+  }
+
+  /** Runs the hook for Aperto opening or quitting, in the background. */
+  appHook(event: "appStart" | "appQuit") {
+    void runHook(event, this.store.value.hooks?.[event], {}).then(
+      (problem) => problem && console.error(problem),
+    );
   }
 
   /** CrossOver ratings looked up this session, by game name; failed lookups are tried again. */
@@ -2140,7 +2190,8 @@ export class DesktopLibrary {
           endedAt: null,
           outcome: "running" as const,
           detail: "",
-          log: "",
+          // A start hook's problem leads the launch's log.
+          log: this.hookProblems.get(game.id) ?? "",
         },
         ...state.launches,
       ].slice(0, 100),
@@ -2159,7 +2210,15 @@ export class DesktopLibrary {
       .update((state) => {
         const endedAt = new Date().toISOString();
         const launches = state.launches.map((launch) =>
-          launch.id === id ? { ...launch, endedAt, outcome, detail, log } : launch,
+          launch.id === id
+            ? {
+                ...launch,
+                endedAt,
+                outcome,
+                detail,
+                log: [launch.log, log].filter(Boolean).join("\n\n"),
+              }
+            : launch,
         );
         const finished = launches.find((launch) => launch.id === id);
         if (!finished) return { ...state, launches };
@@ -2176,6 +2235,11 @@ export class DesktopLibrary {
             : game,
         );
         return { ...state, launches, games };
+      })
+      .then(() => {
+        const gameId = this.store.value.launches.find((launch) => launch.id === id)?.gameId;
+        const game = this.store.value.games.find((item) => item.id === gameId);
+        if (game) void this.runGameHook("gameEnd", game);
       })
       .catch((error) => {
         console.error("Could not save launch result:", error);
