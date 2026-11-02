@@ -12,6 +12,7 @@ import {
   normalizeTags,
   sandboxable,
   steamApp,
+  updateAvailable,
   searchName,
   shownSites,
   sourceUrl,
@@ -102,6 +103,8 @@ export type NativeActions = {
   reveal: (file: string) => void;
   /** Moves a file or folder to the Trash. */
   trash: (file: string) => Promise<void>;
+  /** Shows a macOS notification, unless Aperto's window is in front, where it would be noise. */
+  notify: (title: string, body: string) => void;
   /** Opens a web page in the default browser. */
   openExternal: (url: string) => void;
   /**
@@ -865,6 +868,8 @@ export class DesktopLibrary {
     if (!this.store.value.adultContent) return Promise.resolve();
     this.updating ??= (async () => {
       const games = this.store.value.games.filter((game) => !game.removed);
+      // Versions already known to be newer, so only updates found by this check are announced.
+      const before = new Map(games.map((game) => [game.id, game.update?.latest]));
       for (const [index, game] of games.entries()) {
         this.updateProgress = { checked: index, total: games.length };
         this.changed();
@@ -891,6 +896,19 @@ export class DesktopLibrary {
         ...state,
         updatesCheckedAt: new Date().toISOString(),
       }));
+      const found = this.store.value.games.filter(
+        (game) =>
+          !game.removed && updateAvailable(game) && game.update?.latest !== before.get(game.id),
+      );
+      if (found.length)
+        this.native.notify(
+          found.length === 1
+            ? `${found[0]!.name} has an update`
+            : `${found.length} games have updates`,
+          found.length === 1
+            ? `Version ${found[0]!.update!.latest} is out.`
+            : found.map((game) => game.name).join(", "),
+        );
     })().finally(() => {
       this.updating = null;
       this.updateProgress = null;
@@ -1006,6 +1024,10 @@ export class DesktopLibrary {
     }
     if (signal.aborted) return;
     await this.scanGamesFolder(true);
+    this.native.notify(
+      `${game.title} is installed`,
+      "Steam finished installing it. It is in your library.",
+    );
   }
 
   /**
@@ -1110,6 +1132,10 @@ export class DesktopLibrary {
         );
       }
       const details = await metadataDetails(site, game.page).catch(() => null);
+      this.native.notify(
+        `${game.title} is ready`,
+        `Downloaded from ${metadataSites[site]} and added to your library.`,
+      );
       for (const item of found) {
         if (!item.banner && details?.banner)
           await this.setArtwork(item, "banner", null, details.banner).catch(() => {});
@@ -1122,7 +1148,12 @@ export class DesktopLibrary {
       }
     } catch (error) {
       // Stopped by the user, which needs no message.
-      if (!download.controller.signal.aborted) throw error;
+      if (download.controller.signal.aborted) return;
+      this.native.notify(
+        `${game.title} could not download`,
+        error instanceof Error ? error.message : String(error),
+      );
+      throw error;
     } finally {
       await rm(staging, { recursive: true, force: true });
       this.storeDownloads.delete(key);

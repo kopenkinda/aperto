@@ -8,6 +8,7 @@ import {
   ipcMain,
   nativeImage,
   net,
+  Notification,
   protocol,
   safeStorage,
   session,
@@ -160,6 +161,16 @@ else {
         },
         trash: (file) => shell.trashItem(file),
         openExternal: (url) => void shell.openExternal(url),
+        notify(title, body) {
+          if (!Notification.isSupported() || BrowserWindow.getFocusedWindow()) return;
+          const notification = new Notification({ title, body });
+          notification.on("click", () => {
+            const window = BrowserWindow.getAllWindows()[0] ?? createWindow();
+            if (window.isMinimized()) window.restore();
+            window.focus();
+          });
+          notification.show();
+        },
         signInWindow: (url, redirect, partition) =>
           new Promise((resolve) => {
             const parent = BrowserWindow.getAllWindows()[0];
