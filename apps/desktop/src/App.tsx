@@ -1,17 +1,23 @@
-import { Fragment, useEffect, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { SearchInput } from "@/components/SearchInput";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
+  AiProgrammingIcon,
   ArrowUpDownIcon,
   Cancel01Icon,
   CircleArrowUp01Icon,
+  ComputerTerminal01Icon,
+  Delete02Icon,
   Download04Icon,
   FilterHorizontalIcon,
   FolderAddIcon,
   FolderOpenIcon,
+  PlayIcon,
   PlusSignIcon,
   RefreshIcon,
   Settings02Icon,
+  StarIcon,
+  StopIcon,
   Tick02Icon,
 } from "@hugeicons/core-free-icons";
 import { ApertoMark } from "@/components/ApertoMark";
@@ -19,7 +25,17 @@ import { StoreLibrary } from "@/components/Stores";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { SiteLogo } from "@/components/logos";
+import { AgentLogo, SiteLogo } from "@/components/logos";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
@@ -42,6 +58,8 @@ import {
   metadataSites,
   storeSites,
   storeUser,
+  shownAgents,
+  steamApp,
   type StoreSite,
   tagCounts,
   updateAvailable,
@@ -70,6 +88,15 @@ export function App() {
   };
   const [store, setStore] = useState<StoreSite | null>(null);
   const [addOpen, setAddOpen] = useState(false);
+  // The game the sidebar's context menu is for. The ref is read while the menu decides to open.
+  const menuTarget = useRef<string | null>(null);
+  const [menuGame, setMenuGame] = useState<string | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  // A removal chosen in that menu, which the game's page confirms.
+  const [deleteRequest, setDeleteRequest] = useState<{
+    id: string;
+    mode: "remove" | "trash";
+  } | null>(null);
   const [dismissedScan, setDismissedScan] = useState<string | null>(null);
   const { run, busy, error, setError } = useTask();
 
@@ -140,6 +167,7 @@ export function App() {
   const scan = snapshot?.lastScan;
   const act = (command: Command) =>
     void run(async () => setSnapshot((await request(command)) as Snapshot));
+  const menuFor = games.find((item) => item.id === menuGame);
   const toggle = (item: Game) =>
     act({ action: snapshot?.running.includes(item.id) ? "stop" : "launch", id: item.id });
 
@@ -190,81 +218,111 @@ export function App() {
             </ul>
           )}
         </div>
-        <nav aria-label="Games" className="flex-1 overflow-y-auto px-2 pb-2">
-          {visible.map((item, index) => {
-            const running = snapshot?.running.includes(item.id);
-            const missing = snapshot?.missing.includes(item.id);
-            // Headings appear only when favorites and other games are both listed.
-            const heading =
-              item.favorite && index === 0 && visible.some((other) => !other.favorite)
-                ? "Favorites"
-                : !item.favorite && visible[index - 1]?.favorite
-                  ? "Games"
-                  : null;
-            return (
-              <Fragment key={item.id}>
-                {heading && (
-                  <h2 className="flex justify-between px-2 pt-2 pb-1 text-xs font-medium text-muted-foreground first:pt-0">
-                    {heading}
-                    <span className="font-normal tabular-nums">
-                      {visible.filter((other) => !other.favorite === !item.favorite).length}
-                    </span>
-                  </h2>
-                )}
-                <button
-                  aria-current={item.id === game?.id ? "true" : undefined}
-                  title={`${item.name}\nDouble-click to ${running ? "stop" : "play"}`}
-                  className={cn(
-                    "flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left text-sm outline-none select-none hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-ring/50 aria-current:bg-sidebar-accent aria-current:text-sidebar-accent-foreground",
-                    missing && "text-muted-foreground",
-                  )}
-                  onClick={() => setSelected(item.id)}
-                  onDoubleClick={() => (running || playable(item, snapshot!)) && toggle(item)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" && (running || playable(item, snapshot!))) {
-                      event.preventDefault();
-                      toggle(item);
-                    }
-                  }}
-                >
-                  <span className="relative size-6 shrink-0 overflow-hidden rounded bg-muted">
-                    {item.artwork ? (
-                      <img src={item.artwork} alt="" className="size-full object-cover" />
-                    ) : (
-                      <span className="grid size-full place-items-center text-[10px] font-semibold text-muted-foreground">
-                        {item.name.slice(0, 1).toUpperCase()}
+        <ContextMenu
+          open={menuOpen}
+          onOpenChange={(open) => setMenuOpen(open && menuTarget.current !== null)}
+        >
+          <ContextMenuTrigger
+            render={
+              <nav
+                aria-label="Games"
+                className="flex-1 overflow-y-auto px-2 pb-2"
+                // Rows set the game on the way back up; empty space opens no menu.
+                onContextMenuCapture={() => (menuTarget.current = null)}
+              />
+            }
+          >
+            {visible.map((item, index) => {
+              const running = snapshot?.running.includes(item.id);
+              const missing = snapshot?.missing.includes(item.id);
+              // Headings appear only when favorites and other games are both listed.
+              const heading =
+                item.favorite && index === 0 && visible.some((other) => !other.favorite)
+                  ? "Favorites"
+                  : !item.favorite && visible[index - 1]?.favorite
+                    ? "Games"
+                    : null;
+              return (
+                <Fragment key={item.id}>
+                  {heading && (
+                    <h2 className="flex justify-between px-2 pt-2 pb-1 text-xs font-medium text-muted-foreground first:pt-0">
+                      {heading}
+                      <span className="font-normal tabular-nums">
+                        {visible.filter((other) => !other.favorite === !item.favorite).length}
                       </span>
+                    </h2>
+                  )}
+                  <button
+                    aria-current={item.id === game?.id ? "true" : undefined}
+                    title={`${item.name}\nDouble-click to ${running ? "stop" : "play"}`}
+                    className={cn(
+                      "flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left text-sm outline-none select-none hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-ring/50 aria-current:bg-sidebar-accent aria-current:text-sidebar-accent-foreground",
+                      missing && "text-muted-foreground",
                     )}
-                  </span>
-                  <span className="min-w-0 flex-1 truncate">{item.name}</span>
-                  {updateAvailable(item) && (
-                    <HugeiconsIcon
-                      icon={CircleArrowUp01Icon}
-                      className="size-3.5 shrink-0 text-blue-500"
-                      aria-label={`Update available: ${item.update!.latest}`}
-                    />
-                  )}
-                  {running && (
-                    <span
-                      className="size-2 shrink-0 rounded-full bg-emerald-500"
-                      aria-label="Running"
-                    />
-                  )}
-                </button>
-              </Fragment>
-            );
-          })}
-          {games.length > 0 && !visible.length && (
-            <div className="flex flex-col items-center gap-2 px-2 py-6 text-sm text-muted-foreground">
-              No matches
-              {filtering && (
-                <Button variant="outline" size="xs" onClick={() => setFilters(noFilters)}>
-                  Clear filters
-                </Button>
-              )}
-            </div>
+                    onClick={() => setSelected(item.id)}
+                    onContextMenu={() => {
+                      menuTarget.current = item.id;
+                      setMenuGame(item.id);
+                    }}
+                    onDoubleClick={() => (running || playable(item, snapshot!)) && toggle(item)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" && (running || playable(item, snapshot!))) {
+                        event.preventDefault();
+                        toggle(item);
+                      }
+                    }}
+                  >
+                    <span className="relative size-6 shrink-0 overflow-hidden rounded bg-muted">
+                      {item.artwork ? (
+                        <img src={item.artwork} alt="" className="size-full object-cover" />
+                      ) : (
+                        <span className="grid size-full place-items-center text-[10px] font-semibold text-muted-foreground">
+                          {item.name.slice(0, 1).toUpperCase()}
+                        </span>
+                      )}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate">{item.name}</span>
+                    {updateAvailable(item) && (
+                      <HugeiconsIcon
+                        icon={CircleArrowUp01Icon}
+                        className="size-3.5 shrink-0 text-blue-500"
+                        aria-label={`Update available: ${item.update!.latest}`}
+                      />
+                    )}
+                    {running && (
+                      <span
+                        className="size-2 shrink-0 rounded-full bg-emerald-500"
+                        aria-label="Running"
+                      />
+                    )}
+                  </button>
+                </Fragment>
+              );
+            })}
+            {games.length > 0 && !visible.length && (
+              <div className="flex flex-col items-center gap-2 px-2 py-6 text-sm text-muted-foreground">
+                No matches
+                {filtering && (
+                  <Button variant="outline" size="xs" onClick={() => setFilters(noFilters)}>
+                    Clear filters
+                  </Button>
+                )}
+              </div>
+            )}
+          </ContextMenuTrigger>
+          {snapshot && menuFor && (
+            <GameMenu
+              game={menuFor}
+              snapshot={snapshot}
+              act={act}
+              onToggle={() => toggle(menuFor)}
+              onDelete={(mode) => {
+                setSelected(menuFor.id);
+                setDeleteRequest({ id: menuFor.id, mode });
+              }}
+            />
           )}
-        </nav>
+        </ContextMenu>
         <footer className="flex items-center gap-1 border-t px-2 py-2">
           <span className="flex items-center gap-2 px-1 text-xs text-muted-foreground">
             <ApertoMark className="size-4" />
@@ -402,6 +460,8 @@ export function App() {
             game={game}
             snapshot={snapshot}
             onSettings={() => openSettings("runtimes")}
+            deleteRequest={deleteRequest?.id === game.id ? deleteRequest.mode : null}
+            onDeleteRequest={() => setDeleteRequest(null)}
             onTag={(tag) => {
               setSearch("");
               setFilters({ ...noFilters, tags: [tag] });
@@ -461,6 +521,87 @@ export function App() {
         />
       )}
     </div>
+  );
+}
+
+/** The sidebar's right-click menu for one game. */
+function GameMenu({
+  game,
+  snapshot,
+  act,
+  onToggle,
+  onDelete,
+}: {
+  game: Game;
+  snapshot: Snapshot;
+  act: (command: Command) => void;
+  onToggle: () => void;
+  onDelete: (mode: "remove" | "trash") => void;
+}) {
+  const running = snapshot.running.includes(game.id);
+  const agents = shownAgents(snapshot);
+  const steam = steamApp(game) !== null;
+  return (
+    <ContextMenuContent className="w-56">
+      <ContextMenuItem disabled={!running && !playable(game, snapshot)} onClick={onToggle}>
+        <HugeiconsIcon icon={running ? StopIcon : PlayIcon} />
+        {running ? "Stop" : steam ? "Play via Steam" : "Play"}
+      </ContextMenuItem>
+      {steam && !running && (
+        <ContextMenuItem
+          disabled={!playable(game, snapshot)}
+          onClick={() => act({ action: "launch", id: game.id, via: "aperto" })}
+        >
+          <ApertoMark className="size-4" />
+          Play via Aperto
+        </ContextMenuItem>
+      )}
+      <ContextMenuSeparator />
+      <ContextMenuItem
+        onClick={() => act({ action: "setFavorite", id: game.id, favorite: !game.favorite })}
+      >
+        <HugeiconsIcon icon={StarIcon} />
+        {game.favorite ? "Remove from Favorites" : "Add to Favorites"}
+      </ContextMenuItem>
+      <ContextMenuItem onClick={() => act({ action: "reveal", id: game.id })}>
+        <HugeiconsIcon icon={FolderOpenIcon} />
+        Show in Finder
+      </ContextMenuItem>
+      {snapshot.terminals.length > 0 && (
+        <ContextMenuItem onClick={() => act({ action: "openTerminal", id: game.id })}>
+          <HugeiconsIcon icon={ComputerTerminal01Icon} />
+          Open in Terminal
+        </ContextMenuItem>
+      )}
+      {agents.length > 0 && (
+        <ContextMenuSub>
+          <ContextMenuSubTrigger>
+            <HugeiconsIcon icon={AiProgrammingIcon} />
+            Open coding agent
+          </ContextMenuSubTrigger>
+          <ContextMenuSubContent>
+            {agents.map((agent) => (
+              <ContextMenuItem
+                key={agent.id}
+                onClick={() => act({ action: "openAgent", id: game.id, agent: agent.id })}
+              >
+                <AgentLogo id={agent.id} />
+                {agent.name}
+              </ContextMenuItem>
+            ))}
+          </ContextMenuSubContent>
+        </ContextMenuSub>
+      )}
+      <ContextMenuSeparator />
+      <ContextMenuItem disabled={running} onClick={() => onDelete("remove")}>
+        <HugeiconsIcon icon={Cancel01Icon} />
+        Remove from Library…
+      </ContextMenuItem>
+      <ContextMenuItem variant="destructive" disabled={running} onClick={() => onDelete("trash")}>
+        <HugeiconsIcon icon={Delete02Icon} />
+        {steam ? "Uninstall in Steam…" : "Delete from Disk…"}
+      </ContextMenuItem>
+    </ContextMenuContent>
   );
 }
 

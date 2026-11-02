@@ -228,12 +228,18 @@ export function GamePage({
   snapshot,
   onSettings,
   onTag,
+  deleteRequest,
+  onDeleteRequest,
 }: {
   game: Game;
   snapshot: Snapshot;
   onSettings: () => void;
   /** Shows the library's games with this tag. */
   onTag: (tag: string) => void;
+  /** A removal asked for elsewhere, such as the sidebar's menu, which this page confirms. */
+  deleteRequest?: "remove" | "trash" | null;
+  /** Called once the page has taken up `deleteRequest`. */
+  onDeleteRequest?: () => void;
 }) {
   const kind = gameKind(game);
   const windows = kind === "windows";
@@ -286,6 +292,12 @@ export function GamePage({
   // The folder a Shift-click removal moves to the Trash, shown in the dialog before it happens.
   const [trashFolder, setTrashFolder] = useState<string | null>(null);
   const [deleteData, setDeleteData] = useState(false);
+  useEffect(() => {
+    if (!deleteRequest) return;
+    if (deleteRequest === "remove") setConfirm("remove");
+    else trash();
+    onDeleteRequest?.();
+  }, [deleteRequest]);
   const [artworkSlot, setArtworkSlot] = useState<"icon" | "banner" | null>(null);
   const [artworkUrl, setArtworkUrl] = useState("");
   const { run, busy, error, setError } = useTask();
