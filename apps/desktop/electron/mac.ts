@@ -1,14 +1,14 @@
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { readdir, realpath, stat } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { readdir, readFile, realpath, stat } from "node:fs/promises";
+import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { Schema } from "effect";
 import type { Candidate } from "../src/model";
 import { meaningfulName } from "./detection";
 import { applicationFolders, exists } from "./storage";
-import { readableName } from "./windows";
+import { readableName, steamApps, steamValues } from "./windows";
 
 const execute = promisify(execFile);
 const InfoSchema = Schema.Record(Schema.String, Schema.Unknown);
@@ -129,4 +129,45 @@ async function gameInfo(app: string) {
     isString(category) && /^public\.app-category\.(?:[a-z-]+-)?games$/.test(category) ? info : null;
   categories.set(app, { modified, info: game });
   return game;
+}
+
+/** Where the Mac Steam client keeps its data and its first library. */
+export const macSteamDirectory = path.join(homedir(), "Library", "Application Support", "Steam");
+
+const letters = (text: string) => text.toLowerCase().replace(/[^a-z0-9]+/g, "");
+
+/**
+ * Mac games installed with the Mac Steam client, in any of its libraries. Each install's app is
+ * found at the top of its folder or one folder down; when there are several, the one named like
+ * the game wins. They open as Mac apps and link to their Steam pages.
+ */
+export async function macSteamGames(steam = macSteamDirectory): Promise<Candidate[]> {
+  const folders = await readFile(path.join(steam, "steamapps", "libraryfolders.vdf"), "utf8").catch(
+    () => "",
+  );
+  const libraries = new Set([steam, ...(steamValues(folders).get("path") ?? [])]);
+  const games: Candidate[] = [];
+  for (const app of await steamApps(libraries)) {
+    const bundles: string[] = [];
+    for (const entry of await readdir(app.folder, { withFileTypes: true }).catch(() => [])) {
+      const location = path.join(app.folder, entry.name);
+      if (/\.app$/i.test(entry.name)) bundles.push(location);
+      else if (entry.isDirectory())
+        for (const inner of await readdir(location).catch(() => [] as string[]))
+          if (/\.app$/i.test(inner)) bundles.push(path.join(location, inner));
+    }
+    bundles.sort(
+      (a, b) =>
+        Number(letters(path.basename(b, ".app")) === letters(app.name)) -
+          Number(letters(path.basename(a, ".app")) === letters(app.name)) ||
+        a.split("/").length - b.split("/").length,
+    );
+    for (const bundle of bundles) {
+      const game = await inspectMacApp(bundle).catch(() => null);
+      if (!game) continue;
+      games.push({ ...game, name: app.name, steamAppId: app.appId });
+      break;
+    }
+  }
+  return games;
 }

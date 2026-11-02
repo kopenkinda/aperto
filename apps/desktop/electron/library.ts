@@ -73,8 +73,8 @@ export type NativeActions = {
   /** Secrets such as the itch.io API key, kept encrypted with the Keychain. Null removes one. */
   secret: (name: string, value?: string | null) => Promise<string | null>;
   /**
-   * Games installed outside the games folder: game apps in the Applications folders and games
-   * installed with Steam inside CrossOver bottles.
+   * Games installed outside the games folder: game apps in the Applications folders, Mac games
+   * installed with Steam, and games installed with Steam inside CrossOver bottles.
    */
   installedGames: () => Promise<Candidate[]>;
 };
@@ -956,7 +956,7 @@ export class DesktopLibrary {
     { restoreRemoved, requested }: { restoreRemoved: boolean; requested: boolean },
   ): Promise<ScanReport> {
     const { games: found, problems } = await findGames(folder);
-    // Games installed with Steam inside CrossOver bottles, wherever the games folder is.
+    // Apps and Steam installs, on the Mac and in CrossOver bottles, wherever the games folder is.
     found.push(...(await this.native.installedGames().catch(() => [])));
     // Candidates carry resolved paths, so the folder is compared resolved too.
     const scanRoot = await realpath(folder).catch(() => folder);
@@ -992,7 +992,7 @@ export class DesktopLibrary {
       // Games installed outside the games folder, by Steam or as apps, have their own names; their
       // folders carry no versions.
       const name =
-        candidate.steam || !within(candidate.folder, scanRoot)
+        candidate.steam || candidate.steamAppId || !within(candidate.folder, scanRoot)
           ? candidate.name
           : versionedName(
               candidate.name || path.basename(candidate.folder),
@@ -1016,7 +1016,9 @@ export class DesktopLibrary {
               bottle: candidate.steam.bottle,
               links: { steam: { id: candidate.steam.appId, title: candidate.name } },
             }
-          : {}),
+          : candidate.steamAppId
+            ? { links: { steam: { id: candidate.steamAppId, title: candidate.name } } }
+            : {}),
         flags: [],
         addedAt: new Date().toISOString(),
         lastPlayed: null,

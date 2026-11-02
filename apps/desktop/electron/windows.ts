@@ -274,6 +274,34 @@ async function bottlePath(bottle: string, windowsPath: string) {
 }
 
 /**
+ * The games fully installed in Steam libraries, read from their app manifests, with their folders
+ * resolved. Steam's runtimes and redistributables are left out.
+ */
+export async function steamApps(libraries: Iterable<string>) {
+  const apps: { appId: string; name: string; installdir: string; folder: string }[] = [];
+  for (const library of libraries) {
+    const steamapps = path.join(library, "steamapps");
+    const manifests = (await readdir(steamapps).catch(() => [] as string[])).filter((name) =>
+      /^appmanifest_\d+\.acf$/.test(name),
+    );
+    for (const manifest of manifests) {
+      const values = steamValues(
+        await readFile(path.join(steamapps, manifest), "utf8").catch(() => ""),
+      );
+      const appId = values.get("appid")?.[0];
+      const name = values.get("name")?.[0];
+      const installdir = values.get("installdir")?.[0];
+      // Flag 4 means fully installed; others mean downloading or uninstalled.
+      const installed = (Number(values.get("stateflags")?.[0]) & 4) !== 0;
+      if (!appId || !name || !installdir || !installed || steamTools.test(name)) continue;
+      const folder = await realpath(path.join(steamapps, "common", installdir)).catch(() => null);
+      if (folder) apps.push({ appId, name, installdir, folder });
+    }
+  }
+  return apps;
+}
+
+/**
  * Games installed with Steam inside CrossOver bottles, read from each library's app manifests.
  * They launch through that bottle's Steam, so DRM and updates keep working.
  */
@@ -293,37 +321,23 @@ export async function bottleSteamGames(): Promise<Candidate[]> {
         const library = await bottlePath(bottle, location);
         if (library) libraries.add(library);
       }
-      for (const library of libraries) {
-        const steamapps = path.join(library, "steamapps");
-        const manifests = (await readdir(steamapps).catch(() => [] as string[])).filter((name) =>
-          /^appmanifest_\d+\.acf$/.test(name),
-        );
-        for (const manifest of manifests) {
-          const values = steamValues(
-            await readFile(path.join(steamapps, manifest), "utf8").catch(() => ""),
-          );
-          const appId = values.get("appid")?.[0];
-          const name = values.get("name")?.[0];
-          const installdir = values.get("installdir")?.[0];
-          // Flag 4 means fully installed; others mean downloading or uninstalled.
-          const installed = (Number(values.get("stateflags")?.[0]) & 4) !== 0;
-          if (!appId || !name || !installdir || !installed || steamTools.test(name)) continue;
-          const folder = await realpath(path.join(steamapps, "common", installdir)).catch(
-            () => null,
-          );
-          if (!folder) continue;
-          const executable = await mainExecutable(folder, name);
-          games.push({
-            kind: "windows",
-            folder,
-            root: folder,
-            executable,
-            name,
-            confirmed: true,
-            artwork: executable,
-            steam: { appId, bottle, installdir, client: path.join(client, "steam.exe") },
-          });
-        }
+      for (const app of await steamApps(libraries)) {
+        const executable = await mainExecutable(app.folder, app.name);
+        games.push({
+          kind: "windows",
+          folder: app.folder,
+          root: app.folder,
+          executable,
+          name: app.name,
+          confirmed: true,
+          artwork: executable,
+          steam: {
+            appId: app.appId,
+            bottle,
+            installdir: app.installdir,
+            client: path.join(client, "steam.exe"),
+          },
+        });
       }
     }
   }

@@ -16,7 +16,7 @@ import { Effect, Schema } from "effect";
 import { CommandSchema } from "../src/model";
 import { DesktopLibrary } from "./library";
 import { exists, imageScheme, LibraryStore, message } from "./storage";
-import { applicationGames } from "./mac";
+import { applicationGames, macSteamGames } from "./mac";
 import { bottleSteamGames, crossoverWine } from "./windows";
 
 app.setName("Aperto");
@@ -155,6 +155,7 @@ else {
           (
             await Promise.all([
               applicationGames(),
+              macSteamGames(),
               exists(crossoverWine).then((crossover) => (crossover ? bottleSteamGames() : [])),
             ])
           ).flat(),

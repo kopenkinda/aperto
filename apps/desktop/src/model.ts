@@ -211,6 +211,8 @@ export type Candidate = {
   confirmed: boolean;
   artwork: string | null;
   steam?: typeof SteamInstallSchema.Type;
+  /** The Steam app of a Mac game the Mac Steam client installed, which the game is linked to. */
+  steamAppId?: string;
 };
 export type ScanReport = {
   folder: string;
