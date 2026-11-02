@@ -8,28 +8,17 @@ import { fetchPinned, installOnce } from "./downloads";
 const execute = promisify(execFile);
 
 /**
- * Epic's public launcher client, which Legendary and Heroic sign in with. Its redirect page shows
- * a one-time code that Legendary trades for a session.
+ * Epic's login as its launcher sees it, which Legendary and Heroic sign in with. Signed in, it
+ * sends the browser to `epicRedirect` with a one-time code that Legendary trades for a session.
+ * Epic only gives that code to a browser that says it is the launcher.
  */
-const epicCodeUrl =
-  "https://www.epicgames.com/id/api/redirect?clientId=34a02cf8f4414e29b15921876da36f9a&responseType=code";
-export const epicLoginUrl = `https://www.epicgames.com/id/login?redirectUrl=${encodeURIComponent(epicCodeUrl)}`;
+export const epicLoginUrl = "https://www.epicgames.com/id/login?responseType=code";
+export const epicRedirect = "https://localhost/launcher/authorized";
+export const epicUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) EpicGamesLauncher";
 export const epicSession = "persist:epic";
-/** Signs the kept session out of Epic and back to the login page, for a session that gives no code. */
-export const epicSignOutUrl = `https://www.epicgames.com/id/logout?redirectUrl=${encodeURIComponent(epicLoginUrl)}`;
 
-/**
- * The one-time code on the redirect page. Epic shows `null` there for a session it remembers but
- * has not fully signed in, which needs signing in again.
- */
-export function epicCode(page: string) {
-  try {
-    const code = (JSON.parse(page) as { authorizationCode?: unknown }).authorizationCode;
-    return typeof code === "string" && code ? code : null;
-  } catch {
-    return null;
-  }
-}
+/** The one-time code in the address Epic redirects to once signed in. */
+export const epicCode = (address: string) => new URL(address).searchParams.get("code");
 
 // Legendary's own macOS builds, pinned to their SHA-256 hashes.
 export const legendaryVersion = "0.21.1";

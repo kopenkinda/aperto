@@ -84,15 +84,8 @@ describe("Epic", () => {
 });
 
 describe("Epic sign-in code", () => {
-  it("reads the code from the redirect page and nothing from a half-signed-in one", () => {
-    const page = (code: string | null) =>
-      JSON.stringify({
-        redirectUrl: "https://localhost/launcher/authorized",
-        authorizationCode: code,
-        sid: null,
-      });
-    expect(epicCode(page("abc123"))).toBe("abc123");
-    expect(epicCode(page(null))).toBeNull();
-    expect(epicCode("<html>Sign in</html>")).toBeNull();
+  it("reads the code from the address Epic redirects to", () => {
+    expect(epicCode("https://localhost/launcher/authorized?code=abc123")).toBe("abc123");
+    expect(epicCode("https://localhost/launcher/authorized")).toBeNull();
   });
 });

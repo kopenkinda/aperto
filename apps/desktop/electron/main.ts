@@ -171,7 +171,7 @@ else {
           });
           notification.show();
         },
-        signInWindow: ({ url, redirect, partition, signedIn, read, retry }) =>
+        signInWindow: ({ url, redirect, partition, signedIn, userAgent }) =>
           new Promise((resolve) => {
             const parent = BrowserWindow.getAllWindows()[0];
             // A child window rather than a sheet, which on macOS has no close button: the store's
@@ -194,27 +194,10 @@ else {
               window.close();
             };
             const check = (event: { preventDefault: () => void }, address: string) => {
-              if (done || read || !redirect || !address.startsWith(redirect)) return;
+              if (done || !redirect || !address.startsWith(redirect)) return;
               event.preventDefault();
               finish(address);
             };
-            // Pages that hold the result load, so the window reads what the user would see.
-            let retried = false;
-            window.webContents.on("did-finish-load", async () => {
-              const address = window.webContents.getURL();
-              if (done || !read || !redirect || !address.startsWith(redirect)) return;
-              const page = await window.webContents
-                .executeJavaScript("document.body.innerText")
-                .catch(() => "");
-              if (done) return;
-              const result = read(String(page));
-              if (result) return finish(result);
-              if (retry && !retried) {
-                retried = true;
-                return void window.loadURL(retry);
-              }
-              finish("");
-            });
             // Stores that land somewhere unpredictable are asked whether the session signed in.
             const poll = setInterval(() => {
               if (done || !signedIn) return;
@@ -237,6 +220,7 @@ else {
               clearInterval(poll);
               if (!done) resolve(null);
             });
+            if (userAgent) window.webContents.setUserAgent(userAgent);
             void window.loadURL(url);
           }),
         async sessionFetch(partition, url) {
