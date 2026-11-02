@@ -158,12 +158,22 @@ export const LibrarySchema = Schema.Struct({
   updatesCheckedAt: Schema.optionalKey(Schema.String),
   /** Tags removed from every game and never added again. Older libraries omit it. */
   blockedTags: Schema.optionalKey(Schema.Array(Schema.String)),
+  /**
+   * The sites whose links show on game pages, and which finding tags for every game searches.
+   * Unset shows only Steam; an empty list hides links.
+   */
+  linkSites: Schema.optionalKey(Schema.Array(SiteSchema)),
   /** The itch.io account signed in with an API key, which is kept in the Keychain. */
   itchUser: Schema.optionalKey(Schema.Struct({ id: Schema.String, name: Schema.String })),
   /** Colors chosen for tags, by tag. Older libraries omit it. */
   tagColors: Schema.optionalKey(Schema.Record(Schema.String, Schema.Literals(tagColorNames))),
 });
 export type Library = typeof LibrarySchema.Type;
+/** The sites shown on game pages, in a fixed order whatever order they were chosen in. */
+export const shownSites = (library: Pick<Library, "linkSites">) =>
+  (Object.keys(metadataSites) as MetadataSite[]).filter((site) =>
+    (library.linkSites ?? ["steam"]).includes(site),
+  );
 export type Snapshot = Library & {
   missing: string[];
   running: string[];
@@ -351,6 +361,7 @@ export const CommandSchema = Schema.Union([
     site: SiteSchema,
   }),
   /** Signs in to itch.io with an API key from the account's API keys page. */
+  Schema.Struct({ action: Schema.Literal("setLinkSites"), sites: Schema.Array(SiteSchema) }),
   Schema.Struct({ action: Schema.Literal("itchSignIn"), key: Schema.String }),
   Schema.Struct({ action: Schema.Literal("itchSignOut") }),
   /** Opens itch.io's API keys page, where the user makes the key to sign in with. */

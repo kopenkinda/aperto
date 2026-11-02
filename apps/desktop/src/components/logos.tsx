@@ -1,5 +1,5 @@
 import { HugeiconsIcon } from "@hugeicons/react";
-import { AiProgrammingIcon, Link01Icon } from "@hugeicons/core-free-icons";
+import { AiProgrammingIcon } from "@hugeicons/core-free-icons";
 import { cn } from "@/lib/utils";
 import type { MetadataSite } from "../model";
 import claude from "@/assets/logos/claude.svg";
@@ -10,9 +10,11 @@ import gemini from "@/assets/logos/gemini.svg";
 import opencode from "@/assets/logos/opencode.svg";
 import pi from "@/assets/logos/pi.svg";
 import qwen from "@/assets/logos/qwen.svg";
-import steam from "@/assets/logos/steam.svg";
+import f95Favicon from "@/assets/favicons/f95.png";
+import itchFavicon from "@/assets/favicons/itch.png";
+import steamFavicon from "@/assets/favicons/steam.png";
 
-// Logos from svgl.app, in their dark-theme versions, since Aperto is always dark.
+// Agent logos from svgl.app, in their dark-theme versions, since Aperto is always dark.
 const agents: Record<string, string> = {
   claude,
   codex,
@@ -23,7 +25,12 @@ const agents: Record<string, string> = {
   pi,
   qwen,
 };
-const sites: Partial<Record<MetadataSite, string>> = { steam };
+// Each store's own favicon.
+const favicons: Record<MetadataSite, string> = {
+  f95: f95Favicon,
+  steam: steamFavicon,
+  itch: itchFavicon,
+};
 
 /** A coding agent's logo; agents svgl has no logo for get a generic one. */
 export function AgentLogo({ id, className }: { id: string; className?: string }) {
@@ -35,12 +42,25 @@ export function AgentLogo({ id, className }: { id: string; className?: string })
   );
 }
 
-/** A store's logo; sites svgl has no logo for, F95zone and itch.io, get a link icon. */
-export function SiteLogo({ site, className }: { site: MetadataSite; className?: string }) {
-  const logo = sites[site];
-  return logo ? (
-    <img src={logo} alt="" className={cn("size-3 shrink-0 object-contain", className)} />
-  ) : (
-    <HugeiconsIcon icon={Link01Icon} className={cn("size-3 shrink-0", className)} />
+/** A store's favicon, in color when the game is linked there and grayed out when not. */
+export function SiteLogo({
+  site,
+  linked = true,
+  className,
+}: {
+  site: MetadataSite;
+  linked?: boolean;
+  className?: string;
+}) {
+  return (
+    <img
+      src={favicons[site]}
+      alt=""
+      className={cn(
+        "size-3.5 shrink-0 rounded-[3px] object-contain transition",
+        !linked && "opacity-50 grayscale",
+        className,
+      )}
+    />
   );
 }

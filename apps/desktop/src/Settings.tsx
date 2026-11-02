@@ -27,14 +27,19 @@ import { Spinner } from "@/components/ui/spinner";
 import {
   compareVersions,
   formatSize,
+  metadataSites,
+  shownSites,
   updateAvailable,
   type Component,
+  type MetadataSite,
   type Release,
   type Snapshot,
 } from "./model";
 import { request, useTask } from "./desktop";
 import { Field, Section } from "@/components/settings";
 import { ItchAccount, ItchLibrary } from "@/components/Itch";
+import { SiteLogo } from "@/components/logos";
+import { Checkbox } from "@/components/ui/checkbox";
 import { TagManager } from "@/components/TagManager";
 
 const relative = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
@@ -111,6 +116,7 @@ export function Settings({
   const installed = [...snapshot.runtimes].sort((a, b) => compareVersions(b.version, a.version));
   const [checking, setChecking] = useState(false);
   const [itchOpen, setItchOpen] = useState(false);
+  const linkSites = shownSites(snapshot);
   const linked = snapshot.games.filter((game) => game.update).length;
   const outdated = snapshot.games.filter(updateAvailable);
 
@@ -189,6 +195,32 @@ export function Settings({
                 <HugeiconsIcon icon={FolderOpenIcon} />
                 {snapshot.gamesFolder ? "Change" : "Choose"}
               </Button>
+            </div>
+          </Field>
+          <Field
+            label="Links"
+            hint="Shown on each game's page, where linking a game adds its tags and banner. Finding tags for every game searches only these sites. Untick all to hide links."
+          >
+            <div className="flex min-h-8 flex-wrap items-center gap-4">
+              {(Object.keys(metadataSites) as MetadataSite[]).map((site) => (
+                <label key={site} className="flex items-center gap-2">
+                  <Checkbox
+                    checked={linkSites.includes(site)}
+                    onCheckedChange={(on) =>
+                      void run(() =>
+                        request({
+                          action: "setLinkSites",
+                          sites: on
+                            ? [...linkSites, site]
+                            : linkSites.filter((item) => item !== site),
+                        }),
+                      )
+                    }
+                  />
+                  <SiteLogo site={site} />
+                  {metadataSites[site]}
+                </label>
+              ))}
             </div>
           </Field>
         </Section>

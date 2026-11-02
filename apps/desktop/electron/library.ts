@@ -12,6 +12,7 @@ import {
   normalizeTags,
   sandboxable,
   searchName,
+  shownSites,
   sourceUrl,
   titleMatches,
   type Agent,
@@ -233,6 +234,14 @@ export class DesktopLibrary {
       const link = this.game(command.id).links?.[command.site];
       if (!link) throw new Error(`This game is not linked to ${metadataSites[command.site]}.`);
       this.native.openExternal(sourceUrl(command.site, link.id));
+      return this.snapshot();
+    }
+    if (command.action === "setLinkSites") {
+      const sites = command.sites;
+      await this.store.update((state) => ({
+        ...state,
+        linkSites: shownSites({ linkSites: sites }),
+      }));
       return this.snapshot();
     }
     if (command.action === "itchSignIn") {
@@ -828,8 +837,8 @@ export class DesktopLibrary {
   private autoTagging: Promise<AutoTagReport> | null = null;
 
   /**
-   * Tags each unlinked game from F95zone, or else Steam, or else itch.io, when a title there names
-   * it exactly, and links it to that page. Linked games without tags get those of their page in
+   * Tags each unlinked game from F95zone, or else Steam, or else itch.io, among the sites shown on
+   * game pages, when a title there names it exactly, and links it to that page. Linked games without tags get those of their page in
    * the same order, and
    * games without a banner get the store's. Games without such a match are left for the user to
    * match on their page. Requests go one at a time, so the sites are not flooded.
@@ -870,7 +879,13 @@ export class DesktopLibrary {
             report.banners.push(game.name);
           continue;
         }
-        const matches = await searchMetadata(searchName(game.name)).catch(() => []);
+        const shown = shownSites(this.store.value);
+        if (!shown.length) continue;
+        const matches = (
+          await Promise.all(
+            shown.map((site) => searchMetadata(searchName(game.name), site).catch(() => [])),
+          )
+        ).flat();
         const match = matches.find((item) => titleMatches(game.name, item.title));
         const details = match
           ? await metadataDetails(match.site, match.id).catch(() => null)

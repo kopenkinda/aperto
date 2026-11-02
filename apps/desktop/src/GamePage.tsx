@@ -64,6 +64,7 @@ import {
   launchOptions,
   updateAvailable,
   sandboxable,
+  shownSites,
   playCount,
   playtime,
   tagCounts,
@@ -234,6 +235,7 @@ export function GamePage({
   const terminal =
     snapshot.terminals.find((item) => item.id === snapshot.terminal) ?? snapshot.terminals[0];
   const knownTags = tagCounts(snapshot.games).map(([tag]) => tag);
+  const linkSites = shownSites(snapshot);
   const renamed = name.trim() !== game.name;
 
   useEffect(() => {
@@ -536,17 +538,14 @@ export function GamePage({
           </div>
 
           <section className="flex flex-col gap-3">
-            <div className="flex items-center justify-between gap-3">
-              <h2 className="flex items-baseline gap-3 font-medium">
-                Settings
-                {running && (
-                  <span className="text-xs font-normal text-muted-foreground">
-                    Close the game to change how it launches.
-                  </span>
-                )}
-              </h2>
-              <GameLinks game={game} blocked={snapshot.blockedTags ?? []} run={run} />
-            </div>
+            <h2 className="flex items-baseline justify-between font-medium">
+              Settings
+              {running && (
+                <span className="text-xs font-normal text-muted-foreground">
+                  Close the game to change how it launches.
+                </span>
+              )}
+            </h2>
             <SettingsCard>
               <Field label="Name" htmlFor="game-name">
                 <form
@@ -798,7 +797,18 @@ export function GamePage({
         </div>
 
         <aside className="flex flex-col gap-3">
-          <h2 className="flex items-baseline justify-between font-medium">
+          {linkSites.length > 0 && (
+            <>
+              <h2 className="font-medium">Links</h2>
+              <GameLinks
+                game={game}
+                sites={linkSites}
+                blocked={snapshot.blockedTags ?? []}
+                run={run}
+              />
+            </>
+          )}
+          <h2 className="mt-3 flex items-baseline justify-between font-medium first:mt-0">
             Activity
             {launches.length > 10 && (
               <span className="text-xs font-normal text-muted-foreground">Latest 10</span>
