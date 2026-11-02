@@ -208,6 +208,35 @@ describe("games folder discovery", () => {
     const listed = (await library.snapshot()).games.map((game) => game.name);
     expect(listed).toEqual(["Ember Hall"]);
     expect((await library.scanGamesFolder())!.removed).toEqual([]);
+    // Downloaded again into the same place, it comes back as a new game.
+    await writeGame(path.join(shelf, "Moon Road"), { gameTitle: "Moon Road" });
+    expect((await library.scanGamesFolder())!.added).toHaveLength(1);
+    expect((await library.snapshot()).games.map((game) => game.name).sort()).toEqual([
+      "Ember Hall",
+      "Moon Road",
+    ]);
+  });
+  it("cleans up on start: forgets games deleted meanwhile and their leftover data", async () => {
+    const shelf = path.join(directory, "shelf");
+    await writeGame(path.join(shelf, "Moon Road"), { gameTitle: "Moon Road" });
+    await store.update((state) => ({ ...state, gamesFolder: shelf }));
+    await library.scanGamesFolder();
+    const moon = store.value.games[0]!;
+    const orphan = ownedPath(
+      store.directory,
+      "browser-data",
+      "00000000-0000-4000-8000-000000000000",
+    );
+    const kept = ownedPath(store.directory, "browser-data", moon.id);
+    await mkdir(orphan, { recursive: true });
+    await mkdir(kept, { recursive: true });
+    await library.cleanUp();
+    expect(await exists(orphan)).toBe(false);
+    expect(await exists(kept)).toBe(true);
+    await rm(path.join(shelf, "Moon Road"), { recursive: true });
+    await library.cleanUp();
+    expect(store.value.games).toEqual([]);
+    expect(await exists(kept)).toBe(false);
   });
   it("adds each game once, ignores copies, and keeps separate versions", async () => {
     const shelf = path.join(directory, "shelf");
@@ -387,7 +416,8 @@ describe("Windows games", () => {
       trashFolder: true,
     });
     expect(trashed).toEqual([path.join(shelf, "Ash")]);
-    expect(named("Ash").removed).toBe(true);
+    // Forgotten, so the game downloaded again is added as new rather than hidden as removed.
+    expect(store.value.games.some((game) => game.name.startsWith("Ash"))).toBe(false);
 
     // A game sitting directly in the games folder would take every other game with it.
     const ember = named("Ember");

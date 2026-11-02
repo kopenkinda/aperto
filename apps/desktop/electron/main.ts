@@ -211,7 +211,13 @@ else {
     }
     if (!startupError) {
       lastScan = Date.now();
-      void library.scanGamesFolder().catch((error) => console.error("Scan failed:", error));
+      // Cleaning up first means a game deleted while Aperto was closed and downloaded again is
+      // added as new by the scan.
+      void library
+        .cleanUp()
+        .catch((error) => console.error("Cleanup failed:", error))
+        .then(() => library.scanGamesFolder())
+        .catch((error) => console.error("Scan failed:", error));
       library.checkUpdatesIfStale();
     }
     const request = Effect.fn("desktop.request")((input: unknown) =>

@@ -123,6 +123,15 @@ export type NativeActions = {
   installedGames: () => Promise<Candidate[]>;
 };
 
+/** Folders in Aperto's data that hold one folder per game, named by the game's ID. */
+const gameData = [
+  "artwork",
+  "browser-data",
+  "browser-data-backups",
+  "plugin-backups",
+  path.join("mkxp-z", "data"),
+];
+
 /**
  * Whether a game's folder was deleted: it does not exist, rather than being unreadable, and the
  * drive holding it, for a path under `/Volumes/<name>`, is connected.
@@ -615,17 +624,23 @@ export class DesktopLibrary {
           }));
           break;
         }
-        case "forgetGame":
-          await this.store.update((state) => ({
-            ...state,
-            games: state.games.filter((item) => !(item.id === command.id && item.removed)),
-          }));
+        case "forgetGame": {
+          const game = this.store.value.games.find((item) => item.id === command.id);
+          if (game?.removed) await this.forget([game.id]);
           break;
+        }
         case "remove": {
           const game = this.game(command.id);
           this.idle(game.id);
           // Checked again here, since the library may have changed since the dialog asked.
-          if (command.trashFolder) await this.native.trash(await this.folderToTrash(game));
+          if (command.trashFolder) {
+            await this.native.trash(await this.folderToTrash(game));
+            // Browser data can hold saves, so it goes to the Trash too, where it can be put back.
+            const browserData = ownedPath(this.store.directory, "browser-data", game.id);
+            if (await exists(browserData)) await this.native.trash(browserData);
+            await this.forget([game.id]);
+            break;
+          }
           if (command.deleteData) {
             await rm(ownedPath(this.store.directory, "browser-data", game.id), {
               recursive: true,
@@ -1308,20 +1323,14 @@ export class DesktopLibrary {
         removed: false,
       });
     }
-    // A deleted game leaves the list as if removed by hand, so its data returns if it comes back.
-    // One on a disconnected drive is kept until the drive is back.
+    // A game whose folder was deleted, listed or removed, is forgotten with Aperto's data for it,
+    // so the game downloaded again is added as new rather than hidden as removed. One on a
+    // disconnected drive is kept until the drive is back.
     const vanished: Game[] = [];
-    for (const game of library)
-      if (!game.removed && (await deleted(game.folder))) vanished.push(game);
+    for (const game of library) if (await deleted(game.folder)) vanished.push(game);
     await this.markCustomIcons();
     await this.fillWindowsIcons();
-    if (vanished.length)
-      await this.store.update((state) => ({
-        ...state,
-        games: state.games.map((game) =>
-          vanished.some((item) => item.id === game.id) ? { ...game, removed: true } : game,
-        ),
-      }));
+    if (vanished.length) await this.forget(vanished.map((game) => game.id));
     if (added.length || restored.size)
       await this.store.update((state) => ({
         ...state,
@@ -1347,7 +1356,7 @@ export class DesktopLibrary {
         ...added.map((game) => game.name),
         ...library.filter((game) => restored.has(game.id)).map((game) => game.name),
       ],
-      removed: vanished.map((game) => game.name),
+      removed: vanished.filter((game) => !game.removed).map((game) => game.name),
       duplicates,
       problems,
     };
@@ -1436,6 +1445,46 @@ export class DesktopLibrary {
    * nothing else, as an extracted archive often leaves (`Game-v1.2/Game/`), but never to the games
    * folder itself. Refuses folders that hold the games folder, the home folder, or another game.
    */
+  /**
+   * Run when Aperto starts: forgets games whose folders were deleted while it was closed, and
+   * deletes data left in Aperto's folders for games no longer in the library.
+   */
+  async cleanUp() {
+    const vanished: string[] = [];
+    for (const game of this.store.value.games)
+      if (await deleted(game.folder)) vanished.push(game.id);
+    if (vanished.length) await this.forget(vanished);
+    const known = new Set(this.store.value.games.map((game) => game.id));
+    for (const category of gameData) {
+      const folder = path.join(this.store.directory, category);
+      for (const id of await readdir(folder).catch(() => [] as string[]))
+        if (/^[a-f0-9-]{36}$/.test(id) && !known.has(id))
+          await rm(path.join(folder, id), { recursive: true, force: true }).catch(
+            (error: unknown) => console.error("Could not delete leftover game data:", error),
+          );
+    }
+  }
+
+  /**
+   * Takes games out of the library for good, with their launch history and everything Aperto
+   * keeps for them: artwork, browser data and its backups, plugin backups, and mkxp-z settings.
+   */
+  private async forget(ids: readonly string[]) {
+    const gone = new Set(ids);
+    await this.store.update((state) => ({
+      ...state,
+      games: state.games.filter((game) => !gone.has(game.id)),
+      launches: state.launches.filter((launch) => !gone.has(launch.gameId)),
+      backups: state.backups.filter((backup) => !gone.has(backup.gameId)),
+    }));
+    for (const id of gone)
+      for (const category of gameData)
+        await rm(ownedPath(this.store.directory, category, id), {
+          recursive: true,
+          force: true,
+        }).catch((error: unknown) => console.error("Could not delete a game's data:", error));
+  }
+
   private async folderToTrash(game: Game) {
     // Game folders are stored resolved, so the games folder is compared resolved too.
     const setting = this.store.value.gamesFolder;

@@ -1142,7 +1142,7 @@ export function GamePage({
             </DialogTitle>
             <DialogDescription>
               {confirm === "trash"
-                ? "Aperto removes the game and moves its folder to the Trash, with any saves kept inside it. You can put it back from the Trash until it is emptied."
+                ? "Aperto moves the game's folder to the Trash, with any saves inside it, and its browser data too for NW.js games. Aperto then forgets the game, its icon, and its history, so downloading it again adds it as new."
                 : "The game folder stays where it is, and later scans will not add it back. Restore it in Settings, under Library."}
             </DialogDescription>
           </DialogHeader>
@@ -1151,7 +1151,7 @@ export function GamePage({
               {trashFolder}
             </p>
           )}
-          {nwjs && (
+          {nwjs && confirm === "remove" && (
             <Label className="items-start font-normal">
               <Checkbox
                 checked={deleteData}
