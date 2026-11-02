@@ -1,9 +1,9 @@
 import { execFile, spawn } from "node:child_process";
-import { homedir, userInfo } from "node:os";
+import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import type { OwnedGame, Platform } from "../src/model";
-import { exists } from "./storage";
+import { fetchPinned, installOnce } from "./downloads";
 
 const execute = promisify(execFile);
 
@@ -16,27 +16,39 @@ export const epicCodeUrl =
 export const epicLoginUrl = `https://www.epicgames.com/id/login?redirectUrl=${encodeURIComponent(epicCodeUrl)}`;
 export const epicSession = "persist:epic";
 
-const candidates = [
-  path.join(homedir(), ".local", "bin", "legendary"),
-  "/opt/homebrew/bin/legendary",
-  "/usr/local/bin/legendary",
-];
+// Legendary's own macOS builds, pinned to their SHA-256 hashes.
+export const legendaryVersion = "0.21.1";
+const legendaryBuilds = {
+  arm64: [
+    "legendary_macOS_arm64",
+    "d87978321dba9cb731fab40c72f0a30bed55baca8b5341ab21024c5733cd837e",
+  ],
+  x64: ["legendary_macOS_x64", "3dfab50277284b5bb0104f8710e4ff1d9ff00c992e44f5843fd0c977c5cc99c4"],
+} as const;
+
+/** Where Aperto keeps its copy of Legendary. */
+export const legendaryPath = (directory: string) =>
+  path.join(directory, "legendary-client", legendaryVersion, "legendary");
 
 /**
- * Legendary, the open-source Epic client that downloads Epic's games, wherever it is installed:
- * the usual places first, else wherever the user's login shell finds it. Null when it is not.
+ * Legendary, the open-source Epic client that downloads Epic's games, downloaded into Aperto's
+ * folder the first time it is needed, as runtimes are.
  */
-export async function findLegendary(): Promise<string | null> {
-  for (const file of candidates) if (await exists(file)) return file;
-  const shell = process.env.SHELL || userInfo().shell || "/bin/zsh";
-  const found = await execute(shell, ["-lic", "command -v legendary; exit 0"], { timeout: 10_000 })
-    .then(({ stdout }) => stdout.trim().split("\n").pop() ?? "")
-    .catch(() => "");
-  return found.startsWith("/") && (await exists(found)) ? found : null;
+export async function legendaryBinary(directory: string) {
+  const folder = path.dirname(legendaryPath(directory));
+  await installOnce(folder, async (partial) => {
+    const [name, hash] = legendaryBuilds[process.arch === "x64" ? "x64" : "arm64"];
+    const data = await fetchPinned(
+      `https://github.com/derrod/legendary/releases/download/${legendaryVersion}/${name}`,
+      hash,
+      "Legendary download",
+      300_000,
+    );
+    await mkdir(partial, { recursive: true });
+    await writeFile(path.join(partial, "legendary"), data, { mode: 0o755 });
+  });
+  return legendaryPath(directory);
 }
-
-export const legendaryMissing =
-  "Epic downloads need Legendary, the open-source Epic client. Install it with `uv tool install legendary-gl` (or `pipx install legendary-gl`), then try again.";
 
 /** Runs Legendary with Aperto's own config, so its sign-in is separate from any other setup. */
 export function legendary(binary: string, config: string, args: string[]) {

@@ -29,12 +29,16 @@ it("lists downloads with their sizes and removes only listed ones", async () => 
     "mkxp-z/rtp/RPGVXAce/.installed": "",
     "mkxp-z/data/0d6a3c0e-0000-4000-8000-000000000000/keys.json": "{}",
     "runtimes/0.117.0/nwjs": "",
+    "legendary-client/0.21.1/legendary": "",
+    // Legendary's sign-in, not a download.
+    "legendary/user.json": "{}",
   });
   const list = await listComponents(directory);
   expect(list.map((item) => [item.id, item.name])).toEqual([
     ["renpy/8.6.0", "Ren'Py 8.6.0"],
     ["mkxp-z/app", "mkxp-z"],
     ["mkxp-z/rtp/RPGVXAce", "RPG Maker VX Ace RTP"],
+    ["legendary-client/0.21.1", "Legendary 0.21.1"],
   ]);
   expect(list[0]!.size).toBeGreaterThanOrEqual(1000);
   await removeComponent(directory, "renpy/8.6.0");

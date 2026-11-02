@@ -676,6 +676,15 @@ export function Settings({
                   hint="These games run with mkxp-z and Kawariki's compatibility scripts, plus the RTP a game names. All are downloaded the first time a game needs them."
                 />
               </Section>
+
+              <Section title="Epic Games">
+                <Downloads
+                  items={components?.filter((item) => item.kind === "epic")}
+                  busy={busy}
+                  onRemove={removeComponent}
+                  hint="Epic games install through Legendary, the open-source Epic client. Its macOS build is downloaded from GitHub and verified the first time you sign in to Epic."
+                />
+              </Section>
             </>
           )}
         </div>

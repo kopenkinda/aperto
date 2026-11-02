@@ -42,8 +42,13 @@ export function installOnce(
 }
 
 /** Downloads a file pinned to a SHA-256 hash, refusing anything else. */
-export async function fetchPinned(url: string, hash: string, label: string): Promise<Buffer> {
-  const response = await fetch(url, { signal: AbortSignal.timeout(30_000) }).catch(() => null);
+export async function fetchPinned(
+  url: string,
+  hash: string,
+  label: string,
+  timeout = 30_000,
+): Promise<Buffer> {
+  const response = await fetch(url, { signal: AbortSignal.timeout(timeout) }).catch(() => null);
   if (!response?.ok) throw new Error(`The ${label} could not be downloaded. Try again.`);
   const data = Buffer.from(await response.arrayBuffer());
   if (digest(data) !== hash)

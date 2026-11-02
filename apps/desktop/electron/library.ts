@@ -50,9 +50,9 @@ import {
   epicLoginUrl,
   epicOwnedGames,
   epicSession,
-  findLegendary,
   legendary,
-  legendaryMissing,
+  legendaryBinary,
+  legendaryPath,
 } from "./epic";
 import {
   dlsiteDownload,
@@ -409,8 +409,7 @@ export class DesktopLibrary {
       return this.snapshot();
     }
     if (command.action === "epicSignIn") {
-      const binary = await findLegendary();
-      if (!binary) throw new Error(legendaryMissing);
+      const binary = await legendaryBinary(this.store.directory);
       const landed = await this.native.signInWindow({
         url: epicLoginUrl,
         redirect: "https://www.epicgames.com/id/api/redirect",
@@ -431,8 +430,9 @@ export class DesktopLibrary {
       return this.snapshot();
     }
     if (command.action === "epicSignOut") {
-      const binary = await findLegendary();
-      if (binary) await legendary(binary, this.epicConfig, ["auth", "--delete"]).catch(() => {});
+      const binary = legendaryPath(this.store.directory);
+      if (await exists(binary))
+        await legendary(binary, this.epicConfig, ["auth", "--delete"]).catch(() => {});
       await this.native.clearSession(epicSession);
       delete this.owned.epic;
       await this.store.update((state) => {
@@ -1055,8 +1055,7 @@ export class DesktopLibrary {
     if (site === "itch") return ownedGames(await this.itchKey());
     if (site === "epic") {
       if (!this.store.value.epicUser) throw new Error("Sign in to Epic Games in Settings first.");
-      const binary = await findLegendary();
-      if (!binary) throw new Error(legendaryMissing);
+      const binary = await legendaryBinary(this.store.directory);
       return epicOwnedGames(binary, this.epicConfig);
     }
     if (site === "dlsite") {
@@ -1197,8 +1196,8 @@ export class DesktopLibrary {
         step("Unpacking…");
         await unpack(file, unpacked);
       } else if (site === "epic") {
-        const binary = await findLegendary();
-        if (!binary) throw new Error(legendaryMissing);
+        step("Getting Legendary…");
+        const binary = await legendaryBinary(this.store.directory);
         const mac = game.platforms.includes("mac");
         if (!mac && !(await exists(crossoverWine)))
           throw new Error(`${game.title} only has a Windows version, which needs CrossOver.`);
@@ -1265,11 +1264,10 @@ export class DesktopLibrary {
         await execute("/usr/bin/ditto", [unpacked, destination]);
       });
       if (site === "epic") {
-        const binary = await findLegendary();
-        if (binary)
-          await legendary(binary, this.epicConfig, ["move", game.id, folder, "--skip-move"]).catch(
-            (error: unknown) => console.error("Legendary could not record the move:", error),
-          );
+        const binary = await legendaryBinary(this.store.directory);
+        await legendary(binary, this.epicConfig, ["move", game.id, folder, "--skip-move"]).catch(
+          (error: unknown) => console.error("Legendary could not record the move:", error),
+        );
       }
       await this.scanGamesFolder(true);
       const real = await realpath(destination);

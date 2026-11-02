@@ -137,7 +137,7 @@ const accountHints = {
   },
   epic: {
     signedOut:
-      "Sign in on Epic's own page to install the games you own. Needs Legendary, the open-source Epic client: uv tool install legendary-gl.",
+      "Sign in on Epic's own page to install the games you own. Aperto downloads Legendary, the open-source Epic client, to do it.",
     signedIn:
       "Games install through Legendary into the games folder: the Mac version when there is one, else the Windows one for CrossOver. Games that check Epic's servers at launch may not start outside Epic.",
   },

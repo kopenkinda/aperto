@@ -349,11 +349,11 @@ export type MetadataDetails = { tags: string[]; banner: string | null };
 export type AutoTagReport = { tagged: string[]; unmatched: string[]; banners: string[] };
 /** Games that got tags back, with how many each got, and games whose pages could not be read. */
 export type RefillReport = { refilled: { name: string; added: number }[]; failed: string[] };
-/** A download Aperto keeps besides NW.js runtimes, needed by games of one kind. */
+/** A download Aperto keeps besides NW.js runtimes, needed by games of one kind or by Epic. */
 export type Component = {
   id: string;
   name: string;
-  kind: NonNullable<Game["kind"]>;
+  kind: NonNullable<Game["kind"]> | "epic";
   /** Bytes on disk. */
   size: number;
 };

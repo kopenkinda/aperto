@@ -50,8 +50,9 @@ const subfolders = (folder: string) =>
     .catch(() => [] as string[]);
 
 /**
- * What Aperto downloaded besides NW.js: Ren'Py releases, mkxp-z with its scripts and RTPs, and
- * the cheat menu. Each is fetched again the next time a game needs it, so all can be removed.
+ * What Aperto downloaded besides NW.js: Ren'Py releases, mkxp-z with its scripts and RTPs, the
+ * cheat menu, and Legendary for Epic. Each is fetched again the next time it is needed, so all
+ * can be removed.
  */
 export async function findComponents(directory: string): Promise<Omit<Component, "size">[]> {
   const found: Omit<Component, "size">[] = [];
@@ -79,6 +80,8 @@ export async function findComponents(directory: string): Promise<Omit<Component,
   }
   for (const commit of await subfolders(path.join(directory, "cheat-menu")))
     found.push({ id: `cheat-menu/${commit}`, name: "Cheat menu", kind: "nwjs" });
+  for (const version of await subfolders(path.join(directory, "legendary-client")))
+    found.push({ id: `legendary-client/${version}`, name: `Legendary ${version}`, kind: "epic" });
   return found;
 }
 
