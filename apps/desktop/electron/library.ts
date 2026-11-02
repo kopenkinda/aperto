@@ -112,7 +112,16 @@ export type NativeActions = {
    * once signed in, which starts with `redirect`; null when the window is closed first. With a
    * partition, the session's cookies are kept for later requests.
    */
-  signInWindow: (url: string, redirect: string, partition?: string) => Promise<string | null>;
+  signInWindow: (options: {
+    url: string;
+    /** The address the store sends the browser to once signed in. */
+    redirect?: string;
+    /** For stores without such an address: whether the kept session is signed in yet. */
+    signedIn?: () => Promise<boolean>;
+    partition?: string;
+  }) => Promise<string | null>;
+  /** Fetches with a kept session's cookies and returns the response, for streaming downloads. */
+  sessionResponse: (partition: string, url: string, signal?: AbortSignal) => Promise<Response>;
   /** Fetches a page with the cookies of a session a sign-in window kept; null when it fails. */
   sessionFetch: (partition: string, url: string) => Promise<string | null>;
   sessionCookie: (partition: string, url: string, name: string) => Promise<string | null>;
@@ -352,7 +361,11 @@ export class DesktopLibrary {
       return this.snapshot();
     }
     if (command.action === "steamSignIn") {
-      const done = await this.native.signInWindow(steamLoginUrl, steamRedirect, steamSession);
+      const done = await this.native.signInWindow({
+        url: steamLoginUrl,
+        redirect: steamRedirect,
+        partition: steamSession,
+      });
       if (!done) return this.snapshot();
       const cookie = await this.native.sessionCookie(
         steamSession,
@@ -376,7 +389,7 @@ export class DesktopLibrary {
       return this.snapshot();
     }
     if (command.action === "gogSignIn") {
-      const redirect = await this.native.signInWindow(gogLoginUrl, gogRedirect);
+      const redirect = await this.native.signInWindow({ url: gogLoginUrl, redirect: gogRedirect });
       const code = redirect && new URL(redirect).searchParams.get("code");
       if (!code) return this.snapshot();
       const tokens = await gogToken({ code });
@@ -1739,6 +1752,13 @@ export class DesktopLibrary {
           ]
         : []),
       ...(links.length ? [`- Pages: ${links.join(", ")}`] : []),
+      `- Aperto's settings for this game: the entry with "id": "${game.id}" in the "games" array of ${this.store.file}. "flags" holds the launch arguments, one array item each (a switch's value is the next item); ${kind === "windows" ? '"bottle" and "highResolution" choose the CrossOver bottle and its Retina mode; ' : kind === "nwjs" ? '"runtime" is the NW.js version; ' : ""}"sandbox": false turns Aperto's sandbox off. Aperto reloads the file when it changes, and the next launch uses the new settings. Keep the JSON valid; Aperto keeps the version before its last write in library.json.previous.`,
+      ...(kind === "rgss"
+        ? [
+            `- mkxp-z's settings for this game: ${ownedPath(this.store.directory, path.join("mkxp-z", "data"), game.id)}`,
+          ]
+        : []),
+      `- The game's own settings and saves are usually in its folder${kind === "renpy" ? " and ~/Library/RenPy" : kind === "windows" ? " or in the bottle's drive_c user folders" : ""}.`,
       `- Running now: ${this.running.has(game.id) ? "yes; ask the user to close it in Aperto before changing its files" : "no"}`,
     ].join("\n");
   }

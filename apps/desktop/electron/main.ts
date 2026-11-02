@@ -171,7 +171,7 @@ else {
           });
           notification.show();
         },
-        signInWindow: (url, redirect, partition) =>
+        signInWindow: ({ url, redirect, partition, signedIn }) =>
           new Promise((resolve) => {
             const parent = BrowserWindow.getAllWindows()[0];
             const window = new BrowserWindow({
@@ -185,13 +185,22 @@ else {
               webPreferences: { partition: partition ?? "sign-in", sandbox: true },
             });
             let done = false;
-            const check = (event: { preventDefault: () => void }, address: string) => {
-              if (done || !address.startsWith(redirect)) return;
+            const finish = (address: string) => {
               done = true;
-              event.preventDefault();
+              clearInterval(poll);
               resolve(address);
               window.close();
             };
+            const check = (event: { preventDefault: () => void }, address: string) => {
+              if (done || !redirect || !address.startsWith(redirect)) return;
+              event.preventDefault();
+              finish(address);
+            };
+            // Stores that land somewhere unpredictable are asked whether the session signed in.
+            const poll = setInterval(() => {
+              if (done || !signedIn) return;
+              void signedIn().then((yes) => yes && !done && finish(window.webContents.getURL()));
+            }, 1500);
             // Links that open new windows, such as help pages, go to the browser.
             window.webContents.setWindowOpenHandler(({ url: link }) => {
               if (link.startsWith("https:")) void shell.openExternal(link);
@@ -199,7 +208,10 @@ else {
             });
             window.webContents.on("will-redirect", check);
             window.webContents.on("will-navigate", check);
-            window.on("closed", () => !done && resolve(null));
+            window.on("closed", () => {
+              clearInterval(poll);
+              if (!done) resolve(null);
+            });
             void window.loadURL(url);
           }),
         async sessionFetch(partition, url) {
@@ -209,6 +221,8 @@ else {
             .catch(() => null);
           return response?.ok ? response.text() : null;
         },
+        sessionResponse: (partition, url, signal) =>
+          session.fromPartition(partition).fetch(url, { signal: signal ?? null }),
         sessionCookie: async (partition, url, name) =>
           (await session.fromPartition(partition).cookies.get({ url, name }))[0]?.value ?? null,
         clearSession: (partition) => session.fromPartition(partition).clearStorageData(),
@@ -255,6 +269,8 @@ else {
         .catch((error) => console.error("Scan failed:", error));
       library.checkUpdatesIfStale();
     }
+    // A coding agent may change a game's settings in library.json; Aperto takes them up.
+    if (!startupError) store.watch();
     ready = true;
     for (const url of pendingLinks.splice(0)) openLink(url);
     const request = Effect.fn("desktop.request")((input: unknown) =>

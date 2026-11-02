@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { watch } from "node:fs";
 import { copyFile, mkdir, open, readFile, rename, rm, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
@@ -80,6 +81,8 @@ export class LibraryStore {
   private state: Library = { version: 1, games: [], runtimes: [], launches: [], backups: [] };
   private queue: Promise<unknown> = Promise.resolve();
   readonly file: string;
+  // What Aperto last read or wrote, so its own writes are not mistaken for outside edits.
+  private written: string | null = null;
 
   constructor(
     readonly directory: string,
@@ -91,9 +94,9 @@ export class LibraryStore {
   async load() {
     await mkdir(this.directory, { recursive: true });
     try {
-      this.state = Schema.decodeUnknownSync(LibrarySchema)(
-        migrateLibrary(JSON.parse(await readFile(this.file, "utf8"))),
-      );
+      const text = await readFile(this.file, "utf8");
+      this.state = Schema.decodeUnknownSync(LibrarySchema)(migrateLibrary(JSON.parse(text)));
+      this.written = text;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
         throw new Error(
@@ -179,6 +182,42 @@ export class LibraryStore {
     return { ...next, games };
   }
 
+  /**
+   * Takes up edits made to library.json outside Aperto, such as a coding agent changing a game's
+   * launch arguments. A file that is not a valid library, as in the middle of an edit, is ignored
+   * until it is.
+   */
+  async reloadIfEdited() {
+    const task = this.queue.then(async () => {
+      const text = await readFile(this.file, "utf8").catch(() => null);
+      if (text === null || text === this.written) return false;
+      try {
+        this.state = Schema.decodeUnknownSync(LibrarySchema)(migrateLibrary(JSON.parse(text)));
+      } catch {
+        return false;
+      }
+      this.written = text;
+      this.changed();
+      return true;
+    });
+    this.queue = task.catch(() => {});
+    return task;
+  }
+
+  /** Reloads library.json when it changes outside Aperto. Returns a function that stops watching. */
+  watch() {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const watcher = watch(this.directory, (_, name) => {
+      if (name !== "library.json") return;
+      clearTimeout(timer);
+      timer = setTimeout(() => void this.reloadIfEdited(), 300);
+    });
+    return () => {
+      clearTimeout(timer);
+      watcher.close();
+    };
+  }
+
   get value(): Library {
     return this.state;
   }
@@ -190,7 +229,9 @@ export class LibraryStore {
         Schema.decodeUnknownSync(LibrarySchema)(change(this.state)),
       );
       await atomicWrite(`${this.file}.previous`, JSON.stringify(this.state));
-      await atomicWrite(this.file, JSON.stringify(next, null, 2));
+      const text = JSON.stringify(next, null, 2);
+      this.written = text;
+      await atomicWrite(this.file, text);
       this.state = next;
       this.changed();
     });
